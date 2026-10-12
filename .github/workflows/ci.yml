@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Single required check for branch protection. Keep this job name stable:
+  # the "Protect main" ruleset requires a status check named "check".
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint workflow files
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color
+
+      - name: Detect Android project
+        id: detect
+        run: |
+          if [ -f gradlew ]; then
+            echo "gradle=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "gradle=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No gradlew yet; skipping Android build, lint and tests."
+          fi
+
+      - name: Set up JDK 17
+        if: steps.detect.outputs.gradle == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        if: steps.detect.outputs.gradle == 'true'
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Build, lint and unit test
+        if: steps.detect.outputs.gradle == 'true'
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug lint testDebugUnitTest
+
+      - name: Upload lint reports
+        if: always() && steps.detect.outputs.gradle == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-reports
+          path: '**/build/reports/lint-results-*.html'
+          if-no-files-found: ignore
