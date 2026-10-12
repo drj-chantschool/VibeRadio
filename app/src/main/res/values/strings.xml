@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">VibeRadio</string>
+    <string name="permission_rationale">VibeRadio builds its channels from the audio on this device.</string>
+    <string name="permission_grant">Allow access to audio</string>
+    <string name="permission_denied">Audio access was denied. You can allow it in system settings.</string>
+    <string name="scanning">Tuning in…</string>
+    <string name="library_empty">No audio found on this device.</string>
+    <string name="knob_description">Channel dial</string>
+    <string name="knob_state">%1$s, channel %2$d of %3$d</string>
+    <string name="channel_all">All</string>
+    <string name="channel_other">Everything else</string>
+    <string name="idle">Turn the dial to tune in</string>
+</resources>
