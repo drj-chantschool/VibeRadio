@@ -15,6 +15,8 @@ import app.viberadio.VibeRadioApp
 import app.viberadio.channels.ChannelRepository
 import app.viberadio.dial.Dial
 import app.viberadio.dial.Station
+import app.viberadio.feedback.FeedbackRecorder
+import app.viberadio.feedback.Thumb
 import app.viberadio.library.AudioPermission
 import app.viberadio.playback.ChannelRequest
 import app.viberadio.playback.PlaybackService
@@ -37,10 +39,15 @@ sealed interface RadioUiState {
         /** Index of the tuned channel, or null before the first tune. */
         val tunedIndex: Int?,
         val nowPlaying: NowPlaying?,
+        /** Thumbs for the playing song (#13), or null when no song is playing (e.g. a podcast episode). */
+        val feedback: SongFeedback?,
     ) : RadioUiState
 }
 
 data class NowPlaying(val title: String, val artist: String?)
+
+/** The thumbs under the playing song. [lastPress] is the thumb last pressed for this song while it plays. */
+data class SongFeedback(val lastPress: Thumb?)
 
 /**
  * Bridges the dial (song channels plus podcast-only channels) and the playback service. Talks to the service only through a
@@ -51,9 +58,17 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
     private val repository: ChannelRepository = (application as VibeRadioApp).container.channelRepository
     private val podcasts: PodcastRepository = (application as VibeRadioApp).container.podcastRepository
     private val podcastsName = application.getString(R.string.channel_podcasts)
+    private val feedback: FeedbackRecorder = (application as VibeRadioApp).container.feedback
+    private val appScope = (application as VibeRadioApp).container.appScope
 
     private data class Permission(val granted: Boolean, val denied: Boolean)
-    private data class Playback(val channelId: String? = null, val nowPlaying: NowPlaying? = null)
+    private data class Playback(
+        val channelId: String? = null,
+        val nowPlaying: NowPlaying? = null,
+        /** Content URI of the playing song; null for podcast episodes or before anything plays. */
+        val trackUri: String? = null,
+        val lastPress: Thumb? = null,
+    )
 
     private val permission = MutableStateFlow(Permission(AudioPermission.isGranted(application), denied = false))
     private val playback = MutableStateFlow(Playback())
@@ -72,6 +87,7 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
                             channelNames = stations.map { it.name },
                             tunedIndex = stations.indexOfFirst { it.id == play.channelId }.takeIf { it >= 0 },
                             nowPlaying = play.nowPlaying,
+                            feedback = play.trackUri?.let { SongFeedback(play.lastPress) },
                         )
                     }
                 }
@@ -93,8 +109,10 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
     private val listener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             // Follows channel changes made by the service itself, e.g. queue fallback (#4).
-            val id = mediaItem?.mediaMetadata?.extras?.getString(ChannelRequest.EXTRA_CHANNEL_ID)
-            if (id != null) playback.update { it.copy(channelId = id) }
+            val extras = mediaItem?.mediaMetadata?.extras
+            val id = extras?.getString(ChannelRequest.EXTRA_CHANNEL_ID)
+            val trackUri = extras?.getString(ChannelRequest.EXTRA_TRACK_URI)
+            playback.update { it.copy(channelId = id ?: it.channelId, trackUri = trackUri, lastPress = null) }
         }
 
         override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
@@ -136,6 +154,23 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
             setMediaItem(ChannelRequest.mediaItem(station.id))
             prepare()
             play()
+        }
+    }
+
+    /**
+     * Logs [thumb] for the playing song (#13). Feedback only: the song keeps playing. Recorded on
+     * the app scope so a press made just before leaving the screen still lands in the log.
+     */
+    fun press(thumb: Thumb) {
+        val current = playback.value
+        val uri = current.trackUri ?: return
+        val channelId = current.channelId ?: return
+        playback.update { it.copy(lastPress = thumb) }
+        appScope.launch {
+            if (feedback.record(uri, channelId, thumb) == null) {
+                // Not logged (file unreadable or disk full): don't show it as pressed.
+                playback.update { if (it.trackUri == uri && it.lastPress == thumb) it.copy(lastPress = null) else it }
+            }
         }
     }
 
