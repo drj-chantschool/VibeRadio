@@ -107,16 +107,28 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
         }
 
     private val listener = object : Player.Listener {
-        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            // Follows channel changes made by the service itself, e.g. queue fallback (#4).
-            val extras = mediaItem?.mediaMetadata?.extras
-            val id = extras?.getString(ChannelRequest.EXTRA_CHANNEL_ID)
-            val trackUri = extras?.getString(ChannelRequest.EXTRA_TRACK_URI)
-            playback.update { it.copy(channelId = id ?: it.channelId, trackUri = trackUri, lastPress = null) }
+        /**
+         * Reads the current item on every update rather than relying on transition events alone:
+         * the session can fold a transition into a combined update, and a missed one used to
+         * leave the thumbs hidden for the rest of the song. Also follows channel changes made by
+         * the service itself, e.g. queue fallback (#4).
+         */
+        override fun onEvents(player: Player, events: Player.Events) {
+            follow(player.currentMediaItem)
+            if (events.contains(Player.EVENT_MEDIA_METADATA_CHANGED)) {
+                playback.update { it.copy(nowPlaying = player.mediaMetadata.toNowPlaying()) }
+            }
         }
+    }
 
-        override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
-            playback.update { it.copy(nowPlaying = mediaMetadata.toNowPlaying()) }
+    private fun follow(mediaItem: MediaItem?) {
+        val extras = mediaItem?.mediaMetadata?.extras
+        val id = extras?.getString(ChannelRequest.EXTRA_CHANNEL_ID)
+        val trackUri = extras?.getString(ChannelRequest.EXTRA_TRACK_URI)
+        playback.update {
+            // A press belongs to the song it was made on; keep it while that song is still playing.
+            val lastPress = if (trackUri == it.trackUri) it.lastPress else null
+            it.copy(channelId = id ?: it.channelId, trackUri = trackUri, lastPress = lastPress)
         }
     }
 
@@ -125,8 +137,8 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
             {
                 controller?.let { c ->
                     c.addListener(listener)
-                    listener.onMediaItemTransition(c.currentMediaItem, Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED)
-                    listener.onMediaMetadataChanged(c.mediaMetadata)
+                    follow(c.currentMediaItem)
+                    playback.update { it.copy(nowPlaying = c.mediaMetadata.toNowPlaying()) }
                 }
             },
             ContextCompat.getMainExecutor(application),

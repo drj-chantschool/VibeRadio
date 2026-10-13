@@ -127,7 +127,9 @@ class RadioSessionCallback(
         val previous = currentEpisodeId
         if (previous != null && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) podcasts.setPlayed(previous, true)
         currentEpisodeId = EpisodeMediaId.episodeId(mediaItem)
-        applySpeed()
+        // Posted, not called inline: changing player state inside this callback gets folded into
+        // the same session update as the transition, and controllers can miss the transition.
+        handler.post(::applySpeed)
         songTrack(mediaItem)?.let(onSongStarted)
     }
 
