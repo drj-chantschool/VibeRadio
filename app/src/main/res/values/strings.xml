@@ -10,5 +10,6 @@
     <string name="knob_state">%1$s, channel %2$d of %3$d</string>
     <string name="channel_all">All</string>
     <string name="channel_other">Everything else</string>
+    <string name="channel_all_songs">All songs</string>
     <string name="idle">Turn the dial to tune in</string>
 </resources>

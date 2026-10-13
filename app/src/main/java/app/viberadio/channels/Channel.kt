@@ -4,7 +4,7 @@ import app.viberadio.library.Track
 
 /** A station on the dial. */
 data class Channel(
-    /** Stable across rescans as long as the genre survives: "genre:<key>", "other" or "all". */
+    /** Stable across rescans as long as the genre survives: "genre:<key>", "other", "all" or "all-songs". */
     val id: String,
     val name: String,
     val type: ChannelType,
