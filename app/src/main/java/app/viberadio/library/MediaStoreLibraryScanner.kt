@@ -37,6 +37,8 @@ class MediaStoreLibraryScanner(
             add(MediaStore.Audio.Media.IS_PODCAST)
             add(MediaStore.Audio.Media.MIME_TYPE)
             add(MediaStore.Audio.Media.DISPLAY_NAME)
+            add(MediaStore.Audio.Media.SIZE)
+            add(MediaStore.Audio.Media.DATE_MODIFIED)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) add(MediaStore.Audio.Media.IS_AUDIOBOOK)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) add(MediaStore.Audio.Media.GENRE)
         }.toTypedArray()
@@ -54,6 +56,8 @@ class MediaStoreLibraryScanner(
             val podcastCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.IS_PODCAST)
             val mimeCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE)
             val nameCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+            val sizeCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
+            val modifiedCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
             val audiobookCol = c.getColumnIndex(MediaStore.Audio.Media.IS_AUDIOBOOK)
             val genreCol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 c.getColumnIndex(MediaStore.Audio.Media.GENRE)
@@ -81,6 +85,8 @@ class MediaStoreLibraryScanner(
                     genre = if (genreCol >= 0) c.getString(genreCol) else legacyGenres[id],
                     durationMs = duration,
                     kind = kind,
+                    sizeBytes = c.getLong(sizeCol),
+                    modifiedSec = c.getLong(modifiedCol),
                 )
             }
         }
