@@ -47,8 +47,26 @@ android {
         versionName = appVersionName
     }
 
+    // Release signing reads the keystore from the environment (release.yml decodes it from
+    // repo secrets). Without VIBERADIO_KEYSTORE_PATH the release APK is built unsigned.
+    val keystorePath = providers.environmentVariable("VIBERADIO_KEYSTORE_PATH").orNull
+    val releaseSigning = keystorePath?.let { path ->
+        signingConfigs.create("release") {
+            storeFile = file(path)
+            storePassword = providers.environmentVariable("VIBERADIO_KEYSTORE_PASSWORD").get()
+            keyAlias = providers.environmentVariable("VIBERADIO_KEY_ALIAS").get()
+            keyPassword = providers.environmentVariable("VIBERADIO_KEY_PASSWORD").get()
+        }
+    }
+
     buildTypes {
+        debug {
+            // Debug builds install alongside the release-signed app instead of clashing with it.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
+            signingConfig = releaseSigning
             isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
