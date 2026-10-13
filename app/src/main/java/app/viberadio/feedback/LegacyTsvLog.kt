@@ -11,7 +11,7 @@ import java.io.IOException
  * 1  <atMs>  <utcOffsetMinutes>  <trackHash>  <UP|DOWN>  <channelId>
  * ```
  *
- * Only used to import that file into [SqliteFeedbackLog] once. Torn or unknown lines are skipped.
+ * Only used to import that file into [FeedbackDatabase] once. Torn or unknown lines are skipped.
  */
 internal object LegacyTsvLog {
 

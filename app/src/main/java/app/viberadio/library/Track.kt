@@ -16,6 +16,9 @@ data class Track(
     val genre: String?,
     val durationMs: Long,
     val kind: ContentKind,
+    /** File size and modification time (epoch seconds) from MediaStore; a change means the bytes may have changed. */
+    val sizeBytes: Long = 0,
+    val modifiedSec: Long = 0,
 )
 
 /**

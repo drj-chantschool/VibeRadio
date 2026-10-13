@@ -20,6 +20,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /**
  * Owns the player and the media session. Media3 promotes it to a foreground service with a
@@ -65,6 +66,8 @@ class PlaybackService : MediaSessionService() {
             planner = container.streamPlanner,
             scope = scope,
             podcastsStationName = getString(R.string.channel_podcasts),
+            // App scope, not the service's: a play still gets recorded if the service stops meanwhile.
+            onSongStarted = { track -> container.appScope.launch { container.playHistory.markPlayed(track) } },
         )
         callback.attach(player)
         this.callback = callback

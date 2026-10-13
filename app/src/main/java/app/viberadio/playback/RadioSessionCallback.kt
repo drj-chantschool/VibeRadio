@@ -11,6 +11,7 @@ import androidx.media3.session.MediaSession
 import app.viberadio.channels.Channel
 import app.viberadio.channels.ChannelRepository
 import app.viberadio.dial.Dial
+import app.viberadio.library.Track
 import app.viberadio.podcasts.PodcastLibrary
 import app.viberadio.podcasts.PodcastRepository
 import com.google.common.util.concurrent.Futures
@@ -28,6 +29,9 @@ import kotlinx.coroutines.launch
  * position of a part-played one is saved, so tuning back (or restarting) resumes it. When a
  * podcast-only channel has nothing left it hands over to a music channel at the episode
  * boundary (#4).
+ *
+ * Every song that becomes the current item is reported to [onSongStarted], which feeds the
+ * play history the shuffle weights by.
  */
 @OptIn(UnstableApi::class)
 class RadioSessionCallback(
@@ -36,6 +40,7 @@ class RadioSessionCallback(
     private val planner: StreamPlanner,
     private val scope: CoroutineScope,
     private val podcastsStationName: String,
+    private val onSongStarted: (Track) -> Unit = {},
 ) : MediaSession.Callback, Player.Listener {
 
     private var player: Player? = null
@@ -113,6 +118,13 @@ class RadioSessionCallback(
         val previous = currentEpisodeId
         if (previous != null && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) podcasts.setPlayed(previous, true)
         currentEpisodeId = EpisodeMediaId.episodeId(mediaItem)
+        songTrack(mediaItem)?.let(onSongStarted)
+    }
+
+    /** The library track behind a queued song item, or null for episodes and stale items. */
+    private fun songTrack(item: MediaItem?): Track? {
+        val channelId = item?.mediaMetadata?.extras?.getString(ChannelRequest.EXTRA_CHANNEL_ID) ?: return null
+        return repository.channel(channelId)?.tracks?.firstOrNull { it.mediaId == item.mediaId }
     }
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {

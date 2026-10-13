@@ -55,9 +55,11 @@ internal fun Episode.toMediaItem(uri: String, showTitle: String?, stationId: Str
         )
         .build()
 
+internal val Track.mediaId: String get() = "track:$id"
+
 internal fun Track.toMediaItem(channel: Channel): MediaItem =
     MediaItem.Builder()
-        .setMediaId("track:$id")
+        .setMediaId(mediaId)
         .setUri(uri)
         .setMediaMetadata(
             MediaMetadata.Builder()
