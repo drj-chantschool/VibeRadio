@@ -11,5 +11,6 @@
     <string name="channel_all">All</string>
     <string name="channel_other">Everything else</string>
     <string name="channel_all_songs">All songs</string>
+    <string name="channel_podcasts">Podcasts</string>
     <string name="idle">Turn the dial to tune in</string>
 </resources>

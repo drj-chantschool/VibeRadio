@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Podcast feeds and enclosures are still often served over plain http, from hosts the app
+    can't know in advance, so cleartext is allowed. Nothing sensitive goes over the network:
+    only public feeds and audio are fetched.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
