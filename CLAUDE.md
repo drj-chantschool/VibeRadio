@@ -14,7 +14,9 @@ Requires JDK 17+ (CI uses 21) and an Android SDK (`ANDROID_HOME` or `local.prope
 
 CI (`.github/workflows/android.yml`) runs `assembleDebug testDebugUnitTest` on every push and PR.
 
-Versions live only in `gradle/libs.versions.toml`. AGP 9 compiles Kotlin itself (built-in Kotlin): do **not** apply `org.jetbrains.kotlin.android`. The `kotlin` version in the catalog pins the Kotlin compiler via the Compose compiler plugin.
+The app version comes from the release tag, never from source: `-Pviberadio.versionName=1.2.3` (or `1.2.3-alpha|beta|rc.N`) sets `versionName`, and `versionCodeOf` in `app/build.gradle.kts` derives a `versionCode` that sorts the same way. Without the property the build is `0.0.0-dev`, versionCode 1.
+
+Dependency versions live only in `gradle/libs.versions.toml`. AGP 9 compiles Kotlin itself (built-in Kotlin): do **not** apply `org.jetbrains.kotlin.android`. The `kotlin` version in the catalog pins the Kotlin compiler via the Compose compiler plugin.
 
 minSdk is 26. Nothing in #1–#6 needs higher: Media3 `AudioProcessor`s, `LoudnessEnhancer` and on-device classification all run on 26. API 26 also guarantees notification channels and adaptive icons. The one API split is genre lookup (see below).
 
