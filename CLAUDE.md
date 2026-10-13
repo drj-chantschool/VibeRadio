@@ -12,9 +12,26 @@ Requires JDK 17+ (CI uses 21) and an Android SDK (`ANDROID_HOME` or `local.prope
 ./gradlew installDebug           # install on a connected device
 ```
 
-CI (`.github/workflows/android.yml`) runs `assembleDebug testDebugUnitTest` on every push and PR.
+CI (`.github/workflows/ci.yml`, job `check`, required by the "Protect main" ruleset) runs actionlint, then `assembleDebug assembleRelease lint testDebugUnitTest` on every PR and push to `main`.
 
-Versions live only in `gradle/libs.versions.toml`. AGP 9 compiles Kotlin itself (built-in Kotlin): do **not** apply `org.jetbrains.kotlin.android`. The `kotlin` version in the catalog pins the Kotlin compiler via the Compose compiler plugin.
+The app version comes from the release tag, never from source: `-Pviberadio.versionName=1.2.3` (or `1.2.3-alpha|beta|rc.N`) sets `versionName`, and `versionCodeOf` in `app/build.gradle.kts` derives a `versionCode` that sorts the same way. Without the property the build is `0.0.0-dev`, versionCode 1.
+
+Release signing reads `VIBERADIO_KEYSTORE_PATH`, `VIBERADIO_KEYSTORE_PASSWORD`, `VIBERADIO_KEY_ALIAS` and `VIBERADIO_KEY_PASSWORD` from the environment; without them `assembleRelease` produces an unsigned APK. Debug builds use the `app.viberadio.debug` ID and the label "VibeRadio dev", so they install next to the release app.
+
+## Releases
+
+Distribution is GitHub Releases, installed and updated on-device with Obtainium. `.github/workflows/release.yml` runs on a `v*` tag push: it validates the tag, runs unit tests, builds a signed release APK with the tag's version, verifies the signature and publishes `viberadio-<version>.apk` (plus a `.sha256`) as a GitHub Release. Tags with `-alpha.N`, `-beta.N` or `-rc.N` publish as pre-releases.
+
+```sh
+git tag v0.2.0-beta.1 && git push origin v0.2.0-beta.1   # pre-release
+git tag v0.2.0 && git push origin v0.2.0                 # release
+```
+
+Repo secrets the workflow needs: `VIBERADIO_KEYSTORE_BASE64` (the `.jks`, base64-encoded), `VIBERADIO_KEYSTORE_PASSWORD`, `VIBERADIO_KEY_ALIAS`, `VIBERADIO_KEY_PASSWORD`. The keystore is permanent: every update must be signed with it, so it lives offline as well as in secrets and never in the repo.
+
+## Dependencies
+
+Dependency versions live only in `gradle/libs.versions.toml`. AGP 9 compiles Kotlin itself (built-in Kotlin): do **not** apply `org.jetbrains.kotlin.android`. The `kotlin` version in the catalog pins the Kotlin compiler via the Compose compiler plugin.
 
 minSdk is 26. Nothing in #1–#6 needs higher: Media3 `AudioProcessor`s, `LoudnessEnhancer` and on-device classification all run on 26. API 26 also guarantees notification channels and adaptive icons. The one API split is genre lookup (see below).
 
