@@ -38,6 +38,7 @@ fun RadioScreen(
     state: RadioUiState,
     onRequestPermission: () -> Unit,
     onTune: (Int) -> Unit,
+    onPlay: () -> Unit,
     onThumb: (Thumb) -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
@@ -52,14 +53,14 @@ fun RadioScreen(
                 is RadioUiState.NeedsPermission -> PermissionPrompt(state.denied, onRequestPermission)
                 RadioUiState.Scanning -> Note(stringResource(R.string.scanning))
                 RadioUiState.Empty -> Note(stringResource(R.string.library_empty))
-                is RadioUiState.Ready -> Tuner(state, onTune, onThumb)
+                is RadioUiState.Ready -> Tuner(state, onTune, onPlay, onThumb)
             }
         }
     }
 }
 
 @Composable
-private fun Tuner(state: RadioUiState.Ready, onTune: (Int) -> Unit, onThumb: (Thumb) -> Unit) {
+private fun Tuner(state: RadioUiState.Ready, onTune: (Int) -> Unit, onPlay: () -> Unit, onThumb: (Thumb) -> Unit) {
     val tuned = state.tunedIndex?.let(state.channelNames::getOrNull)
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -79,6 +80,8 @@ private fun Tuner(state: RadioUiState.Ready, onTune: (Int) -> Unit, onThumb: (Th
             channelNames = state.channelNames,
             selected = state.tunedIndex,
             onSelect = onTune,
+            showPlay = !state.playing,
+            onPlay = onPlay,
             modifier = Modifier.widthIn(max = 280.dp).fillMaxWidth(),
         )
         Spacer(Modifier.height(40.dp))
@@ -168,16 +171,23 @@ private val previewState = RadioUiState.Ready(
     tunedIndex = 2,
     nowPlaying = NowPlaying("Goldberg Variations: Aria", "Glenn Gould"),
     feedback = SongFeedback(lastPress = Thumb.UP),
+    playing = true,
 )
 
 @Preview(name = "Light", showBackground = true)
 @Composable
 private fun RadioScreenLightPreview() {
-    VibeRadioTheme(darkTheme = false) { RadioScreen(previewState, {}, {}, {}) }
+    VibeRadioTheme(darkTheme = false) { RadioScreen(previewState, {}, {}, {}, {}) }
+}
+
+@Preview(name = "Paused", showBackground = true)
+@Composable
+private fun RadioScreenPausedPreview() {
+    VibeRadioTheme(darkTheme = false) { RadioScreen(previewState.copy(playing = false), {}, {}, {}, {}) }
 }
 
 @Preview(name = "Dark", showBackground = true)
 @Composable
 private fun RadioScreenDarkPreview() {
-    VibeRadioTheme(darkTheme = true) { RadioScreen(previewState, {}, {}, {}) }
+    VibeRadioTheme(darkTheme = true) { RadioScreen(previewState, {}, {}, {}, {}) }
 }
