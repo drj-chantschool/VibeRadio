@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Mirrors ui/theme/Color.kt; used only before Compose draws (window background, icon). -->
+    <color name="paper">#FFE9E7E1</color>
+    <color name="ink">#FF2E2D2B</color>
+    <color name="paper_night">#FF1B1B1A</color>
+</resources>
