@@ -12,6 +12,8 @@ import android.provider.MediaStore
  * Genre handling differs by API level: `MediaStore.Audio.AudioColumns.GENRE` only exists on
  * API 30+. On API 26–29 genres live in a separate table, so we build an id→genre map from
  * `MediaStore.Audio.Genres` and its members.
+ *
+ * MIDI files are skipped ([MidiFiles]); MediaStore lists them as audio, often as music.
  */
 class MediaStoreLibraryScanner(
     private val resolver: ContentResolver,
@@ -33,6 +35,8 @@ class MediaStoreLibraryScanner(
             add(MediaStore.Audio.Media.ALBUM)
             add(MediaStore.Audio.Media.DURATION)
             add(MediaStore.Audio.Media.IS_PODCAST)
+            add(MediaStore.Audio.Media.MIME_TYPE)
+            add(MediaStore.Audio.Media.DISPLAY_NAME)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) add(MediaStore.Audio.Media.IS_AUDIOBOOK)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) add(MediaStore.Audio.Media.GENRE)
         }.toTypedArray()
@@ -48,6 +52,8 @@ class MediaStoreLibraryScanner(
             val albumCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
             val durationCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
             val podcastCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.IS_PODCAST)
+            val mimeCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE)
+            val nameCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
             val audiobookCol = c.getColumnIndex(MediaStore.Audio.Media.IS_AUDIOBOOK)
             val genreCol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 c.getColumnIndex(MediaStore.Audio.Media.GENRE)
@@ -58,6 +64,8 @@ class MediaStoreLibraryScanner(
             while (c.moveToNext()) {
                 val duration = c.getLong(durationCol)
                 if (duration < minDurationMs) continue
+                // MIDI is note data, not audio: skipped, never a song (see MidiFiles).
+                if (MidiFiles.isMidi(c.getString(mimeCol), c.getString(nameCol))) continue
                 val id = c.getLong(idCol)
                 val kind = when {
                     c.flag(podcastCol) -> ContentKind.PODCAST
