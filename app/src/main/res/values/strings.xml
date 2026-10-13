@@ -11,5 +11,38 @@
     <string name="channel_all">All</string>
     <string name="channel_other">Everything else</string>
     <string name="channel_all_songs">All songs</string>
+    <string name="channel_podcasts">Podcasts</string>
     <string name="idle">Turn the dial to tune in</string>
+
+    <!-- Podcast page (#20) -->
+    <string name="podcasts_title">Podcasts</string>
+    <string name="podcasts_up_next">Up next</string>
+    <string name="podcasts_shows">Shows</string>
+    <string name="podcasts_nothing_queued">Nothing left to play. New episodes join the queue when the feeds update.</string>
+    <string name="podcasts_empty">Add a show by pasting its RSS feed link. It goes on the Podcasts channel, and you listen by tuning the dial to it.</string>
+    <string name="podcasts_unplayed">%1$d unplayed</string>
+    <string name="podcasts_on_air">On air</string>
+    <string name="podcasts_show_episodes">Show episodes</string>
+    <string name="podcasts_hide_episodes">Hide episodes</string>
+    <string name="podcasts_mark_hint">Tap an episode to mark it played. Long-press to mark it and everything older. Played episodes are never downloaded.</string>
+    <string name="podcasts_remove_show">Remove show</string>
+    <string name="podcasts_remove_title">Remove %1$s?</string>
+    <string name="podcasts_remove_body">Its episodes, downloads and played history are deleted.</string>
+    <string name="podcasts_remove_confirm">Remove</string>
+    <string name="cancel">Cancel</string>
+    <string name="add_feed">Add</string>
+    <string name="add_feed_adding">Adding…</string>
+    <string name="add_feed_hint">RSS feed link</string>
+    <string name="add_feed_invalid">That doesn\'t look like a web link.</string>
+    <string name="add_feed_not_a_feed">That link isn\'t a podcast feed.</string>
+    <string name="add_feed_unreachable">Couldn\'t reach that feed. Check the link and your connection.</string>
+    <string name="add_feed_already">That show is already here.</string>
+    <string name="episode_on_device">on device</string>
+    <string name="episode_streams">streams</string>
+    <string name="episode_started">started</string>
+    <string name="episode_resumes">resumes</string>
+    <string name="episode_mark_played">Mark played</string>
+    <string name="episode_mark_unplayed">Mark unplayed</string>
+    <string name="episode_mark_older_played">Mark this and older played</string>
+    <string name="pages_description">Page %1$d of %2$d</string>
 </resources>

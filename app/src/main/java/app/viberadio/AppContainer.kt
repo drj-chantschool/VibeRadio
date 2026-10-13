@@ -5,6 +5,13 @@ import app.viberadio.channels.ChannelGenerator
 import app.viberadio.channels.ChannelRepository
 import app.viberadio.library.MediaStoreLibraryScanner
 import app.viberadio.playback.ShuffledStreamPlanner
+import app.viberadio.podcasts.EpisodeDownloader
+import app.viberadio.podcasts.HttpFeedFetcher
+import app.viberadio.podcasts.JsonPodcastStore
+import app.viberadio.podcasts.PodcastRepository
+import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import app.viberadio.playback.StreamPlanner
 import app.viberadio.playback.audio.AudioProcessorProvider
 import kotlinx.coroutines.Dispatchers
@@ -15,6 +22,9 @@ import kotlinx.coroutines.Dispatchers
  */
 class AppContainer(context: Context) {
 
+    /** Lives as long as the process: feed refreshes, downloads and saves outlast any screen. */
+    val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
     val channelRepository = ChannelRepository(
         scanner = MediaStoreLibraryScanner(context.contentResolver),
         generator = ChannelGenerator(
@@ -24,6 +34,16 @@ class AppContainer(context: Context) {
                 allSongs = context.getString(R.string.channel_all_songs),
             ),
         ),
+        ioDispatcher = Dispatchers.IO,
+    )
+
+    /** The podcast pipeline (#17): hand-assigned shows, one global queue. Independent of [channelRepository]. */
+    val podcastRepository = PodcastRepository(
+        store = JsonPodcastStore(File(context.filesDir, "podcasts.json")),
+        fetcher = HttpFeedFetcher(),
+        // App-specific storage: no permission needed, removed with the app.
+        downloader = EpisodeDownloader(File(context.getExternalFilesDir(null) ?: context.filesDir, "episodes")),
+        scope = appScope,
         ioDispatcher = Dispatchers.IO,
     )
 

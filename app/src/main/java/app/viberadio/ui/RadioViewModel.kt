@@ -10,11 +10,16 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import app.viberadio.R
 import app.viberadio.VibeRadioApp
 import app.viberadio.channels.ChannelRepository
+import app.viberadio.dial.Dial
+import app.viberadio.dial.Station
 import app.viberadio.library.AudioPermission
 import app.viberadio.playback.ChannelRequest
 import app.viberadio.playback.PlaybackService
+import app.viberadio.podcasts.PodcastLibrary
+import app.viberadio.podcasts.PodcastRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -38,12 +43,14 @@ sealed interface RadioUiState {
 data class NowPlaying(val title: String, val artist: String?)
 
 /**
- * Bridges the channel list and the playback service. Talks to the service only through a
+ * Bridges the dial (song channels plus podcast-only channels) and the playback service. Talks to the service only through a
  * [MediaController], so the UI and the system notification see the same session.
  */
 class RadioViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository: ChannelRepository = (application as VibeRadioApp).container.channelRepository
+    private val podcasts: PodcastRepository = (application as VibeRadioApp).container.podcastRepository
+    private val podcastsName = application.getString(R.string.channel_podcasts)
 
     private data class Permission(val granted: Boolean, val denied: Boolean)
     private data class Playback(val channelId: String? = null, val nowPlaying: NowPlaying? = null)
@@ -52,16 +59,22 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
     private val playback = MutableStateFlow(Playback())
 
     val uiState: StateFlow<RadioUiState> =
-        combine(permission, repository.state, playback) { perm, library, play ->
+        combine(permission, repository.state, podcasts.library, playback) { perm, library, shows, play ->
             when {
                 !perm.granted -> RadioUiState.NeedsPermission(perm.denied)
                 library !is ChannelRepository.State.Ready -> RadioUiState.Scanning
-                library.channels.isEmpty() -> RadioUiState.Empty
-                else -> RadioUiState.Ready(
-                    channelNames = library.channels.map { it.name },
-                    tunedIndex = library.channels.indexOfFirst { it.id == play.channelId }.takeIf { it >= 0 },
-                    nowPlaying = play.nowPlaying,
-                )
+                else -> {
+                    val stations = stations(library, shows)
+                    if (stations.isEmpty()) {
+                        RadioUiState.Empty
+                    } else {
+                        RadioUiState.Ready(
+                            channelNames = stations.map { it.name },
+                            tunedIndex = stations.indexOfFirst { it.id == play.channelId }.takeIf { it >= 0 },
+                            nowPlaying = play.nowPlaying,
+                        )
+                    }
+                }
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RadioUiState.Scanning)
 
@@ -116,15 +129,19 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun tune(index: Int) {
-        val channels = (repository.state.value as? ChannelRepository.State.Ready)?.channels ?: return
-        val channel = channels.getOrNull(index) ?: return
-        playback.update { it.copy(channelId = channel.id) }
+        val library = repository.state.value as? ChannelRepository.State.Ready ?: return
+        val station = stations(library, podcasts.library.value).getOrNull(index) ?: return
+        playback.update { it.copy(channelId = station.id) }
         controller?.run {
-            setMediaItem(ChannelRequest.mediaItem(channel.id))
+            setMediaItem(ChannelRequest.mediaItem(station.id))
             prepare()
             play()
         }
     }
+
+    /** Song channels plus podcast-only channels: the knob's positions. */
+    private fun stations(library: ChannelRepository.State.Ready, shows: PodcastLibrary): List<Station> =
+        Dial.stations(library.channels, shows.channelIds, podcastsName)
 
     private fun scanIfNeeded() {
         if (!permission.value.granted) return

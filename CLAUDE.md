@@ -1,6 +1,6 @@
 # VibeRadio
 
-Android audio player that behaves like a radio: a few generated channels, one knob, no skip/seek/track list. See README.md for the concept and issues #1–#6 for planned audio features.
+Android audio player that behaves like a radio: a few generated channels, one knob, no skip/seek/track list on the song side. Podcasts are a separate, hand-curated pipeline with their own page. See README.md for the concept and the issues for planned features.
 
 ## Build
 
@@ -43,17 +43,21 @@ Single `:app` module, package `app.viberadio`. Manual DI in `AppContainer` (one 
 |---|---|---|
 | `library` | `MediaStoreLibraryScanner` → `List<Track>`. Genre from `GENRE` column on API 30+, from the `Genres`/`Members` tables on 26–29. `ContentKind` from MediaStore podcast/audiobook flags. | #6: refine `ContentKind` by analysing audio |
 | `channels` | `ChannelGenerator` (pure) groups tracks by normalised genre into ≤6 channels + catch-all, or a single "All", then appends "All songs" (music only, ≤20 min, never podcasts). `ChannelRepository` holds the result as a `StateFlow`. | #3: replace `ChannelTypeResolver.Untyped` and route by `ContentKind` |
-| `playback` | `PlaybackService` (`MediaSessionService`) owns ExoPlayer + `MediaSession`. `RadioSessionCallback` expands a channel request into a queue and strips skip/seek/shuffle/repeat commands from **every** controller (notification, headset, our UI). | `StreamPlanner` for #2 (mixing) and #4 (fallback via `onExhausted`, called at track boundaries) |
+| `playback` | `PlaybackService` (`MediaSessionService`) owns ExoPlayer + `MediaSession`. `RadioSessionCallback` expands a channel request into a queue and strips skip/seek/shuffle/repeat commands from **every** controller (notification, headset, our UI). For podcast-only channels it queues `PodcastLibrary.queue`, starts at the saved position, marks episodes played on finish, saves positions every 15 s and on retune, keeps the queued tail in step with the podcast page, and falls back to `Dial.fallback` when empty. | `StreamPlanner` for #2 (mixing) and #4 (fallback via `onExhausted`, called at track boundaries) |
 | `playback.audio` | `ProcessingRenderersFactory` installs `AudioProcessorProvider`'s chain into `DefaultAudioSink`. | #1 loudness, #5 voice emphasis/ducking, #6 music suppression: add `AudioProcessor`s here |
-| `ui` | `MainActivity` → `RadioScreen` → `ChannelKnob`. `RadioViewModel` talks to the service only via `MediaController`. `KnobMath` is the dial geometry. | |
+| `podcasts` | Independent of the song pipeline (#17): never imports `library` or `channels`. `RssParser` (JDK DOM) → `Feed`. `PodcastLibrary` (pure, immutable) holds shows, their hand-assigned channel IDs (#18), and the global played set and resume positions (#19); `queue(channelId)` = started episode first, then oldest unplayed. `PodcastRepository` persists it (`JsonPodcastStore`), fetches feeds (`HttpFeedFetcher`), and has `EpisodeDownloader` keep only `upNext(3)` on the device, so played episodes are never downloaded. | Mixed channels (#2): assign shows to song channel IDs |
+| `dial` | `Dial.stations` = song channels, then podcast-only channels that have a show on them (today just "Podcasts", `PodcastChannels.PODCASTS_ID`, `VOCAL_ONLY`). `Dial.fallback` is the #4 hand-over target. With `playback`, the only code that sees both pipelines. | |
+| `ui` | `MainActivity` → `HorizontalPager`: song page (`RadioScreen` → `ChannelKnob`, `RadioViewModel`) and podcast page (`PodcastScreen`, `PodcastViewModel`). `RadioViewModel` talks to the service only via `MediaController`. `KnobMath` is the dial geometry. | |
 | `ui.theme` | E-ink theme. | |
 
-Tuning flow: knob release → `RadioViewModel.tune` → `controller.setMediaItem(ChannelRequest.mediaItem(id))` → `RadioSessionCallback.onSetMediaItems` → `StreamPlanner.plan` → queue. Each queued item carries the channel ID in `MediaMetadata.extras` (`ChannelRequest.EXTRA_CHANNEL_ID`) so the UI follows service-side channel changes.
+Tuning flow: knob release → `RadioViewModel.tune` → `controller.setMediaItem(ChannelRequest.mediaItem(id))` → `RadioSessionCallback.onSetMediaItems` → `StreamPlanner.plan` (song channel) or `PodcastLibrary.queue` (podcast-only channel) → queue. Each queued item carries the channel ID in `MediaMetadata.extras` (`ChannelRequest.EXTRA_CHANNEL_ID`) so the UI follows service-side channel changes.
 
 ## Conventions
 
-- **The product rule is the spec.** No skip, seek, track list, or second control. If a feature seems to need one, raise it instead of adding it.
+- **The product rule is the spec.** You still have control, but you shouldn't need it, and the app doesn't encourage using it in an unhealthy way; defaults should be right the first time.
+  - **Song side (strict):** one knob. No skip, seek, track list, or second control. If a feature seems to need one, raise it instead of adding it.
+  - **Podcast page:** more control, because podcasts are curated, long-form and limited: add/remove feeds, assign shows to channels, mark episodes played/unplayed, see what's up next. Still no play, skip or seek; listening happens by tuning the dial.
 - **Look:** only the colours in `ui/theme/Color.kt`. No accent hues, no dynamic colour, no album-art colour. Dark mode stays below full white. Keep `res/values/colors.xml` in step for pre-Compose surfaces.
-- Keep channel and queue logic in pure Kotlin (no Android types; `Track.uri` is a `String`) and cover it with JVM tests in `app/src/test`. Android-dependent code stays thin.
+- Keep channel and queue logic in pure Kotlin (no Android types; `Track.uri` is a `String`) and cover it with JVM tests in `app/src/test`. Android-dependent code stays thin. The same goes for `podcasts` (only `JsonPodcastStore` touches Android).
 - Media3 unstable APIs: annotate the narrowest scope with `@OptIn(UnstableApi::class)` (or `@UnstableApi` on classes that expose them).
 - One logical change per commit. Reference the issue (`#n`) a change works toward.
