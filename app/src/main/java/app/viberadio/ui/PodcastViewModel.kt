@@ -11,6 +11,7 @@ import app.viberadio.podcasts.PodcastChannels
 import app.viberadio.podcasts.PodcastLibrary
 import app.viberadio.podcasts.PodcastRepository
 import app.viberadio.podcasts.PodcastRepository.SubscribeResult
+import app.viberadio.podcasts.PodcastSpeeds
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -31,6 +32,8 @@ data class ShowUi(
     /** On the Podcasts channel (#18). */
     val onAir: Boolean,
     val unplayed: Int,
+    /** Playback speed for all of this show's episodes, one of [PodcastSpeeds.STEPS]. */
+    val speed: Float,
     /** Newest first. */
     val episodes: List<EpisodeUi>,
 )
@@ -53,8 +56,9 @@ data class AddFeed(
 )
 
 /**
- * The podcast page (#20): add feeds, put shows on the Podcasts channel, and mark episodes
- * played (singly, or a whole back catalogue) before they are ever downloaded.
+ * The podcast page (#20): add feeds, put shows on the Podcasts channel, set each show's
+ * playback speed, and mark episodes played (singly, or a whole back catalogue) before they
+ * are ever downloaded.
  */
 class PodcastViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -73,6 +77,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                         title = show.title,
                         onAir = PodcastChannels.PODCASTS_ID in show.channels,
                         unplayed = episodes.count { !it.played },
+                        speed = show.speed,
                         episodes = episodes,
                     )
                 },
@@ -102,6 +107,8 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun setOnAir(feedUrl: String, onAir: Boolean) = podcasts.setChannel(feedUrl, PodcastChannels.PODCASTS_ID, onAir)
+
+    fun setSpeed(feedUrl: String, speed: Float) = podcasts.setSpeed(feedUrl, speed)
 
     fun togglePlayed(episode: EpisodeUi) = podcasts.setPlayed(episode.id, !episode.played)
 

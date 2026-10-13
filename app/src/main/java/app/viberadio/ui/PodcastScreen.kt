@@ -38,13 +38,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.annotation.StringRes
 import androidx.compose.ui.unit.dp
 import app.viberadio.R
+import app.viberadio.podcasts.PodcastSpeeds
 import app.viberadio.ui.theme.VibeRadioTheme
 import java.time.Instant
 import java.time.ZoneId
@@ -65,6 +69,7 @@ fun PodcastScreen(
     onSetOnAir: (feedUrl: String, onAir: Boolean) -> Unit,
     onTogglePlayed: (EpisodeUi) -> Unit,
     onMarkOlderPlayed: (EpisodeUi) -> Unit,
+    onSetSpeed: (feedUrl: String, speed: Float) -> Unit,
     onRemove: (feedUrl: String) -> Unit,
 ) {
     var expanded by rememberSaveable(stateSaver = ExpandedSaver) { mutableStateOf(setOf<String>()) }
@@ -106,6 +111,9 @@ fun PodcastScreen(
                         )
                     }
                     if (open) {
+                        item(key = "speed:" + show.feedUrl) {
+                            SpeedRow(show.speed) { onSetSpeed(show.feedUrl, it) }
+                        }
                         item(key = "hint:" + show.feedUrl) { Faint(stringResource(R.string.podcasts_mark_hint)) }
                         items(show.episodes, key = { "ep:" + it.id }) { episode ->
                             EpisodeRow(episode, onTogglePlayed, onMarkOlderPlayed)
@@ -235,7 +243,10 @@ private fun ShowRow(show: ShowUi, open: Boolean, onToggleOpen: () -> Unit, onSet
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                stringResource(R.string.podcasts_unplayed, show.unplayed),
+                listOfNotNull(
+                    stringResource(R.string.podcasts_unplayed, show.unplayed),
+                    formatSpeed(show.speed).takeIf { show.speed != PodcastSpeeds.DEFAULT },
+                ).joinToString(" · "),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.outline,
             )
@@ -249,6 +260,41 @@ private fun ShowRow(show: ShowUi, open: Boolean, onToggleOpen: () -> Unit, onSet
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+/**
+ * Per-show speed (applies to every episode, on every channel). A stepper over a short fixed
+ * ladder, not a slider: set it once and forget it.
+ */
+@Composable
+private fun SpeedRow(speed: Float, onSetSpeed: (Float) -> Unit) {
+    val slower = stringResource(R.string.podcasts_speed_slower)
+    val faster = stringResource(R.string.podcasts_speed_faster)
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Text(
+            stringResource(R.string.podcasts_speed),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(
+            onClick = { onSetSpeed(PodcastSpeeds.slower(speed)) },
+            enabled = speed > PodcastSpeeds.STEPS.first(),
+            modifier = Modifier.semantics { contentDescription = slower },
+        ) { Text("\u2212") }
+        Text(
+            formatSpeed(speed),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.width(64.dp),
+        )
+        TextButton(
+            onClick = { onSetSpeed(PodcastSpeeds.faster(speed)) },
+            enabled = speed < PodcastSpeeds.STEPS.last(),
+            modifier = Modifier.semantics { contentDescription = faster },
+        ) { Text("+") }
     }
 }
 
@@ -303,6 +349,10 @@ private fun Faint(text: String) {
 /** Which shows are expanded; a Set isn't saveable on its own. */
 private val ExpandedSaver = listSaver<Set<String>, String>(save = { it.toList() }, restore = { it.toSet() })
 
+/** "1×", "1.25×", "0.8×": no trailing zeros. */
+private fun formatSpeed(speed: Float): String =
+    java.math.BigDecimal(speed.toString()).stripTrailingZeros().toPlainString() + "\u00d7"
+
 private val dateFormat: DateTimeFormatter = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
 
 private fun formatDate(epochMs: Long): String? =
@@ -318,19 +368,19 @@ private val previewState = PodcastUiState(
     loaded = true,
     upNext = previewEpisodes.take(2),
     shows = listOf(
-        ShowUi("a", "Slow Radio", onAir = true, unplayed = 2, episodes = previewEpisodes),
-        ShowUi("b", "Field Notes", onAir = false, unplayed = 14, episodes = emptyList()),
+        ShowUi("a", "Slow Radio", onAir = true, unplayed = 2, speed = 1.0f, episodes = previewEpisodes),
+        ShowUi("b", "Field Notes", onAir = false, unplayed = 14, speed = 1.5f, episodes = emptyList()),
     ),
 )
 
 @Preview(name = "Light", showBackground = true)
 @Composable
 private fun PodcastScreenLightPreview() {
-    VibeRadioTheme(darkTheme = false) { PodcastScreen(previewState, {}, {}, { _, _ -> }, {}, {}, {}) }
+    VibeRadioTheme(darkTheme = false) { PodcastScreen(previewState, {}, {}, { _, _ -> }, {}, {}, { _, _ -> }, {}) }
 }
 
 @Preview(name = "Dark", showBackground = true)
 @Composable
 private fun PodcastScreenDarkPreview() {
-    VibeRadioTheme(darkTheme = true) { PodcastScreen(previewState, {}, {}, { _, _ -> }, {}, {}, {}) }
+    VibeRadioTheme(darkTheme = true) { PodcastScreen(previewState, {}, {}, { _, _ -> }, {}, {}, { _, _ -> }, {}) }
 }

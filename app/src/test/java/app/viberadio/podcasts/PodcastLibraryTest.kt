@@ -100,4 +100,37 @@ class PodcastLibraryTest {
     private companion object {
         const val DAY = 86_400_000L
     }
+
+    @Test
+    fun `shows start at normal speed`() {
+        assertEquals(PodcastSpeeds.DEFAULT, library.podcast(showA)!!.speed)
+        assertEquals(PodcastSpeeds.DEFAULT, library.speedOf(id(showA, 1)))
+    }
+
+    @Test
+    fun `speed is per show and applies to every episode of it`() {
+        val lib = library.withSpeed(showA, 1.5f)
+        assertEquals(1.5f, lib.speedOf(id(showA, 1)))
+        assertEquals(1.5f, lib.speedOf(id(showA, 3)))
+        assertEquals(PodcastSpeeds.DEFAULT, lib.speedOf(id(showB, 4)))
+    }
+
+    @Test
+    fun `speed survives a feed refresh and resets with the show`() {
+        val lib = library.withSpeed(showA, 1.5f).withFeed(showA, feed("A", 4, 3, 2, 1), nowMs = 200)
+        assertEquals(1.5f, lib.podcast(showA)!!.speed)
+        val readded = lib.withoutPodcast(showA).withFeed(showA, feed("A", 1), nowMs = 300)
+        assertEquals(PodcastSpeeds.DEFAULT, readded.podcast(showA)!!.speed)
+    }
+
+    @Test
+    fun `speed changes leave the queue alone`() {
+        val lib = library.withSpeed(showB, 2.0f)
+        assertEquals(library.queue(PodcastChannels.PODCASTS_ID), lib.queue(PodcastChannels.PODCASTS_ID))
+    }
+
+    @Test
+    fun `unknown episodes play at normal speed`() {
+        assertEquals(PodcastSpeeds.DEFAULT, library.withSpeed(showA, 2.0f).speedOf("nope"))
+    }
 }

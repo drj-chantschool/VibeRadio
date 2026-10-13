@@ -26,6 +26,9 @@
     <string name="podcasts_on_air">On air</string>
     <string name="podcasts_show_episodes">Show episodes</string>
     <string name="podcasts_hide_episodes">Hide episodes</string>
+    <string name="podcasts_speed">Speed</string>
+    <string name="podcasts_speed_slower">Slower</string>
+    <string name="podcasts_speed_faster">Faster</string>
     <string name="podcasts_mark_hint">Tap an episode to mark it played. Long-press to mark it and everything older. Played episodes are never downloaded.</string>
     <string name="podcasts_remove_show">Remove show</string>
     <string name="podcasts_remove_title">Remove %1$s?</string>

@@ -98,6 +98,14 @@ data class PodcastLibrary(
         },
     )
 
+    fun withSpeed(feedUrl: String, speed: Float): PodcastLibrary = copy(
+        podcasts = podcasts.map { if (it.feedUrl != feedUrl) it else it.copy(speed = PodcastSpeeds.snap(speed)) },
+    )
+
+    /** How fast [episodeId] plays: its show's speed, or 1x if the show is gone. */
+    fun speedOf(episodeId: String): Float =
+        episode(episodeId)?.let { podcast(it.feedUrl) }?.speed ?: PodcastSpeeds.DEFAULT
+
     /** Playing to the end and marking by hand are the same thing; either clears the resume point. */
     fun withPlayed(id: String, isPlayed: Boolean): PodcastLibrary {
         if (episode(id) == null) return this

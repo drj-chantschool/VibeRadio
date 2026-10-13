@@ -50,6 +50,7 @@ class JsonPodcastStore(file: File) : PodcastStore {
                     put("title", p.title)
                     put("channels", JSONArray(p.channels.toList()))
                     put("lastRefreshedMs", p.lastRefreshedMs)
+                    put("speed", p.speed.toDouble())
                 })
             }
         })
@@ -76,6 +77,8 @@ class JsonPodcastStore(file: File) : PodcastStore {
                 title = p.getString("title"),
                 channels = p.getJSONArray("channels").strings().toSet(),
                 lastRefreshedMs = p.optLong("lastRefreshedMs"),
+                // Absent in files written before per-show speed.
+                speed = PodcastSpeeds.snap(p.optDouble("speed", PodcastSpeeds.DEFAULT.toDouble()).toFloat()),
             )
         }
         val episodes = json.getJSONArray("episodes").objects().map { e ->
