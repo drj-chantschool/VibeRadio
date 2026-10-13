@@ -76,6 +76,7 @@ class MainActivity : ComponentActivity() {
             state = state,
             onRequestPermission = { permissionLauncher.launch(AudioPermission.name) },
             onTune = viewModel::tune,
+            onThumb = viewModel::press,
         )
     }
 

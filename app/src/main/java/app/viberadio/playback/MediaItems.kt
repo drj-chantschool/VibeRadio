@@ -17,6 +17,12 @@ object ChannelRequest {
     /** Extras key carrying the channel ID on every queued item, so controllers can follow channel changes (#4). */
     const val EXTRA_CHANNEL_ID = "app.viberadio.CHANNEL_ID"
 
+    /**
+     * Extras key carrying a song's content URI on queued song items (never on episodes), so the
+     * song page can log thumbs feedback against the file (#13).
+     */
+    const val EXTRA_TRACK_URI = "app.viberadio.TRACK_URI"
+
     fun mediaItem(channelId: String): MediaItem =
         MediaItem.Builder().setMediaId(PREFIX + channelId).build()
 
@@ -59,7 +65,12 @@ internal fun Track.toMediaItem(channel: Channel): MediaItem =
                 .setArtist(artist)
                 .setAlbumTitle(album)
                 .setStation(channel.name)
-                .setExtras(Bundle().apply { putString(ChannelRequest.EXTRA_CHANNEL_ID, channel.id) })
+                .setExtras(
+                    Bundle().apply {
+                        putString(ChannelRequest.EXTRA_CHANNEL_ID, channel.id)
+                        putString(ChannelRequest.EXTRA_TRACK_URI, uri)
+                    },
+                )
                 .build(),
         )
         .build()

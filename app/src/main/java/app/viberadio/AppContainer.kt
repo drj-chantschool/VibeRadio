@@ -3,13 +3,17 @@ package app.viberadio
 import android.content.Context
 import app.viberadio.channels.ChannelGenerator
 import app.viberadio.channels.ChannelRepository
+import app.viberadio.feedback.FeedbackRecorder
+import app.viberadio.feedback.TsvFeedbackLog
 import app.viberadio.library.MediaStoreLibraryScanner
 import app.viberadio.playback.ShuffledStreamPlanner
 import app.viberadio.podcasts.EpisodeDownloader
 import app.viberadio.podcasts.HttpFeedFetcher
 import app.viberadio.podcasts.JsonPodcastStore
 import app.viberadio.podcasts.PodcastRepository
+import android.net.Uri
 import java.io.File
+import java.io.FileNotFoundException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import app.viberadio.playback.StreamPlanner
@@ -44,6 +48,16 @@ class AppContainer(context: Context) {
         // App-specific storage: no permission needed, removed with the app.
         downloader = EpisodeDownloader(File(context.getExternalFilesDir(null) ?: context.filesDir, "episodes")),
         scope = appScope,
+        ioDispatcher = Dispatchers.IO,
+    )
+
+    /**
+     * Thumbs feedback on songs (#13): an append-only log keyed on each file's content hash, so
+     * it survives moves, renames and rescans. In internal storage, so it's included in backups.
+     */
+    val feedback = FeedbackRecorder(
+        log = TsvFeedbackLog(File(context.filesDir, "feedback.log")),
+        open = { uri -> context.contentResolver.openInputStream(Uri.parse(uri)) ?: throw FileNotFoundException(uri) },
         ioDispatcher = Dispatchers.IO,
     )
 
