@@ -12,7 +12,7 @@ Requires JDK 17+ (CI uses 21) and an Android SDK (`ANDROID_HOME` or `local.prope
 ./gradlew installDebug           # install on a connected device
 ```
 
-CI (`.github/workflows/android.yml`) runs `assembleDebug testDebugUnitTest` on every push and PR.
+CI (`.github/workflows/ci.yml`, job `check`, required by the "Protect main" ruleset) runs actionlint, then `assembleDebug assembleRelease lint testDebugUnitTest` on every PR and push to `main`.
 
 The app version comes from the release tag, never from source: `-Pviberadio.versionName=1.2.3` (or `1.2.3-alpha|beta|rc.N`) sets `versionName`, and `versionCodeOf` in `app/build.gradle.kts` derives a `versionCode` that sorts the same way. Without the property the build is `0.0.0-dev`, versionCode 1.
 
