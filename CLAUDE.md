@@ -56,7 +56,7 @@ Tuning flow: knob release → `RadioViewModel.tune` → `controller.setMediaItem
 ## Conventions
 
 - **The product rule is the spec.** You still have control, but you shouldn't need it, and the app doesn't encourage using it in an unhealthy way; defaults should be right the first time.
-  - **Song side (strict):** one knob. No skip, seek, track list, or second control. If a feature seems to need one, raise it instead of adding it. The thumbs (#13) are feedback, not control: they never skip or change the queue.
+  - **Song side (strict):** one knob. No skip, seek, track list, or second control. If a feature seems to need one, raise it instead of adding it. The thumbs (#13) are feedback, not control: they never skip or change the queue. The play glyph in the dial's centre only starts or resumes playback and disappears while playing; there is no pause button.
   - **Podcast page:** more control, because podcasts are curated, long-form and limited: add/remove feeds, assign shows to channels, mark episodes played/unplayed, see what's up next. Still no play, skip or seek; listening happens by tuning the dial.
 - **Look:** only the colours in `ui/theme/Color.kt`. No accent hues, no dynamic colour, no album-art colour. Dark mode stays below full white. Keep `res/values/colors.xml` in step for pre-Compose surfaces.
 - Keep channel and queue logic in pure Kotlin (no Android types; `Track.uri` is a `String`) and cover it with JVM tests in `app/src/test`. Android-dependent code stays thin. The same goes for `podcasts` (only `JsonPodcastStore` touches Android) and `feedback` (only `FeedbackDatabase`).

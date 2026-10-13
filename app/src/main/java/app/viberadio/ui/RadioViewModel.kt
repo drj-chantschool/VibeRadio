@@ -41,6 +41,8 @@ sealed interface RadioUiState {
         val nowPlaying: NowPlaying?,
         /** Thumbs for the playing song (#13), or null when no song is playing (e.g. a podcast episode). */
         val feedback: SongFeedback?,
+        /** True while the player means to play (including brief buffering at track boundaries). */
+        val playing: Boolean,
     ) : RadioUiState
 }
 
@@ -68,6 +70,7 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
         /** Content URI of the playing song; null for podcast episodes or before anything plays. */
         val trackUri: String? = null,
         val lastPress: Thumb? = null,
+        val playing: Boolean = false,
     )
 
     private val permission = MutableStateFlow(Permission(AudioPermission.isGranted(application), denied = false))
@@ -88,6 +91,7 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
                             tunedIndex = stations.indexOfFirst { it.id == play.channelId }.takeIf { it >= 0 },
                             nowPlaying = play.nowPlaying,
                             feedback = play.trackUri?.let { SongFeedback(play.lastPress) },
+                            playing = play.playing,
                         )
                     }
                 }
@@ -115,6 +119,7 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
          */
         override fun onEvents(player: Player, events: Player.Events) {
             follow(player.currentMediaItem)
+            playback.update { it.copy(playing = player.isActive()) }
             if (events.contains(Player.EVENT_MEDIA_METADATA_CHANGED)) {
                 playback.update { it.copy(nowPlaying = player.mediaMetadata.toNowPlaying()) }
             }
@@ -138,7 +143,7 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
                 controller?.let { c ->
                     c.addListener(listener)
                     follow(c.currentMediaItem)
-                    playback.update { it.copy(nowPlaying = c.mediaMetadata.toNowPlaying()) }
+                    playback.update { it.copy(nowPlaying = c.mediaMetadata.toNowPlaying(), playing = c.isActive()) }
                 }
             },
             ContextCompat.getMainExecutor(application),
@@ -167,6 +172,25 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
             prepare()
             play()
         }
+    }
+
+    /**
+     * The centre play button. Resumes the tuned channel where it paused (e.g. after headphones
+     * were unplugged or the notification paused it). If the queue is gone or nothing is tuned,
+     * tunes the tuned channel or, failing that, the first one (#15 will choose a better default).
+     */
+    fun play() {
+        val c = controller ?: return
+        val resumable = playback.value.channelId != null &&
+            c.mediaItemCount > 0 &&
+            c.playbackState != Player.STATE_ENDED
+        if (resumable) {
+            if (c.playbackState == Player.STATE_IDLE) c.prepare()
+            c.play()
+            return
+        }
+        val state = uiState.value as? RadioUiState.Ready ?: return
+        tune(state.tunedIndex ?: 0)
     }
 
     /**
@@ -201,6 +225,10 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
         MediaController.releaseFuture(controllerFuture)
     }
 }
+
+/** Playing or about to play; stays true through buffering so the play button doesn't flash between tracks. */
+private fun Player.isActive(): Boolean =
+    playWhenReady && (playbackState == Player.STATE_READY || playbackState == Player.STATE_BUFFERING)
 
 private fun MediaMetadata.toNowPlaying(): NowPlaying? {
     val title = title?.toString()?.takeIf { it.isNotBlank() } ?: return null

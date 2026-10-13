@@ -1,6 +1,7 @@
 package app.viberadio.ui
 
 import kotlin.math.atan2
+import kotlin.math.hypot
 import kotlin.math.roundToInt
 
 /**
@@ -34,4 +35,11 @@ object KnobMath {
         val degrees = Math.toDegrees(atan2((x - cx).toDouble(), (cy - y).toDouble())).toFloat()
         return degrees.coerceIn(START, END)
     }
+
+    /** Fraction of the dial body's radius covered by the centre play button's touch target. */
+    const val PLAY_HIT_FRACTION = 0.3f
+
+    /** Whether point ([x], [y]) lies within [radius] of centre ([cx], [cy]). */
+    fun isWithin(x: Float, y: Float, cx: Float, cy: Float, radius: Float): Boolean =
+        hypot(x - cx, y - cy) <= radius
 }

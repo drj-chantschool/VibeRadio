@@ -1,6 +1,8 @@
 package app.viberadio.ui
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class KnobMathTest {
@@ -43,5 +45,12 @@ class KnobMathTest {
     fun `pointer angle below the dial is clamped to the sweep`() {
         assertEquals(KnobMath.END, KnobMath.pointerAngle(51f, 100f, 50f, 50f), eps)
         assertEquals(KnobMath.START, KnobMath.pointerAngle(49f, 100f, 50f, 50f), eps)
+    }
+
+    @Test
+    fun `centre hit test is a circle`() {
+        assertTrue(KnobMath.isWithin(100f, 100f, 100f, 100f, 10f))
+        assertTrue(KnobMath.isWithin(106f, 108f, 100f, 100f, 10f))
+        assertFalse(KnobMath.isWithin(108f, 108f, 100f, 100f, 10f))
     }
 }

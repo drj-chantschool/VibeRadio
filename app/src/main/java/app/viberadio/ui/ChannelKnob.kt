@@ -17,6 +17,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
@@ -24,8 +25,10 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
@@ -41,13 +44,19 @@ import kotlinx.coroutines.launch
  * The pointer follows the finger while dragging, ticks on each detent, and only commits the
  * channel on release, so sweeping across the dial doesn't retune five times.
  *
+ * A play glyph sits in the centre while nothing is playing; tapping it calls [onPlay]. It
+ * disappears once playback starts, so there is never a pause control on the song side.
+ *
  * @param selected the tuned channel, or null before the first tune.
+ * @param showPlay whether to show the centre play button (i.e. nothing is playing).
  */
 @Composable
 fun ChannelKnob(
     channelNames: List<String>,
     selected: Int?,
     onSelect: (Int) -> Unit,
+    showPlay: Boolean,
+    onPlay: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val count = channelNames.size
@@ -58,6 +67,8 @@ fun ChannelKnob(
     val haptics = LocalHapticFeedback.current
     val currentOnSelect by rememberUpdatedState(onSelect)
     val currentSelected by rememberUpdatedState(selected)
+    val currentShowPlay by rememberUpdatedState(showPlay)
+    val currentOnPlay by rememberUpdatedState(onPlay)
 
     LaunchedEffect(selected, count) {
         hovered = selected
@@ -77,6 +88,7 @@ fun ChannelKnob(
     val ink = MaterialTheme.colorScheme.onBackground
     val faint = MaterialTheme.colorScheme.outline
     val description = stringResource(R.string.knob_description)
+    val playLabel = stringResource(R.string.play)
     val state = hovered?.let {
         stringResource(R.string.knob_state, channelNames.getOrElse(it) { "" }, it + 1, count)
     }.orEmpty()
@@ -87,6 +99,9 @@ fun ChannelKnob(
             .semantics {
                 contentDescription = description
                 stateDescription = state
+                if (showPlay) {
+                    customActions = listOf(CustomAccessibilityAction(playLabel) { currentOnPlay(); true })
+                }
                 if (count > 1) {
                     progressBarRangeInfo = ProgressBarRangeInfo(
                         current = (selected ?: 0).toFloat(),
@@ -102,7 +117,15 @@ fun ChannelKnob(
             .pointerInput(count) {
                 detectTapGestures { pos ->
                     if (count == 0) return@detectTapGestures
-                    val a = KnobMath.pointerAngle(pos.x, pos.y, size.width / 2f, size.height / 2f)
+                    val cx = size.width / 2f
+                    val cy = size.height / 2f
+                    val playRadius = size.width / 2f * DIAL_FRACTION * KnobMath.PLAY_HIT_FRACTION
+                    if (currentShowPlay && KnobMath.isWithin(pos.x, pos.y, cx, cy, playRadius)) {
+                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        currentOnPlay()
+                        return@detectTapGestures
+                    }
+                    val a = KnobMath.pointerAngle(pos.x, pos.y, cx, cy)
                     commit(KnobMath.nearestDetent(a, count))
                 }
             }
@@ -136,7 +159,7 @@ fun ChannelKnob(
             },
     ) {
         val radius = size.minDimension / 2f
-        val dialRadius = radius * 0.72f
+        val dialRadius = radius * DIAL_FRACTION
         val stroke = 2.dp.toPx()
 
         // Detent ticks around the dial; the tuned one is drawn in ink.
@@ -163,5 +186,22 @@ fun ChannelKnob(
                 cap = StrokeCap.Round,
             )
         }
+
+        // Centre play button, only while nothing plays. Clears the pointer, which starts at 0.35.
+        if (showPlay) {
+            val h = dialRadius * 0.2f
+            // Nudged right so the triangle's centroid, not its bounding box, sits on the centre.
+            val left = center.x - h * 0.58f
+            val path = Path().apply {
+                moveTo(left, center.y - h)
+                lineTo(left + h * 1.75f, center.y)
+                lineTo(left, center.y + h)
+                close()
+            }
+            drawPath(path, color = ink)
+        }
     }
 }
+
+/** Radius of the dial body as a fraction of half the knob's size. */
+private const val DIAL_FRACTION = 0.72f
