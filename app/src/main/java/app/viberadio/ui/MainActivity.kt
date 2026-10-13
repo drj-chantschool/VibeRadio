@@ -95,6 +95,7 @@ class MainActivity : ComponentActivity() {
             onSetOnAir = viewModel::setOnAir,
             onTogglePlayed = viewModel::togglePlayed,
             onMarkOlderPlayed = viewModel::markOlderPlayed,
+            onSetSpeed = viewModel::setSpeed,
             onRemove = viewModel::remove,
         )
     }

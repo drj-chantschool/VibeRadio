@@ -17,6 +17,11 @@ data class Podcast(
     val channels: Set<String>,
     /** Wall-clock time of the last successful feed fetch, 0 if never. */
     val lastRefreshedMs: Long,
+    /**
+     * Playback speed for every episode of this show, on every channel. Pitch is preserved.
+     * Always one of [PodcastSpeeds.STEPS]. Songs never change speed.
+     */
+    val speed: Float = PodcastSpeeds.DEFAULT,
 )
 
 /** One episode from a feed. Played state and resume position live on [PodcastLibrary], not here. */
@@ -38,6 +43,26 @@ object PodcastChannels {
 
     /** Where a newly added show goes, so it plays without any setup. */
     val DEFAULT: Set<String> = setOf(PODCASTS_ID)
+}
+
+/**
+ * The speeds a show can be set to. A short fixed ladder rather than a slider: it's a setting
+ * you choose once per show, not something to fiddle with mid-episode.
+ */
+object PodcastSpeeds {
+    const val DEFAULT = 1.0f
+
+    val STEPS: List<Float> = listOf(0.8f, 0.9f, 1.0f, 1.1f, 1.2f, 1.3f, 1.5f, 1.75f, 2.0f)
+
+    /** The step nearest [speed], so stored or hand-edited values always land on the ladder. */
+    fun snap(speed: Float): Float =
+        if (!speed.isFinite()) DEFAULT else STEPS.minBy { kotlin.math.abs(it - speed) }
+
+    /** The next step up, staying on the top step once there. */
+    fun faster(speed: Float): Float = STEPS.firstOrNull { it > snap(speed) } ?: STEPS.last()
+
+    /** The next step down, staying on the bottom step once there. */
+    fun slower(speed: Float): Float = STEPS.lastOrNull { it < snap(speed) } ?: STEPS.first()
 }
 
 object EpisodeIds {

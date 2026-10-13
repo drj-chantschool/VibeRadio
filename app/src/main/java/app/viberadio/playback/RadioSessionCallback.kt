@@ -14,6 +14,7 @@ import app.viberadio.dial.Dial
 import app.viberadio.library.Track
 import app.viberadio.podcasts.PodcastLibrary
 import app.viberadio.podcasts.PodcastRepository
+import app.viberadio.podcasts.PodcastSpeeds
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CoroutineScope
@@ -29,6 +30,9 @@ import kotlinx.coroutines.launch
  * position of a part-played one is saved, so tuning back (or restarting) resumes it. When a
  * podcast-only channel has nothing left it hands over to a music channel at the episode
  * boundary (#4).
+ *
+ * Episodes play at their show's speed (pitch preserved), songs always at 1x. Speed is set
+ * here on the player directly; controllers still can't change it.
  *
  * Every song that becomes the current item is reported to [onSongStarted], which feeds the
  * play history the shuffle weights by.
@@ -62,7 +66,12 @@ class RadioSessionCallback(
     fun attach(player: Player) {
         this.player = player
         player.addListener(this)
-        scope.launch { podcasts.library.collect(::syncPodcastQueue) }
+        scope.launch {
+            podcasts.library.collect {
+                syncPodcastQueue(it)
+                applySpeed()
+            }
+        }
     }
 
     /** Call before releasing the player. */
@@ -118,6 +127,7 @@ class RadioSessionCallback(
         val previous = currentEpisodeId
         if (previous != null && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) podcasts.setPlayed(previous, true)
         currentEpisodeId = EpisodeMediaId.episodeId(mediaItem)
+        applySpeed()
         songTrack(mediaItem)?.let(onSongStarted)
     }
 
@@ -197,6 +207,14 @@ class RadioSessionCallback(
         if (wanted.map { EpisodeMediaId.of(it.id) } == queued) return
         player.removeMediaItems(index + 1, player.mediaItemCount)
         player.addMediaItems(wanted.map { episodeItem(library, it.id, channelId) })
+    }
+
+    /** The current episode's show speed, or 1x for songs. Also follows changes on the podcast page. */
+    private fun applySpeed() {
+        val player = player ?: return
+        val speed = currentEpisodeId?.let(podcasts.library.value::speedOf) ?: PodcastSpeeds.DEFAULT
+        // setPlaybackSpeed keeps pitch at 1, so voices stay natural.
+        if (player.playbackParameters.speed != speed) player.setPlaybackSpeed(speed)
     }
 
     private fun savePosition() {

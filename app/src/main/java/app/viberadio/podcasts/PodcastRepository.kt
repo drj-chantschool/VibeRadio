@@ -91,6 +91,10 @@ class PodcastRepository(
     fun setChannel(feedUrl: String, channelId: String, assigned: Boolean) =
         mutate { it.withChannel(feedUrl, channelId, assigned) }
 
+    /** Doesn't change what's queued, so downloads are left alone. */
+    fun setSpeed(feedUrl: String, speed: Float) =
+        mutate(syncDownloads = false) { it.withSpeed(feedUrl, speed) }
+
     fun setPlayed(episodeId: String, played: Boolean) = mutate { it.withPlayed(episodeId, played) }
 
     fun markOlderPlayed(episodeId: String) = mutate { it.withOlderPlayed(episodeId) }
