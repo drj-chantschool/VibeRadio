@@ -1,5 +1,6 @@
 package app.viberadio.channels
 
+import app.viberadio.library.ContentKind
 import app.viberadio.library.Track
 
 /**
@@ -9,6 +10,11 @@ import app.viberadio.library.Track
  * [maxChannels] in total. Everything left over goes into one catch-all channel. If no genre
  * qualifies (untagged or very small library), the result is a single "All" channel.
  *
+ * An "All songs" channel is always added last: every [ContentKind.MUSIC] track no longer than
+ * [allSongsMaxDurationMs]. Podcasts and audiobooks never go in it, including podcast episodes
+ * that #6 detects as music (they stay [ContentKind.PODCAST]). It is left out when it would be
+ * empty or identical to a channel already on the dial.
+ *
  * Pure and deterministic: same input, same channels, same order.
  */
 class ChannelGenerator(
@@ -16,16 +22,29 @@ class ChannelGenerator(
     private val minTracksPerChannel: Int = 8,
     private val labels: Labels = Labels(),
     private val typeResolver: ChannelTypeResolver = ChannelTypeResolver.Untyped,
+    private val allSongsMaxDurationMs: Long = ALL_SONGS_MAX_DURATION_MS,
 ) {
-    data class Labels(val all: String = "All", val other: String = "Everything else")
+    data class Labels(
+        val all: String = "All",
+        val other: String = "Everything else",
+        val allSongs: String = "All songs",
+    )
 
     init {
         require(maxChannels >= 1) { "maxChannels must be at least 1" }
         require(minTracksPerChannel >= 1) { "minTracksPerChannel must be at least 1" }
+        require(allSongsMaxDurationMs > 0) { "allSongsMaxDurationMs must be positive" }
     }
 
     fun generate(tracks: List<Track>): List<Channel> {
         if (tracks.isEmpty()) return emptyList()
+        val channels = genreChannels(tracks)
+        val songs = tracks.filter { it.kind == ContentKind.MUSIC && it.durationMs <= allSongsMaxDurationMs }
+        if (songs.isEmpty() || channels.any { it.tracks == songs }) return channels
+        return channels + Channel(id = ALL_SONGS_ID, name = labels.allSongs, type = ChannelType.MUSIC_ONLY, tracks = songs)
+    }
+
+    private fun genreChannels(tracks: List<Track>): List<Channel> {
 
         val byGenre = LinkedHashMap<String, MutableList<Track>>()
         val displayNames = HashMap<String, MutableMap<String, Int>>()
@@ -68,5 +87,9 @@ class ChannelGenerator(
         const val ALL_ID = "all"
         const val OTHER_ID = "other"
         const val GENRE_PREFIX = "genre:"
+        const val ALL_SONGS_ID = "all-songs"
+
+        /** Tracks longer than this (DJ mixes, live sets, full albums in one file) stay off "All songs". */
+        const val ALL_SONGS_MAX_DURATION_MS = 20L * 60 * 1000
     }
 }

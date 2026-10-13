@@ -42,7 +42,7 @@ Single `:app` module, package `app.viberadio`. Manual DI in `AppContainer` (one 
 | Package | Role | Extension points |
 |---|---|---|
 | `library` | `MediaStoreLibraryScanner` → `List<Track>`. Genre from `GENRE` column on API 30+, from the `Genres`/`Members` tables on 26–29. `ContentKind` from MediaStore podcast/audiobook flags. | #6: refine `ContentKind` by analysing audio |
-| `channels` | `ChannelGenerator` (pure) groups tracks by normalised genre into ≤6 channels + catch-all, or a single "All". `ChannelRepository` holds the result as a `StateFlow`. | #3: replace `ChannelTypeResolver.Untyped` and route by `ContentKind` |
+| `channels` | `ChannelGenerator` (pure) groups tracks by normalised genre into ≤6 channels + catch-all, or a single "All", then appends "All songs" (music only, ≤20 min, never podcasts). `ChannelRepository` holds the result as a `StateFlow`. | #3: replace `ChannelTypeResolver.Untyped` and route by `ContentKind` |
 | `playback` | `PlaybackService` (`MediaSessionService`) owns ExoPlayer + `MediaSession`. `RadioSessionCallback` expands a channel request into a queue and strips skip/seek/shuffle/repeat commands from **every** controller (notification, headset, our UI). | `StreamPlanner` for #2 (mixing) and #4 (fallback via `onExhausted`, called at track boundaries) |
 | `playback.audio` | `ProcessingRenderersFactory` installs `AudioProcessorProvider`'s chain into `DefaultAudioSink`. | #1 loudness, #5 voice emphasis/ducking, #6 music suppression: add `AudioProcessor`s here |
 | `ui` | `MainActivity` → `RadioScreen` → `ChannelKnob`. `RadioViewModel` talks to the service only via `MediaController`. `KnobMath` is the dial geometry. | |

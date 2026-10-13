@@ -21,6 +21,7 @@ class AppContainer(context: Context) {
             labels = ChannelGenerator.Labels(
                 all = context.getString(R.string.channel_all),
                 other = context.getString(R.string.channel_other),
+                allSongs = context.getString(R.string.channel_all_songs),
             ),
         ),
         ioDispatcher = Dispatchers.IO,

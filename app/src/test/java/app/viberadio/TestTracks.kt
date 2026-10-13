@@ -5,7 +5,7 @@ import app.viberadio.library.Track
 
 private var nextId = 1L
 
-fun track(genre: String?, kind: ContentKind = ContentKind.MUSIC): Track {
+fun track(genre: String?, kind: ContentKind = ContentKind.MUSIC, durationMs: Long = 180_000): Track {
     val id = nextId++
     return Track(
         id = id,
@@ -14,7 +14,7 @@ fun track(genre: String?, kind: ContentKind = ContentKind.MUSIC): Track {
         artist = null,
         album = null,
         genre = genre,
-        durationMs = 180_000,
+        durationMs = durationMs,
         kind = kind,
     )
 }
