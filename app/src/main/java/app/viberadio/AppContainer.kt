@@ -4,7 +4,7 @@ import android.content.Context
 import app.viberadio.channels.ChannelGenerator
 import app.viberadio.channels.ChannelRepository
 import app.viberadio.feedback.FeedbackRecorder
-import app.viberadio.feedback.TsvFeedbackLog
+import app.viberadio.feedback.SqliteFeedbackLog
 import app.viberadio.library.MediaStoreLibraryScanner
 import app.viberadio.playback.ShuffledStreamPlanner
 import app.viberadio.podcasts.EpisodeDownloader
@@ -52,11 +52,12 @@ class AppContainer(context: Context) {
     )
 
     /**
-     * Thumbs feedback on songs (#13): an append-only log keyed on each file's content hash, so
-     * it survives moves, renames and rescans. In internal storage, so it's included in backups.
+     * Thumbs feedback on songs (#13): an append-only SQLite log keyed on each file's content hash,
+     * so it survives moves, renames and rescans. In internal storage, so it's included in backups.
+     * Imports the tab-separated feedback.log from earlier builds on first open.
      */
     val feedback = FeedbackRecorder(
-        log = TsvFeedbackLog(File(context.filesDir, "feedback.log")),
+        log = SqliteFeedbackLog(context, legacyFile = File(context.filesDir, "feedback.log")),
         open = { uri -> context.contentResolver.openInputStream(Uri.parse(uri)) ?: throw FileNotFoundException(uri) },
         ioDispatcher = Dispatchers.IO,
     )

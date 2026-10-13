@@ -29,50 +29,31 @@ class ContentHashTest {
     }
 }
 
-class TsvFeedbackLogTest {
+class LegacyTsvLogTest {
 
     private val file = File(Files.createTempDirectory("feedback").toFile(), "feedback.log")
-    private val log = TsvFeedbackLog(file)
-
-    private fun event(thumb: Thumb = Thumb.UP, at: Long = 1_000L, channel: String = "genre:jazz") =
-        FeedbackEvent("sha256:aa", thumb, at, -300, channel)
 
     @Test
     fun `missing file reads as empty`() {
-        assertEquals(emptyList<FeedbackEvent>(), log.readAll())
+        assertEquals(emptyList<FeedbackEvent>(), LegacyTsvLog.read(file))
     }
 
     @Test
-    fun `appends in order and never overwrites`() {
-        val events = listOf(event(Thumb.UP, 1), event(Thumb.DOWN, 2), event(Thumb.UP, 3))
-        events.forEach(log::append)
-        assertEquals(events, log.readAll())
-        // A fresh instance on the same file (app restart) sees the same history and adds to it.
-        TsvFeedbackLog(file).append(event(Thumb.DOWN, 4))
-        assertEquals(events + event(Thumb.DOWN, 4), log.readAll())
+    fun `reads lines in order, unescaping the channel id`() {
+        file.writeText("1\t1\t-300\tsha256:aa\tUP\tgenre:jazz\n1\t2\t-300\tsha256:bb\tDOWN\tgenre:a\\tb\\\\c\\nd\n")
+        assertEquals(
+            listOf(
+                FeedbackEvent("sha256:aa", Thumb.UP, 1, -300, "genre:jazz"),
+                FeedbackEvent("sha256:bb", Thumb.DOWN, 2, -300, "genre:a\tb\\c\nd"),
+            ),
+            LegacyTsvLog.read(file),
+        )
     }
 
     @Test
-    fun `channel ids with separators round-trip`() {
-        val odd = event(channel = "genre:a\tb\\c\nd")
-        log.append(odd)
-        assertEquals(listOf(odd), log.readAll())
-        assertEquals(1, file.readLines().size)
-    }
-
-    @Test
-    fun `torn line is skipped and the next append starts fresh`() {
-        log.append(event(at = 1))
-        file.appendText("1\t2\t-300\tsha256:aa\tU") // crash mid-write
-        log.append(event(at = 3))
-        assertEquals(listOf(event(at = 1), event(at = 3)), log.readAll())
-    }
-
-    @Test
-    fun `unknown versions and garbage are skipped`() {
-        file.writeText("2\t1\t0\th\tUP\tc\nnot a line\n\n")
-        log.append(event())
-        assertEquals(listOf(event()), log.readAll())
+    fun `torn, unknown-version and garbage lines are skipped`() {
+        file.writeText("2\t1\t0\th\tUP\tc\nnot a line\n\n1\t3\t0\tsha256:aa\tUP\tother\n1\t2\t-300\tsha256:aa\tU")
+        assertEquals(listOf(FeedbackEvent("sha256:aa", Thumb.UP, 3, 0, "other")), LegacyTsvLog.read(file))
     }
 }
 
