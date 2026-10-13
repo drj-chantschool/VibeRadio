@@ -20,12 +20,12 @@ Release signing reads `VIBERADIO_KEYSTORE_PATH`, `VIBERADIO_KEYSTORE_PASSWORD`, 
 
 ## Releases
 
-Distribution is GitHub Releases, installed and updated on-device with Obtainium. `.github/workflows/release.yml` runs on a `v*` tag push: it validates the tag, runs unit tests, builds a signed release APK with the tag's version, verifies the signature and publishes `viberadio-<version>.apk` (plus a `.sha256`) as a GitHub Release. Tags with `-alpha.N`, `-beta.N` or `-rc.N` publish as pre-releases.
+Distribution is GitHub Releases, installed and updated on-device with Obtainium. `.github/workflows/release.yml` validates the version, runs unit tests, builds a signed release APK with that version, verifies the signature and publishes `viberadio-<version>.apk` (plus a `.sha256`) as a GitHub Release. Versions with `-alpha.N`, `-beta.N` or `-rc.N` publish as pre-releases.
 
-```sh
-git tag v0.2.0-beta.1 && git push origin v0.2.0-beta.1   # pre-release
-git tag v0.2.0 && git push origin v0.2.0                 # release
-```
+Start a release either way:
+
+- **Run workflow** (works from a phone browser): Actions → Release → Run workflow on `main`, version e.g. `0.2.0` or `0.2.0-beta.1`. The workflow creates the `v` tag on the `main` commit it built. This is the route for Claude sessions, which cannot push tags.
+- **Push a tag:** `git tag v0.2.0 && git push origin v0.2.0`.
 
 Repo secrets the workflow needs: `VIBERADIO_KEYSTORE_BASE64` (the `.jks`, base64-encoded), `VIBERADIO_KEYSTORE_PASSWORD`, `VIBERADIO_KEY_ALIAS`, `VIBERADIO_KEY_PASSWORD`. The keystore is permanent: every update must be signed with it, so it lives offline as well as in secrets and never in the repo.
 
