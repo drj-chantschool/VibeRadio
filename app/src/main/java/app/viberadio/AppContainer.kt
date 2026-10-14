@@ -32,6 +32,9 @@ import kotlinx.coroutines.SupervisorJob
 import app.viberadio.playback.StreamPlanner
 import app.viberadio.playback.WeightedRandomStreamPlanner
 import app.viberadio.playback.audio.AudioProcessorProvider
+import app.viberadio.playback.audio.AudioSettingsRepository
+import app.viberadio.playback.audio.MixState
+import app.viberadio.playback.audio.PrefsAudioSettingsStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
@@ -144,6 +147,16 @@ class AppContainer(context: Context) {
         preference = learner::preferenceWeight,
     )
 
-    /** #1, #5 and #6 add processors here. */
-    val audioProcessors: AudioProcessorProvider = AudioProcessorProvider.None
+    /** Settings → Audio: the EQ figures for mixing a podcast over music, and the ramp time. */
+    val audioSettings = AudioSettingsRepository(
+        store = PrefsAudioSettingsStore(context),
+        scope = appScope,
+        ioDispatcher = Dispatchers.IO,
+    )
+
+    /** Whether a podcast is playing over the music; the music's EQ follows it. */
+    val mix = MixState()
+
+    /** Each stream's chain: its EQ (#2). #1, #5 and #6 add processors here. */
+    val audioProcessors: AudioProcessorProvider = AudioProcessorProvider.eq(mix) { audioSettings.settings.value }
 }

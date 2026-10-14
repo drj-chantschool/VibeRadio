@@ -6,24 +6,27 @@ import androidx.media3.common.util.UnstableApi
 
 /**
  * Supplies the custom [AudioProcessor] chain that runs on decoded PCM before it reaches the
- * AudioTrack. [ProcessingRenderersFactory] installs it into ExoPlayer's audio sink.
+ * AudioTrack, per stream. [ProcessingRenderersFactory] installs it into each player's audio
+ * sink. The two streams (music on the session player, podcasts played over it on a second
+ * player) each go through their own chain and are then mixed by the system.
  *
- * This is the hook for the DSP work in the issues. Put each processor in this package and add
- * it to the list, in this order:
- * 1. Loudness normalisation (#1): per-track gain from ReplayGain/R128 tags or analysis,
- *    with a limiter so applied gain never clips.
- * 2. Voice emphasis (#5): EQ and compression on podcast speech.
- * 3. Ducking (#5) and background-music suppression (#6) need the speech/music signal from the
- *    other stream on mixed channels; they belong after the mixer that #2 introduces.
+ * Today each chain is the stream's EQ ([StreamEqProcessor], #2). Still to come, in this order
+ * before the EQ: loudness normalisation (#1), then voice emphasis (#5). Background-music
+ * suppression in podcasts (#6) belongs on the podcast stream.
  *
  * Processors are created per player because they hold per-stream state.
  */
 @OptIn(UnstableApi::class)
 fun interface AudioProcessorProvider {
-    fun create(): List<AudioProcessor>
+    fun create(stream: AudioStream): List<AudioProcessor>
 
     companion object {
-        /** Scaffold default: no processing, ExoPlayer's stock chain only. */
+        /** No processing, ExoPlayer's stock chain only. */
         val None = AudioProcessorProvider { emptyList() }
+
+        /** Each stream through its own EQ, following [mix] and the current [settings]. */
+        fun eq(mix: MixState, settings: () -> AudioSettings) = AudioProcessorProvider { stream ->
+            listOf(StreamEqProcessor(stream, mix, settings))
+        }
     }
 }

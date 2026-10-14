@@ -9,6 +9,8 @@ import app.viberadio.bluetooth.BluetoothSettings
 import app.viberadio.dial.ChannelLineup
 import app.viberadio.dial.ChannelNames
 import app.viberadio.dial.ChannelNamesRepository
+import app.viberadio.playback.audio.AudioSettings
+import app.viberadio.playback.audio.AudioSettingsRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -40,6 +42,16 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val resumeOnConnect: StateFlow<Boolean> = bluetooth.resumeOnConnect
 
     fun setResumeOnConnect(on: Boolean) = bluetooth.setResumeOnConnect(on)
+
+    private val audio: AudioSettingsRepository = (application as VibeRadioApp).container.audioSettings
+
+    /** Settings → Audio: the EQ figures and ramp time. */
+    val audioSettings: StateFlow<AudioSettings> = audio.settings
+
+    /** Applies [change] if the result is valid; false if it isn't (nothing changes). */
+    fun updateAudio(change: (AudioSettings) -> AudioSettings): Boolean = audio.update(change)
+
+    fun restoreAudioDefaults() = audio.restoreDefaults()
 
     private fun ui(names: ChannelNames): List<ChannelNameUi> = ChannelLineup.ids.map { id ->
         ChannelNameUi(

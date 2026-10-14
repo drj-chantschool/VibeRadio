@@ -39,7 +39,10 @@
     <string name="podcasts_nothing_queued">Nothing left to play. New episodes join the queue when the feeds update.</string>
     <string name="podcasts_empty">Add a show by pasting its RSS feed link. It goes on %1$s, and you listen by tuning the dial to it.</string>
     <string name="podcasts_unplayed">%1$d unplayed</string>
-    <string name="podcasts_on_air">On air</string>
+    <string name="podcasts_channels">Plays on</string>
+    <string name="podcasts_off_air">Not on any channel</string>
+    <string name="podcasts_pause_music">Pause music</string>
+    <string name="podcasts_pause_music_about">The music stops while this show plays and picks up again after. For shows that are music themselves.</string>
     <string name="podcasts_show_episodes">Show episodes</string>
     <string name="podcasts_hide_episodes">Hide episodes</string>
     <string name="podcasts_speed">Speed</string>
@@ -82,6 +85,21 @@
     <string name="settings_bluetooth_resume_about">When Bluetooth headphones, a speaker or a car connects, play picks up on the channel you last had on.</string>
     <string name="settings_bluetooth_permission">Needs the Nearby devices permission to notice connections. Tap to allow.</string>
     <string name="settings_bluetooth_permission_denied">Nearby devices permission was denied. Tap to allow it in system settings.</string>
+    <string name="settings_audio">Audio</string>
+    <string name="settings_audio_summary">How a podcast sits over the music</string>
+    <string name="settings_audio_hint">While a podcast plays over music, the podcast goes through a band pass and the music through a wider, partial notch, so the voice sits in a gap. With only one playing, both are flat. Changes ramp in over the ramp time.</string>
+    <string name="settings_audio_podcast_low">Podcast band, low edge</string>
+    <string name="settings_audio_podcast_high">Podcast band, high edge</string>
+    <string name="settings_audio_music_low">Music notch, low edge</string>
+    <string name="settings_audio_music_high">Music notch, high edge</string>
+    <string name="settings_audio_music_depth">Music notch depth</string>
+    <string name="settings_audio_ramp">EQ ramp time</string>
+    <string name="settings_audio_restore">Restore defaults</string>
+    <string name="settings_audio_default">Default: %1$s %2$s</string>
+    <string name="settings_audio_invalid">Out of range, or the low edge isn’t below the high edge. Hz 20–20000, depth 0–30 dB, ramp 0–10 s.</string>
+    <string name="unit_hz">Hz</string>
+    <string name="unit_db">dB</string>
+    <string name="unit_seconds">s</string>
 
     <string name="pages_description">Page %1$d of %2$d</string>
 </resources>

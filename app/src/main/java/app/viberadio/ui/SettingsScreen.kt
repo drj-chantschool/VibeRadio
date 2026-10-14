@@ -49,8 +49,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import app.viberadio.R
+import androidx.annotation.StringRes
+import androidx.compose.ui.text.input.KeyboardType
+import app.viberadio.playback.audio.AudioSettings
 import app.viberadio.ui.theme.VibeRadioTheme
+import java.math.BigDecimal
+import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.roundToLong
 import kotlin.math.sin
 
 /**
@@ -71,7 +77,7 @@ fun SettingsButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
 }
 
 /** The pages inside settings. Enum, so it survives rotation and process death as-is. */
-private enum class SettingsPage { Root, Channels, Bluetooth }
+private enum class SettingsPage { Root, Channels, Bluetooth, Audio }
 
 /** Settings → Bluetooth as the page shows it. */
 data class BluetoothSettingsUi(
@@ -93,6 +99,10 @@ fun SettingsScreen(
     bluetooth: BluetoothSettingsUi,
     onResumeOnConnect: (Boolean) -> Unit,
     onAllowBluetooth: () -> Unit,
+    audio: AudioSettings,
+    /** Applies the change if valid; false (nothing changed) if not. */
+    onAudioChange: ((AudioSettings) -> AudioSettings) -> Boolean,
+    onRestoreAudio: () -> Unit,
     onClose: () -> Unit,
 ) {
     var page by rememberSaveable { mutableStateOf(SettingsPage.Root) }
@@ -116,6 +126,12 @@ fun SettingsScreen(
                         onClick = { page = SettingsPage.Bluetooth },
                     )
                     Rule()
+                    SettingsLink(
+                        title = stringResource(R.string.settings_audio),
+                        summary = stringResource(R.string.settings_audio_summary),
+                        onClick = { page = SettingsPage.Audio },
+                    )
+                    Rule()
                 }
                 SettingsPage.Channels -> {
                     SettingsHeader(stringResource(R.string.settings_channels), onBack = { page = SettingsPage.Root })
@@ -124,6 +140,10 @@ fun SettingsScreen(
                 SettingsPage.Bluetooth -> {
                     SettingsHeader(stringResource(R.string.settings_bluetooth), onBack = { page = SettingsPage.Root })
                     BluetoothSettingsList(bluetooth, onResumeOnConnect, onAllowBluetooth)
+                }
+                SettingsPage.Audio -> {
+                    SettingsHeader(stringResource(R.string.settings_audio), onBack = { page = SettingsPage.Root })
+                    AudioSettingsList(audio, onAudioChange, onRestoreAudio)
                 }
             }
         }
@@ -233,6 +253,155 @@ private fun BluetoothSettingsList(
             Rule()
         }
     }
+}
+
+/** One adjustable figure on Settings → Audio: how it reads, shows and writes back. */
+internal enum class AudioField(@StringRes val label: Int, @StringRes val unit: Int) {
+    PodcastLow(R.string.settings_audio_podcast_low, R.string.unit_hz),
+    PodcastHigh(R.string.settings_audio_podcast_high, R.string.unit_hz),
+    MusicLow(R.string.settings_audio_music_low, R.string.unit_hz),
+    MusicHigh(R.string.settings_audio_music_high, R.string.unit_hz),
+    MusicDepth(R.string.settings_audio_music_depth, R.string.unit_db),
+    Ramp(R.string.settings_audio_ramp, R.string.unit_seconds),
+    ;
+
+    /** The value in the unit shown. */
+    fun read(s: AudioSettings): Double = when (this) {
+        PodcastLow -> s.podcastLowHz.toDouble()
+        PodcastHigh -> s.podcastHighHz.toDouble()
+        MusicLow -> s.musicLowHz.toDouble()
+        MusicHigh -> s.musicHighHz.toDouble()
+        MusicDepth -> s.musicDepthDb.toDouble()
+        Ramp -> s.rampMs / 1000.0
+    }
+
+    /** [s] with this figure set to [value], in the unit shown. A depth is always a cut, so its sign is ignored. */
+    fun write(s: AudioSettings, value: Double): AudioSettings = when (this) {
+        PodcastLow -> s.copy(podcastLowHz = value.toFloat())
+        PodcastHigh -> s.copy(podcastHighHz = value.toFloat())
+        MusicLow -> s.copy(musicLowHz = value.toFloat())
+        MusicHigh -> s.copy(musicHighHz = value.toFloat())
+        MusicDepth -> s.copy(musicDepthDb = -abs(value).toFloat())
+        Ramp -> s.copy(rampMs = (value * 1000).roundToLong())
+    }
+
+    /** No trailing zeros; a minus sign, not a hyphen. */
+    fun format(s: AudioSettings): String {
+        val v = read(s)
+        val rounded = if (this == Ramp || this == MusicDepth) (v * 100).roundToLong() / 100.0 else v.roundToLong().toDouble()
+        return BigDecimal(rounded.toString()).stripTrailingZeros().toPlainString().replace('-', '\u2212')
+    }
+}
+
+/**
+ * Settings → Audio: the EQ that mixes a podcast over music, figure by figure, each tappable to
+ * change, and a way back to the defaults.
+ */
+@Composable
+private fun AudioSettingsList(
+    audio: AudioSettings,
+    onAudioChange: ((AudioSettings) -> AudioSettings) -> Boolean,
+    onRestore: () -> Unit,
+) {
+    var editing by rememberSaveable { mutableStateOf<AudioField?>(null) }
+
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+        item {
+            Text(
+                stringResource(R.string.settings_audio_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+            )
+            Rule()
+        }
+        items(AudioField.entries.toList(), key = { it.name }) { field ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = { editing = field })
+                    .padding(horizontal = 24.dp, vertical = 14.dp),
+            ) {
+                Text(
+                    stringResource(field.label),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    field.format(audio) + " " + stringResource(field.unit),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (field.read(audio) == field.read(AudioSettings.DEFAULT)) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.onBackground
+                    },
+                )
+            }
+            Rule()
+        }
+        item {
+            TextButton(
+                onClick = onRestore,
+                enabled = audio != AudioSettings.DEFAULT,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            ) { Text(stringResource(R.string.settings_audio_restore)) }
+        }
+    }
+
+    editing?.let { field ->
+        AudioFieldDialog(
+            field = field,
+            current = audio,
+            onSave = { value -> onAudioChange { field.write(it, value) } },
+            onDismiss = { editing = null },
+        )
+    }
+}
+
+/** Edit one figure. Out-of-range values, or a low edge not below its high edge, are refused. */
+@Composable
+private fun AudioFieldDialog(field: AudioField, current: AudioSettings, onSave: (Double) -> Boolean, onDismiss: () -> Unit) {
+    var draft by rememberSaveable(field) { mutableStateOf(field.format(current).replace('\u2212', '-')) }
+    var invalid by rememberSaveable(field) { mutableStateOf(false) }
+    fun save() {
+        val value = draft.trim().replace('\u2212', '-').replace(',', '.').toDoubleOrNull()
+        if (value != null && value.isFinite() && onSave(value)) onDismiss() else invalid = true
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(field.label)) },
+        text = {
+            OutlinedTextField(
+                value = draft,
+                onValueChange = {
+                    draft = it.take(12)
+                    invalid = false
+                },
+                suffix = { Text(stringResource(field.unit)) },
+                isError = invalid,
+                supportingText = {
+                    Text(
+                        if (invalid) {
+                            stringResource(R.string.settings_audio_invalid)
+                        } else {
+                            stringResource(R.string.settings_audio_default, field.format(AudioSettings.DEFAULT), stringResource(field.unit))
+                        },
+                    )
+                },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { save() }),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { save() }) { Text(stringResource(R.string.settings_rename_save)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
 }
 
 /** The named channels, each tappable to rename. */
@@ -385,6 +554,9 @@ private fun SettingsLightPreview() {
             bluetooth = previewBluetooth,
             onResumeOnConnect = {},
             onAllowBluetooth = {},
+            audio = AudioSettings.DEFAULT,
+            onAudioChange = { true },
+            onRestoreAudio = {},
             onClose = {},
         ) }
 }
@@ -398,6 +570,9 @@ private fun SettingsDarkPreview() {
             bluetooth = previewBluetooth,
             onResumeOnConnect = {},
             onAllowBluetooth = {},
+            audio = AudioSettings.DEFAULT,
+            onAudioChange = { true },
+            onRestoreAudio = {},
             onClose = {},
         ) }
 }
@@ -420,6 +595,16 @@ private fun BluetoothSettingsPreview() {
                 onResumeOnConnect = {},
                 onAllowBluetooth = {},
             )
+        }
+    }
+}
+
+@Preview(name = "Audio", showBackground = true, heightDp = 640)
+@Composable
+private fun AudioSettingsPreview() {
+    VibeRadioTheme(darkTheme = false) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            AudioSettingsList(AudioSettings.DEFAULT.copy(musicDepthDb = -12f), onAudioChange = { true }, onRestore = {})
         }
     }
 }

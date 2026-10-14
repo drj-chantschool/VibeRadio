@@ -107,6 +107,7 @@ class MainActivity : ComponentActivity() {
         val viewModel: SettingsViewModel = viewModel()
         val channels by viewModel.channels.collectAsStateWithLifecycle()
         val resumeOnConnect by viewModel.resumeOnConnect.collectAsStateWithLifecycle()
+        val audio by viewModel.audioSettings.collectAsStateWithLifecycle()
 
         // Re-checked on resume, so a grant made in system settings shows up on return.
         var bluetoothGranted by remember { mutableStateOf(BluetoothPermission.isGranted(this)) }
@@ -147,6 +148,9 @@ class MainActivity : ComponentActivity() {
                 if (on && !bluetoothGranted) allowBluetooth()
             },
             onAllowBluetooth = ::allowBluetooth,
+            audio = audio,
+            onAudioChange = viewModel::updateAudio,
+            onRestoreAudio = viewModel::restoreAudioDefaults,
             onClose = onClose,
         )
     }
@@ -163,7 +167,8 @@ class MainActivity : ComponentActivity() {
             state = state,
             onDraftChange = viewModel::onDraftChange,
             onAdd = viewModel::addFeed,
-            onSetOnAir = viewModel::setOnAir,
+            onSetChannel = viewModel::setChannel,
+            onSetPauseMusic = viewModel::setPauseMusic,
             onTogglePlayed = viewModel::togglePlayed,
             onMarkOlderPlayed = viewModel::markOlderPlayed,
             onSetSpeed = viewModel::setSpeed,

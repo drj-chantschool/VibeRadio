@@ -9,7 +9,6 @@ import app.viberadio.VibeRadioApp
 import app.viberadio.dial.ChannelLineup
 import app.viberadio.dial.ChannelNamesRepository
 import app.viberadio.podcasts.FeedParseException
-import app.viberadio.podcasts.PodcastChannels
 import app.viberadio.podcasts.PodcastLibrary
 import app.viberadio.podcasts.PodcastRepository
 import app.viberadio.podcasts.PodcastRepository.SubscribeResult
@@ -33,14 +32,19 @@ data class PodcastUiState(
 data class ShowUi(
     val feedUrl: String,
     val title: String,
-    /** On the podcast-only channel (#18). */
-    val onAir: Boolean,
+    /** Every named channel, checked where the show plays on it (#18). */
+    val channels: List<ChannelChoiceUi>,
+    /** "Pause music": the show's episodes play by themselves, with the music paused (#2). */
+    val pauseMusic: Boolean,
     val unplayed: Int,
     /** Playback speed for all of this show's episodes, one of [PodcastSpeeds.STEPS]. */
     val speed: Float,
     /** Newest first. */
     val episodes: List<EpisodeUi>,
 )
+
+/** One channel a show can be put on. */
+data class ChannelChoiceUi(val id: String, val name: String, val checked: Boolean)
 
 data class EpisodeUi(
     val id: String,
@@ -60,8 +64,8 @@ data class AddFeed(
 )
 
 /**
- * The podcast page (#20): add feeds, put shows on the podcast-only channel, set each show's
- * playback speed, and mark episodes played (singly, or a whole back catalogue) before they
+ * The podcast page (#20): add feeds, choose which channels each show plays on and whether it
+ * pauses the music, set each show's playback speed, and mark episodes played (singly, or a whole back catalogue) before they
  * are ever downloaded.
  */
 class PodcastViewModel(application: Application) : AndroidViewModel(application) {
@@ -80,7 +84,10 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                     ShowUi(
                         feedUrl = show.feedUrl,
                         title = show.title,
-                        onAir = PodcastChannels.PODCASTS_ID in show.channels,
+                        channels = ChannelLineup.ids.map { id ->
+                            ChannelChoiceUi(id, channelNames.of(id).orEmpty(), checked = id in show.channels)
+                        },
+                        pauseMusic = show.pauseMusic,
                         unplayed = episodes.count { !it.played },
                         speed = show.speed,
                         episodes = episodes,
@@ -112,7 +119,9 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun setOnAir(feedUrl: String, onAir: Boolean) = podcasts.setChannel(feedUrl, PodcastChannels.PODCASTS_ID, onAir)
+    fun setChannel(feedUrl: String, channelId: String, on: Boolean) = podcasts.setChannel(feedUrl, channelId, on)
+
+    fun setPauseMusic(feedUrl: String, on: Boolean) = podcasts.setPauseMusic(feedUrl, on)
 
     fun setSpeed(feedUrl: String, speed: Float) = podcasts.setSpeed(feedUrl, speed)
 
