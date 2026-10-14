@@ -71,7 +71,7 @@
     <string name="settings_close">Back</string>
     <string name="settings_channels">Channels</string>
     <string name="settings_channels_summary">The names on the dial</string>
-    <string name="settings_channels_hint">Tap a channel to rename it. A channel joins the dial once something is on it.</string>
+    <string name="settings_channels_hint">Tap a channel to rename it. A channel with nothing on it stays off the dial.</string>
     <string name="settings_rename_title">Rename channel</string>
     <string name="settings_rename_reset_hint">Leave empty for “%1$s”</string>
     <string name="settings_rename_save">Save</string>

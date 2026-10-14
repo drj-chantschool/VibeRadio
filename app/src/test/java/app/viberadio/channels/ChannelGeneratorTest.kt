@@ -137,4 +137,27 @@ class ChannelGeneratorTest {
         val podcasts = List(5) { track("Talk", kind = ContentKind.PODCAST) }
         assertFalse(generator.generate(podcasts).any { it.id == ChannelGenerator.ALL_SONGS_ID })
     }
+
+    private val slots = listOf("breeze", "buzz", "zone")
+    private val slotted = ChannelGenerator(maxChannels = 3, minTracksPerChannel = 3, slotIds = slots)
+
+    @Test
+    fun `slots relabel generated channels in order without changing their songs`() {
+        val library = tracks("Rock", 5) + tracks("Jazz", 4) + tracks("Folk", 3) + tracks("Polka", 1)
+        val plain = ChannelGenerator(maxChannels = 3, minTracksPerChannel = 3).generate(library)
+        val channels = slotted.generate(library)
+        assertEquals(listOf("breeze", "buzz", "zone", ChannelGenerator.ALL_SONGS_ID), channels.map { it.id })
+        assertEquals(plain.map { it.tracks }, channels.map { it.tracks })
+    }
+
+    @Test
+    fun `unused slots are left empty`() {
+        val channels = slotted.generate(tracks("Rock", 5))
+        assertEquals(listOf("breeze"), channels.map { it.id })
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `every channel needs a slot`() {
+        ChannelGenerator(maxChannels = 4, slotIds = slots)
+    }
 }

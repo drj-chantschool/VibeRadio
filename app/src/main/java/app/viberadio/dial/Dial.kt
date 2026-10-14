@@ -18,7 +18,7 @@ object Dial {
     /**
      * Song channels in generator order, then the podcast-only channels that have at least one
      * show assigned. A channel only takes a place on the dial once it has something on it, so
-     * named channels with nothing placed on them yet ([ChannelLineup]) stay off it.
+     * mood slots ([ChannelLineup]) the generator left empty stay off it.
      *
      * Named channels show the user's name for them ([names]); generated ones keep their own.
      */

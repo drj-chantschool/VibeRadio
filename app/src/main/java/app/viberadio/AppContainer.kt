@@ -3,6 +3,7 @@ package app.viberadio
 import android.content.Context
 import app.viberadio.channels.ChannelGenerator
 import app.viberadio.channels.ChannelRepository
+import app.viberadio.dial.ChannelLineup
 import app.viberadio.dial.ChannelNamesRepository
 import app.viberadio.dial.PrefsChannelNameStore
 import app.viberadio.feedback.FeedbackDatabase
@@ -39,6 +40,9 @@ class AppContainer(context: Context) {
     val channelRepository = ChannelRepository(
         scanner = MediaStoreLibraryScanner(context.contentResolver),
         generator = ChannelGenerator(
+            // Generated channels fill the five mood slots (The Breeze … The Hall) in order.
+            maxChannels = ChannelLineup.moods.size,
+            slotIds = ChannelLineup.moods,
             labels = ChannelGenerator.Labels(
                 all = context.getString(R.string.channel_all),
                 other = context.getString(R.string.channel_other),

@@ -10,8 +10,9 @@ import app.viberadio.podcasts.PodcastChannels
  * The Shuffle and The Voice reuse the IDs of the channels they name ("All songs" and the
  * podcast-only channel), so podcast assignments and live-radio state carry over.
  *
- * Nothing places songs on the five mood channels yet, so they stay off the dial until
- * something does; a channel only takes a place on the dial once it has something on it.
+ * The five mood channels are the slots [ChannelGenerator] fills: its generated channels take
+ * them in order, songs unchanged, until learning (#14/#15) decides what goes where. A slot
+ * with nothing on it stays off the dial.
  */
 object ChannelLineup {
     const val BREEZE = "breeze"
@@ -21,6 +22,9 @@ object ChannelLineup {
     const val HALL = "hall"
     const val SHUFFLE = ChannelGenerator.ALL_SONGS_ID
     const val VOICE = PodcastChannels.PODCASTS_ID
+
+    /** The slots for generated song channels, in dial order. */
+    val moods: List<String> = listOf(BREEZE, BUZZ, ZONE, BREATH, HALL)
 
     /** Every named channel, in settings order. */
     val ids: List<String> = listOf(BREEZE, BUZZ, ZONE, BREATH, HALL, SHUFFLE, VOICE)

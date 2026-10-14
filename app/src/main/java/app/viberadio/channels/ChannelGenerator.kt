@@ -15,6 +15,11 @@ import app.viberadio.library.Track
  * that #6 detects as music (they stay [ContentKind.PODCAST]). It is left out when it would be
  * empty or identical to a channel already on the dial.
  *
+ * With [slotIds], the generated channels (genre channels, then the catch-all, or the single
+ * "All") take those IDs in order instead of their own, so they land on fixed, named slots on
+ * the dial. Their contents don't change. There must be a slot for every channel that can be
+ * generated, so [slotIds] needs at least [maxChannels] entries.
+ *
  * Pure and deterministic: same input, same channels, same order.
  */
 class ChannelGenerator(
@@ -23,6 +28,7 @@ class ChannelGenerator(
     private val labels: Labels = Labels(),
     private val typeResolver: ChannelTypeResolver = ChannelTypeResolver.Untyped,
     private val allSongsMaxDurationMs: Long = ALL_SONGS_MAX_DURATION_MS,
+    private val slotIds: List<String> = emptyList(),
 ) {
     data class Labels(
         val all: String = "All",
@@ -34,11 +40,15 @@ class ChannelGenerator(
         require(maxChannels >= 1) { "maxChannels must be at least 1" }
         require(minTracksPerChannel >= 1) { "minTracksPerChannel must be at least 1" }
         require(allSongsMaxDurationMs > 0) { "allSongsMaxDurationMs must be positive" }
+        require(slotIds.isEmpty() || slotIds.size >= maxChannels) { "need a slot for each of up to $maxChannels channels" }
+        require(ALL_SONGS_ID !in slotIds && slotIds.toSet().size == slotIds.size) { "slot IDs must be distinct and not $ALL_SONGS_ID" }
     }
 
     fun generate(tracks: List<Track>): List<Channel> {
         if (tracks.isEmpty()) return emptyList()
-        val channels = genreChannels(tracks)
+        val channels = genreChannels(tracks).let { generated ->
+            if (slotIds.isEmpty()) generated else generated.mapIndexed { i, channel -> channel.copy(id = slotIds[i]) }
+        }
         val songs = tracks.filter { it.kind == ContentKind.MUSIC && it.durationMs <= allSongsMaxDurationMs }
         if (songs.isEmpty() || channels.any { it.tracks == songs }) return channels
         return channels + Channel(id = ALL_SONGS_ID, name = labels.allSongs, type = ChannelType.MUSIC_ONLY, tracks = songs)
