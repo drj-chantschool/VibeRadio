@@ -79,4 +79,20 @@ class RecencyWeightedStreamPlannerTest {
         // Expect 100 each; allow wide slack.
         assertTrue(counts.joinToString(), counts.all { it in 50..160 })
     }
+
+    @Test
+    fun `preferred songs tend to come early`() {
+        val liked = channel.tracks.take(25).toSet()
+        var likedInFirstHalf = 0
+        repeat(200) { seed ->
+            val planner = RecencyWeightedStreamPlanner(
+                preference = { if (it in liked) 10.0 else 1.0 },
+                clock = { now },
+                random = Random(seed),
+            )
+            likedInFirstHalf += planner.plan(channel).take(25).count { it in liked }
+        }
+        // Uniform shuffle would put ~12.5 per run in the first half.
+        assertTrue("got ${likedInFirstHalf / 200.0}", likedInFirstHalf / 200.0 > 20)
+    }
 }

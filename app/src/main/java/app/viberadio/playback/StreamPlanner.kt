@@ -28,16 +28,20 @@ interface StreamPlanner {
 
 /**
  * A fresh shuffle each time, looping forever on the same channel, weighted so songs heard
- * recently tend to come later. Every track is still queued exactly once.
+ * recently tend to come later and songs the user prefers tend to come sooner. Every track is
+ * still queued exactly once per plan.
  *
- * A track's weight is `1 - 2^(-age / halfLife)`: just played ≈ 0, one half-life ago 0.5, long
- * ago or never → 1. The order is a weighted random permutation (Efraimidis–Spirakis: sort by
- * `u^(1/w)` descending), so with no history it's a uniform shuffle. Weights are floored at
- * [MIN_WEIGHT] so nothing is pinned to the end.
+ * A track's weight is its recency, `1 - 2^(-age / halfLife)` (just played ≈ 0, one half-life ago
+ * 0.5, long ago or never → 1, floored at [MIN_WEIGHT] so nothing is pinned to the end), times its
+ * [preference] (#14; positive, floored by the learning models). The order is a weighted random
+ * permutation (Efraimidis–Spirakis: sort by `u^(1/w)` descending), so with no history and equal
+ * preferences it's a uniform shuffle.
  */
 class RecencyWeightedStreamPlanner(
     /** When a track last started playing, epoch ms, or null if never (or unknown). */
     private val lastPlayedMs: (Track) -> Long? = { null },
+    /** How strongly the user wants to hear a track; must be positive. Must not block. */
+    private val preference: (Track) -> Double = { 1.0 },
     private val clock: () -> Long = System::currentTimeMillis,
     private val halfLifeMs: Long = DEFAULT_HALF_LIFE_MS,
     private val random: Random = Random.Default,
@@ -46,7 +50,7 @@ class RecencyWeightedStreamPlanner(
     override fun plan(channel: Channel): List<Track> {
         val now = clock()
         return channel.tracks
-            .map { it to key(weight(it, now)) }
+            .map { it to key(weight(it, now) * preference(it).coerceAtLeast(MIN_WEIGHT)) }
             .sortedByDescending { it.second }
             .map { it.first }
     }

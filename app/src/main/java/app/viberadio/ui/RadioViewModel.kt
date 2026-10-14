@@ -61,6 +61,7 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
     private val podcasts: PodcastRepository = (application as VibeRadioApp).container.podcastRepository
     private val names: ChannelNamesRepository = (application as VibeRadioApp).container.channelNames
     private val feedback: FeedbackRecorder = (application as VibeRadioApp).container.feedback
+    private val learner = (application as VibeRadioApp).container.learner
     private val appScope = (application as VibeRadioApp).container.appScope
 
     private data class Permission(val granted: Boolean, val denied: Boolean)
@@ -203,10 +204,15 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
         val channelId = current.channelId ?: return
         playback.update { it.copy(lastPress = thumb) }
         appScope.launch {
-            if (feedback.record(uri, channelId, thumb) == null) {
+            val event = feedback.record(uri, channelId, thumb)
+            if (event == null) {
                 // Not logged (file unreadable or disk full): don't show it as pressed.
                 playback.update { if (it.trackUri == uri && it.lastPress == thumb) it.copy(lastPress = null) else it }
+                return@launch
             }
+            // Placement follows the new feedback; the queue already playing is left alone.
+            learner.add(event)
+            repository.replace()
         }
     }
 
