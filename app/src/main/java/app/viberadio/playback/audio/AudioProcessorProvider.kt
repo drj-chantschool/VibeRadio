@@ -23,5 +23,10 @@ fun interface AudioProcessorProvider {
     companion object {
         /** No processing, ExoPlayer's stock chain only. */
         val None = AudioProcessorProvider { emptyList() }
+
+        /** Each stream through its own EQ, following [mix] and the current [settings]. */
+        fun eq(mix: MixState, settings: () -> AudioSettings) = AudioProcessorProvider { stream ->
+            listOf(StreamEqProcessor(stream, mix, settings))
+        }
     }
 }
