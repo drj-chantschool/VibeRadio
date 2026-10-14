@@ -1,6 +1,8 @@
 package app.viberadio
 
 import android.content.Context
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 import app.viberadio.bluetooth.BluetoothSettings
 import app.viberadio.bluetooth.PrefsBluetoothSettingsStore
 import app.viberadio.channels.ChannelGenerator
@@ -159,6 +161,7 @@ class AppContainer(context: Context) {
     val mix = MixState()
 
     /** Each stream's chain: its EQ (#2). #1, #5 and #6 add processors here. */
+    @OptIn(UnstableApi::class)
     val audioProcessors: AudioProcessorProvider = AudioProcessorProvider { stream ->
         listOf(StreamEqProcessor(stream, mix) { audioSettings.settings.value })
     }
