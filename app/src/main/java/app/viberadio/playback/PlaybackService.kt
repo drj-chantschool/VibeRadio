@@ -65,6 +65,7 @@ class PlaybackService : MediaSessionService() {
             podcasts = container.podcastRepository,
             planner = container.streamPlanner,
             liveRadio = container.liveRadio,
+            listening = container.listeningClock,
             scope = scope,
             stationName = { id -> container.channelNames.names.value.of(id) },
             // App scope, not the service's: a play still gets recorded if the service stops meanwhile.

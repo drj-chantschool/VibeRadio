@@ -11,6 +11,7 @@ import androidx.media3.session.MediaSession
 import app.viberadio.channels.Channel
 import app.viberadio.channels.ChannelRepository
 import app.viberadio.dial.Dial
+import app.viberadio.feedback.ListeningClock
 import app.viberadio.library.Track
 import app.viberadio.podcasts.PodcastLibrary
 import app.viberadio.podcasts.PodcastRepository
@@ -25,7 +26,8 @@ import kotlinx.coroutines.launch
  * including the system media notification and headset buttons: no skip, no seek, no
  * shuffle/repeat toggles. Play/pause and tuning remain.
  *
- * Song channels queue from [StreamPlanner]. Podcast-only channels queue from the global
+ * Song channels queue from [StreamPlanner] one song at a time: the current song plus
+ * [LOOKAHEAD] more (so the player can preload), topped up each time a song starts. Podcast-only channels queue from the global
  * podcast queue (#19): an episode that plays to the end is marked played everywhere, and the
  * position of a part-played one is saved, so tuning back (or restarting) resumes it. When a
  * podcast-only channel has nothing left it hands over to a music channel at the episode
@@ -36,7 +38,7 @@ import kotlinx.coroutines.launch
  *
  * Every song that becomes the current item is reported to [onSongStarted] with its channel and
  * wall-clock start, which feeds the play history the shuffle weights by and [LiveRadio]'s record
- * of what each channel last aired.
+ * of what each channel last aired. [listening] runs while a song is playing.
  *
  * Tuning in to a song channel whose last song would still be on air joins it part-way
  * ([LiveRadio.tuneIn]) with a short fade-in, like tuning in to a real station. That join is a
@@ -48,6 +50,8 @@ class RadioSessionCallback(
     private val podcasts: PodcastRepository,
     private val planner: StreamPlanner,
     private val liveRadio: LiveRadio,
+    /** Song listening time; runs only while a song plays. */
+    private val listening: ListeningClock? = null,
     private val scope: CoroutineScope,
     /** The user's name for a named channel, or null for a generated one. */
     private val stationName: (channelId: String) -> String? = { null },
@@ -65,6 +69,7 @@ class RadioSessionCallback(
     private val positionTick = object : Runnable {
         override fun run() {
             savePosition()
+            listening?.checkpoint()
             handler.postDelayed(this, POSITION_SAVE_INTERVAL_MS)
         }
     }
@@ -114,6 +119,7 @@ class RadioSessionCallback(
     /** Call before releasing the player. */
     fun detach() {
         savePosition()
+        listening?.stop()
         handler.removeCallbacks(positionTick)
         stopFade()
         player?.removeListener(this)
@@ -175,6 +181,8 @@ class RadioSessionCallback(
         // Posted, not called inline: changing player state inside this callback gets folded into
         // the same session update as the transition, and controllers can miss the transition.
         handler.post(::applySpeed)
+        handler.post(::topUpSongQueue)
+        syncListening()
         val joined = mediaItem != null && mediaItem.mediaId == joiningMediaId
         joiningMediaId = null
         if (joined) return
@@ -187,6 +195,7 @@ class RadioSessionCallback(
         repository.channel(channelId)?.tracks?.firstOrNull { it.mediaId == item.mediaId }
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {
+        syncListening()
         handler.removeCallbacks(positionTick)
         if (isPlaying) handler.postDelayed(positionTick, POSITION_SAVE_INTERVAL_MS) else savePosition()
     }
@@ -214,7 +223,7 @@ class RadioSessionCallback(
     /** The queue for tuning in to [channelId]: song channels join their last song if it's still on air. */
     private fun tuneIn(channelId: String): Queue? {
         repository.channel(channelId)?.let { channel ->
-            val tuneIn = liveRadio.tuneIn(channel, planner.plan(channel))
+            val tuneIn = liveRadio.tuneIn(channel, planner.upcoming(channel, 1 + LOOKAHEAD))
             return Queue(
                 channelId = channel.id,
                 items = tuneIn.tracks.map { it.toMediaItem(channel, stationName(channel.id) ?: channel.name) },
@@ -226,9 +235,35 @@ class RadioSessionCallback(
         return podcastQueue(channelId)
     }
 
-    /** A fresh shuffle of [channel], from the top. */
+    /** Fresh picks for [channel], from the top. */
     private fun songQueue(channel: Channel): Queue =
-        Queue(channel.id, planner.plan(channel).map { it.toMediaItem(channel, stationName(channel.id) ?: channel.name) })
+        Queue(channel.id, planner.upcoming(channel, 1 + LOOKAHEAD).map { songItem(channel, it) })
+
+    private fun songItem(channel: Channel, track: Track): MediaItem = track.toMediaItem(channel, stationName(channel.id) ?: channel.name)
+
+    /**
+     * On a song channel, drops the songs already played from the player's list and picks more
+     * so [LOOKAHEAD] songs are queued after the current one. Picks come from the channel as it
+     * is now, so learning changes apply from the next pick.
+     */
+    private fun topUpSongQueue() {
+        val player = player ?: return
+        val channel = currentChannelId?.let(repository::channel) ?: return
+        val index = player.currentMediaItemIndex
+        if (index < 0 || player.mediaItemCount == 0) return
+        if (index > 0) player.removeMediaItems(0, index)
+        val queued = (0 until player.mediaItemCount).mapNotNull { songTrack(channel.id, player.getMediaItemAt(it)) }.toSet()
+        val missing = 1 + LOOKAHEAD - player.mediaItemCount
+        if (missing > 0) player.addMediaItems(planner.upcoming(channel, missing, avoid = queued).map { songItem(channel, it) })
+    }
+
+    /** The listening clock runs exactly while a song is playing. */
+    private fun syncListening() {
+        val listening = listening ?: return
+        val player = player ?: return
+        val songPlaying = player.isPlaying && currentEpisodeId == null && player.currentMediaItem != null
+        if (songPlaying) listening.start() else listening.stop()
+    }
 
     /**
      * Silences the player and raises it over [FADE_IN_MS] of actual playback. Started when the
@@ -307,6 +342,9 @@ class RadioSessionCallback(
 
     private companion object {
         const val POSITION_SAVE_INTERVAL_MS = 15_000L
+
+        /** Songs queued after the current one, so the next is preloaded. */
+        const val LOOKAHEAD = 1
         const val FADE_IN_MS = 1_500L
         const val FADE_STEP_MS = 50L
 

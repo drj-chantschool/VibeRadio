@@ -8,12 +8,12 @@ import app.viberadio.dial.ChannelNamesRepository
 import app.viberadio.dial.PrefsChannelNameStore
 import app.viberadio.feedback.FeedbackDatabase
 import app.viberadio.feedback.FeedbackRecorder
+import app.viberadio.feedback.ListeningClock
 import app.viberadio.feedback.PlayHistory
 import app.viberadio.learning.Learner
 import app.viberadio.learning.LearningModels
 import app.viberadio.library.MediaStoreLibraryScanner
 import app.viberadio.playback.LiveRadio
-import app.viberadio.playback.RecencyWeightedStreamPlanner
 import app.viberadio.podcasts.EpisodeDownloader
 import app.viberadio.podcasts.HttpFeedFetcher
 import app.viberadio.podcasts.JsonPodcastStore
@@ -26,6 +26,7 @@ import java.io.FileNotFoundException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import app.viberadio.playback.StreamPlanner
+import app.viberadio.playback.WeightedRandomStreamPlanner
 import app.viberadio.playback.audio.AudioProcessorProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -74,12 +75,19 @@ class AppContainer(context: Context) {
         ioDispatcher = Dispatchers.IO,
     )
 
+    /** Song listening time, which the shuffle measures "since last heard" on. Loaded at startup; saved off the main thread. */
+    val listeningClock = ListeningClock(
+        store = feedbackDatabase.listeningClock,
+        save = { total -> appScope.launch(Dispatchers.IO) { runCatching { feedbackDatabase.listeningClock.write(total) } } },
+    ).also { clock -> appScope.launch(Dispatchers.IO) { clock.load() } }
+
     /** When each song last played; the shuffle weights by it. Loaded off the main thread at startup. */
     val playHistory = PlayHistory(
         store = feedbackDatabase.playHistory,
         hashStore = feedbackDatabase.trackHashes,
         open = openTrack,
         ioDispatcher = Dispatchers.IO,
+        listeningClock = listeningClock::now,
     ).also { history -> appScope.launch(Dispatchers.IO) { history.load() } }
 
     /** What each song channel last aired, so tuning back in can join a song still on air. Loaded at startup. */
@@ -116,8 +124,9 @@ class AppContainer(context: Context) {
     )
 
     /** #2 and #4 replace this. */
-    val streamPlanner: StreamPlanner = RecencyWeightedStreamPlanner(
-        lastPlayedMs = playHistory::lastPlayedMs,
+    val streamPlanner: StreamPlanner = WeightedRandomStreamPlanner(
+        lastHeardAt = playHistory::lastHeardAt,
+        listeningNow = listeningClock::now,
         preference = learner::preferenceWeight,
     )
 
