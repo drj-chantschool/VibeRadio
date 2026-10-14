@@ -2,6 +2,9 @@ package app.viberadio.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material3.Switch
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -68,7 +71,16 @@ fun SettingsButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
 }
 
 /** The pages inside settings. Enum, so it survives rotation and process death as-is. */
-private enum class SettingsPage { Root, Channels }
+private enum class SettingsPage { Root, Channels, Bluetooth }
+
+/** Settings → Bluetooth as the page shows it. */
+data class BluetoothSettingsUi(
+    val resumeOnConnect: Boolean,
+    val permission: BluetoothPermissionUi,
+)
+
+/** Whether the app may hear about Bluetooth connections (the "Nearby devices" permission on Android 12+). */
+enum class BluetoothPermissionUi { Granted, Needed, Denied }
 
 /**
  * The settings panel. A full page over the pager, closed by its back arrow or the system back
@@ -78,6 +90,9 @@ private enum class SettingsPage { Root, Channels }
 fun SettingsScreen(
     channels: List<ChannelNameUi>,
     onRename: (id: String, name: String) -> Unit,
+    bluetooth: BluetoothSettingsUi,
+    onResumeOnConnect: (Boolean) -> Unit,
+    onAllowBluetooth: () -> Unit,
     onClose: () -> Unit,
 ) {
     var page by rememberSaveable { mutableStateOf(SettingsPage.Root) }
@@ -95,10 +110,20 @@ fun SettingsScreen(
                         onClick = { page = SettingsPage.Channels },
                     )
                     Rule()
+                    SettingsLink(
+                        title = stringResource(R.string.settings_bluetooth),
+                        summary = stringResource(R.string.settings_bluetooth_summary),
+                        onClick = { page = SettingsPage.Bluetooth },
+                    )
+                    Rule()
                 }
                 SettingsPage.Channels -> {
                     SettingsHeader(stringResource(R.string.settings_channels), onBack = { page = SettingsPage.Root })
                     ChannelNameList(channels, onRename)
+                }
+                SettingsPage.Bluetooth -> {
+                    SettingsHeader(stringResource(R.string.settings_bluetooth), onBack = { page = SettingsPage.Root })
+                    BluetoothSettingsList(bluetooth, onResumeOnConnect, onAllowBluetooth)
                 }
             }
         }
@@ -152,6 +177,62 @@ private fun SettingsLink(title: String, summary: String, onClick: () -> Unit) {
 @Composable
 private fun Rule() {
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(horizontal = 24.dp))
+}
+
+/** Settings → Bluetooth: one switch, plus a line asking for the permission while it's missing. */
+@Composable
+private fun BluetoothSettingsList(
+    bluetooth: BluetoothSettingsUi,
+    onResumeOnConnect: (Boolean) -> Unit,
+    onAllowBluetooth: () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .toggleable(
+                    value = bluetooth.resumeOnConnect,
+                    role = Role.Switch,
+                    onValueChange = onResumeOnConnect,
+                )
+                .padding(horizontal = 24.dp, vertical = 16.dp),
+        ) {
+            Column(Modifier.weight(1f).padding(end = 16.dp)) {
+                Text(
+                    stringResource(R.string.settings_bluetooth_resume),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+                Text(
+                    stringResource(R.string.settings_bluetooth_resume_about),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            // The row handles the toggle, so the switch itself is display-only.
+            Switch(checked = bluetooth.resumeOnConnect, onCheckedChange = null)
+        }
+        Rule()
+        if (bluetooth.resumeOnConnect && bluetooth.permission != BluetoothPermissionUi.Granted) {
+            Text(
+                stringResource(
+                    if (bluetooth.permission == BluetoothPermissionUi.Denied) {
+                        R.string.settings_bluetooth_permission_denied
+                    } else {
+                        R.string.settings_bluetooth_permission
+                    },
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onAllowBluetooth)
+                    .padding(horizontal = 24.dp, vertical = 16.dp),
+            )
+            Rule()
+        }
+    }
 }
 
 /** The named channels, each tappable to rename. */
@@ -287,6 +368,8 @@ internal object SettingsIcons {
     private const val HOLE = 3.2f
 }
 
+private val previewBluetooth = BluetoothSettingsUi(resumeOnConnect = true, permission = BluetoothPermissionUi.Granted)
+
 private val previewChannels = listOf(
     ChannelNameUi("breeze", "The Breeze", "The Breeze", R.string.channel_breeze_about, custom = false),
     ChannelNameUi("buzz", "Morning coffee", "The Buzz", R.string.channel_buzz_about, custom = true),
@@ -296,13 +379,27 @@ private val previewChannels = listOf(
 @Preview(name = "Settings light", showBackground = true)
 @Composable
 private fun SettingsLightPreview() {
-    VibeRadioTheme(darkTheme = false) { SettingsScreen(previewChannels, onRename = { _, _ -> }, onClose = {}) }
+    VibeRadioTheme(darkTheme = false) { SettingsScreen(
+            previewChannels,
+            onRename = { _, _ -> },
+            bluetooth = previewBluetooth,
+            onResumeOnConnect = {},
+            onAllowBluetooth = {},
+            onClose = {},
+        ) }
 }
 
 @Preview(name = "Settings dark", showBackground = true)
 @Composable
 private fun SettingsDarkPreview() {
-    VibeRadioTheme(darkTheme = true) { SettingsScreen(previewChannels, onRename = { _, _ -> }, onClose = {}) }
+    VibeRadioTheme(darkTheme = true) { SettingsScreen(
+            previewChannels,
+            onRename = { _, _ -> },
+            bluetooth = previewBluetooth,
+            onResumeOnConnect = {},
+            onAllowBluetooth = {},
+            onClose = {},
+        ) }
 }
 
 @Preview(name = "Channels", showBackground = true, heightDp = 640)
@@ -310,6 +407,20 @@ private fun SettingsDarkPreview() {
 private fun ChannelNamesPreview() {
     VibeRadioTheme(darkTheme = false) {
         Surface(color = MaterialTheme.colorScheme.background) { ChannelNameList(previewChannels, onRename = { _, _ -> }) }
+    }
+}
+
+@Preview(name = "Bluetooth, permission needed", showBackground = true)
+@Composable
+private fun BluetoothSettingsPreview() {
+    VibeRadioTheme(darkTheme = false) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            BluetoothSettingsList(
+                previewBluetooth.copy(permission = BluetoothPermissionUi.Needed),
+                onResumeOnConnect = {},
+                onAllowBluetooth = {},
+            )
+        }
     }
 }
 

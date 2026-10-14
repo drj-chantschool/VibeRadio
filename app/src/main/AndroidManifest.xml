@@ -15,6 +15,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- Resume on Bluetooth connection (Settings → Bluetooth): hearing about connections.
+         BLUETOOTH is install-time on API 30 and below; BLUETOOTH_CONNECT is asked for on 31+. -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
     <application
         android:name=".VibeRadioApp"
         android:allowBackup="true"
@@ -42,5 +49,14 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+
+        <!-- Exported so the system can deliver ACL_CONNECTED; it ignores every other action. -->
+        <receiver
+            android:name=".bluetooth.BluetoothConnectReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

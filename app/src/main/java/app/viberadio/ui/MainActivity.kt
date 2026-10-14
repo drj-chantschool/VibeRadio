@@ -1,6 +1,9 @@
 package app.viberadio.ui
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -23,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -35,6 +39,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.viberadio.R
+import app.viberadio.bluetooth.BluetoothPermission
 import app.viberadio.library.AudioPermission
 import app.viberadio.ui.theme.VibeRadioTheme
 
@@ -101,7 +106,49 @@ class MainActivity : ComponentActivity() {
     private fun SettingsPage(onClose: () -> Unit) {
         val viewModel: SettingsViewModel = viewModel()
         val channels by viewModel.channels.collectAsStateWithLifecycle()
-        SettingsScreen(channels = channels, onRename = viewModel::rename, onClose = onClose)
+        val resumeOnConnect by viewModel.resumeOnConnect.collectAsStateWithLifecycle()
+
+        // Re-checked on resume, so a grant made in system settings shows up on return.
+        var bluetoothGranted by remember { mutableStateOf(BluetoothPermission.isGranted(this)) }
+        var bluetoothDenied by rememberSaveable { mutableStateOf(false) }
+        LifecycleResumeEffect(Unit) {
+            bluetoothGranted = BluetoothPermission.isGranted(this@MainActivity)
+            onPauseOrDispose { }
+        }
+        val bluetoothLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            bluetoothGranted = granted
+            bluetoothDenied = !granted
+        }
+        fun allowBluetooth() {
+            val permission = BluetoothPermission.name ?: return
+            // Once Android stops showing the prompt, only system settings can grant it.
+            if (bluetoothDenied && !shouldShowRequestPermissionRationale(permission)) {
+                startActivity(
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)),
+                )
+            } else {
+                bluetoothLauncher.launch(permission)
+            }
+        }
+
+        SettingsScreen(
+            channels = channels,
+            onRename = viewModel::rename,
+            bluetooth = BluetoothSettingsUi(
+                resumeOnConnect = resumeOnConnect,
+                permission = when {
+                    bluetoothGranted -> BluetoothPermissionUi.Granted
+                    bluetoothDenied -> BluetoothPermissionUi.Denied
+                    else -> BluetoothPermissionUi.Needed
+                },
+            ),
+            onResumeOnConnect = { on ->
+                viewModel.setResumeOnConnect(on)
+                if (on && !bluetoothGranted) allowBluetooth()
+            },
+            onAllowBluetooth = ::allowBluetooth,
+            onClose = onClose,
+        )
     }
 
     @Composable
