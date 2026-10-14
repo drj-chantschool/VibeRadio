@@ -64,10 +64,16 @@ class PlaybackService : MediaSessionService() {
             repository = container.channelRepository,
             podcasts = container.podcastRepository,
             planner = container.streamPlanner,
+            liveRadio = container.liveRadio,
             scope = scope,
             podcastsStationName = getString(R.string.channel_podcasts),
             // App scope, not the service's: a play still gets recorded if the service stops meanwhile.
-            onSongStarted = { track -> container.appScope.launch { container.playHistory.markPlayed(track) } },
+            onSongStarted = { channelId, track, startedAtMs ->
+                container.appScope.launch {
+                    val hash = container.playHistory.markPlayed(track) ?: return@launch
+                    container.liveRadio.record(channelId, hash, track.durationMs, startedAtMs)
+                }
+            },
         )
         callback.attach(player)
         this.callback = callback

@@ -66,6 +66,12 @@ class PlayHistory(
         return cachedHash(track)?.let(lastPlayed::get)
     }
 
+    /** [track]'s content hash if it's already known, without reading the file; null until it has played once. */
+    fun hashOf(track: Track): String? {
+        load()
+        return cachedHash(track)
+    }
+
     /**
      * Records that [track] started playing now. Hashes the file if its hash isn't cached (or the
      * file changed). Returns the hash, or null if the file couldn't be read.
