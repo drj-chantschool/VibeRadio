@@ -2,6 +2,7 @@ package app.viberadio.ui
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -20,6 +22,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -35,7 +40,8 @@ import app.viberadio.ui.theme.VibeRadioTheme
 
 /**
  * Two pages, swiped between (#20): the song page (the dial) opens first; the podcast page is
- * one swipe away. Both act on the same channels.
+ * one swipe away. Both act on the same channels. A faint gear in the top corner of either page
+ * opens settings over them; back closes it.
  */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -44,6 +50,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             VibeRadioTheme {
                 val pager = rememberPagerState(pageCount = { PAGE_COUNT })
+                var settingsOpen by rememberSaveable { mutableStateOf(false) }
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                     HorizontalPager(state = pager, modifier = Modifier.fillMaxSize()) { page ->
                         when (page) {
@@ -55,6 +62,15 @@ class MainActivity : ComponentActivity() {
                         current = pager.currentPage,
                         modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 12.dp),
                     )
+                    if (settingsOpen) {
+                        BackHandler { settingsOpen = false }
+                        SettingsScreen(onClose = { settingsOpen = false })
+                    } else {
+                        SettingsButton(
+                            onClick = { settingsOpen = true },
+                            modifier = Modifier.align(Alignment.TopEnd).safeDrawingPadding().padding(8.dp),
+                        )
+                    }
                 }
             }
         }
