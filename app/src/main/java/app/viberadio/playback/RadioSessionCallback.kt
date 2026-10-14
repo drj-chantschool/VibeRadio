@@ -49,7 +49,8 @@ class RadioSessionCallback(
     private val planner: StreamPlanner,
     private val liveRadio: LiveRadio,
     private val scope: CoroutineScope,
-    private val podcastsStationName: String,
+    /** The user's name for a named channel, or null for a generated one. */
+    private val stationName: (channelId: String) -> String? = { null },
     private val onSongStarted: (channelId: String, track: Track, startedAtMs: Long) -> Unit = { _, _, _ -> },
     private val clock: () -> Long = System::currentTimeMillis,
 ) : MediaSession.Callback, Player.Listener {
@@ -216,7 +217,7 @@ class RadioSessionCallback(
             val tuneIn = liveRadio.tuneIn(channel, planner.plan(channel))
             return Queue(
                 channelId = channel.id,
-                items = tuneIn.tracks.map { it.toMediaItem(channel) },
+                items = tuneIn.tracks.map { it.toMediaItem(channel, stationName(channel.id) ?: channel.name) },
                 startPositionMs = tuneIn.resumeAtMs ?: C.TIME_UNSET,
                 joined = tuneIn.resumeAtMs != null,
             )
@@ -227,7 +228,7 @@ class RadioSessionCallback(
 
     /** A fresh shuffle of [channel], from the top. */
     private fun songQueue(channel: Channel): Queue =
-        Queue(channel.id, planner.plan(channel).map { it.toMediaItem(channel) })
+        Queue(channel.id, planner.plan(channel).map { it.toMediaItem(channel, stationName(channel.id) ?: channel.name) })
 
     /**
      * Silences the player and raises it over [FADE_IN_MS] of actual playback. Started when the
@@ -264,7 +265,7 @@ class RadioSessionCallback(
             uri = podcasts.playableUri(episode),
             showTitle = library.podcast(episode.feedUrl)?.title,
             stationId = channelId,
-            stationName = podcastsStationName,
+            stationName = stationName(channelId) ?: channelId,
         )
     }
 

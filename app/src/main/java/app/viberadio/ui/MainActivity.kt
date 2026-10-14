@@ -64,7 +64,7 @@ class MainActivity : ComponentActivity() {
                     )
                     if (settingsOpen) {
                         BackHandler { settingsOpen = false }
-                        SettingsScreen(onClose = { settingsOpen = false })
+                        SettingsPage(onClose = { settingsOpen = false })
                     } else {
                         SettingsButton(
                             onClick = { settingsOpen = true },
@@ -95,6 +95,13 @@ class MainActivity : ComponentActivity() {
             onPlay = viewModel::play,
             onThumb = viewModel::press,
         )
+    }
+
+    @Composable
+    private fun SettingsPage(onClose: () -> Unit) {
+        val viewModel: SettingsViewModel = viewModel()
+        val channels by viewModel.channels.collectAsStateWithLifecycle()
+        SettingsScreen(channels = channels, onRename = viewModel::rename, onClose = onClose)
     }
 
     @Composable

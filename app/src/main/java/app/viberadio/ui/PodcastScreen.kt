@@ -57,7 +57,7 @@ import java.time.format.FormatStyle
 
 /**
  * The podcast page (#20). More control than the song page, because podcasts are curated and
- * long-form: add a feed, put a show on the Podcasts channel or take it off, and mark episodes
+ * long-form: add a feed, put a show on the podcast-only channel or take it off, and mark episodes
  * played before they come up. There is still no play button here; listening happens by
  * tuning the dial.
  */
@@ -129,7 +129,7 @@ fun PodcastScreen(
             } else if (state.loaded) {
                 item {
                     Spacer(Modifier.height(32.dp))
-                    Faint(stringResource(R.string.podcasts_empty))
+                    Faint(stringResource(R.string.podcasts_empty, state.voiceName))
                 }
             }
         }

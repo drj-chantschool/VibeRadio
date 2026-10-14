@@ -17,14 +17,17 @@ object Dial {
 
     /**
      * Song channels in generator order, then the podcast-only channels that have at least one
-     * show assigned. A podcast channel only takes a place on the dial once it has something on it.
+     * show assigned. A channel only takes a place on the dial once it has something on it, so
+     * mood slots ([ChannelLineup]) the generator left empty stay off it.
+     *
+     * Named channels show the user's name for them ([names]); generated ones keep their own.
      */
-    fun stations(songChannels: List<Channel>, podcastChannelIds: Set<String>, podcastsName: String): List<Station> {
-        val songs = songChannels.map { Station(it.id, it.name, it.type) }
+    fun stations(songChannels: List<Channel>, podcastChannelIds: Set<String>, names: ChannelNames): List<Station> {
+        val songs = songChannels.map { Station(it.id, names.of(it.id) ?: it.name, it.type) }
         val songIds = songs.mapTo(HashSet()) { it.id }
         val podcastOnly = podcastChannelIds
             .filter { it !in songIds && it == PodcastChannels.PODCASTS_ID }
-            .map { Station(it, podcastsName, ChannelType.VOCAL_ONLY) }
+            .map { Station(it, names.of(it) ?: it, ChannelType.VOCAL_ONLY) }
         return songs + podcastOnly
     }
 

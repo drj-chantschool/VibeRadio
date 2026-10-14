@@ -6,6 +6,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.viberadio.R
 import app.viberadio.VibeRadioApp
+import app.viberadio.dial.ChannelLineup
+import app.viberadio.dial.ChannelNamesRepository
 import app.viberadio.podcasts.FeedParseException
 import app.viberadio.podcasts.PodcastChannels
 import app.viberadio.podcasts.PodcastLibrary
@@ -24,12 +26,14 @@ data class PodcastUiState(
     val upNext: List<EpisodeUi> = emptyList(),
     val shows: List<ShowUi> = emptyList(),
     val add: AddFeed = AddFeed(),
+    /** What the podcast-only channel is called on the dial (The Voice, unless renamed). */
+    val voiceName: String = "",
 )
 
 data class ShowUi(
     val feedUrl: String,
     val title: String,
-    /** On the Podcasts channel (#18). */
+    /** On the podcast-only channel (#18). */
     val onAir: Boolean,
     val unplayed: Int,
     /** Playback speed for all of this show's episodes, one of [PodcastSpeeds.STEPS]. */
@@ -56,17 +60,18 @@ data class AddFeed(
 )
 
 /**
- * The podcast page (#20): add feeds, put shows on the Podcasts channel, set each show's
+ * The podcast page (#20): add feeds, put shows on the podcast-only channel, set each show's
  * playback speed, and mark episodes played (singly, or a whole back catalogue) before they
  * are ever downloaded.
  */
 class PodcastViewModel(application: Application) : AndroidViewModel(application) {
 
     private val podcasts: PodcastRepository = (application as VibeRadioApp).container.podcastRepository
+    private val names: ChannelNamesRepository = (application as VibeRadioApp).container.channelNames
     private val add = MutableStateFlow(AddFeed())
 
     val uiState: StateFlow<PodcastUiState> =
-        combine(podcasts.loaded, podcasts.library, podcasts.downloaded, add) { loaded, library, downloaded, addFeed ->
+        combine(podcasts.loaded, podcasts.library, podcasts.downloaded, add, names.names) { loaded, library, downloaded, addFeed, channelNames ->
             PodcastUiState(
                 loaded = loaded,
                 upNext = library.upNext(UP_NEXT_COUNT).map { library.ui(it.id, downloaded) },
@@ -82,6 +87,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                     )
                 },
                 add = addFeed,
+                voiceName = channelNames.of(ChannelLineup.VOICE).orEmpty(),
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PodcastUiState())
 
