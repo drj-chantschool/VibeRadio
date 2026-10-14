@@ -95,6 +95,10 @@ class PodcastRepository(
     fun setSpeed(feedUrl: String, speed: Float) =
         mutate(syncDownloads = false) { it.withSpeed(feedUrl, speed) }
 
+    /** Doesn't change what's queued, so downloads are left alone. */
+    fun setPauseMusic(feedUrl: String, pause: Boolean) =
+        mutate(syncDownloads = false) { it.withPauseMusic(feedUrl, pause) }
+
     fun setPlayed(episodeId: String, played: Boolean) = mutate { it.withPlayed(episodeId, played) }
 
     fun markOlderPlayed(episodeId: String) = mutate { it.withOlderPlayed(episodeId) }

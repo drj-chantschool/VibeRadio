@@ -22,6 +22,12 @@ data class Podcast(
      * Always one of [PodcastSpeeds.STEPS]. Songs never change speed.
      */
     val speed: Float = PodcastSpeeds.DEFAULT,
+    /**
+     * "Pause music": the music stops while this show's episodes play, and the episode plays by
+     * itself. Shows with it on are "music podcasts", though a user may turn it on for any reason.
+     * Off: on a song channel, episodes play over the music.
+     */
+    val pauseMusic: Boolean = false,
 )
 
 /** One episode from a feed. Played state and resume position live on [PodcastLibrary], not here. */

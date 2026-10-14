@@ -97,6 +97,23 @@ class PodcastLibraryTest {
         assertTrue(lib.played.isEmpty())
     }
 
+
+    @Test
+    fun `pause music is off by default and set per show`() {
+        assertFalse(library.pausesMusic(id(showA, 1)))
+        val lib = library.withPauseMusic(showA, true)
+        assertTrue(lib.podcast(showA)!!.pauseMusic)
+        assertTrue(lib.pausesMusic(id(showA, 2)))
+        assertFalse(lib.pausesMusic(id(showB, 4)))
+        assertFalse(lib.withPauseMusic(showA, false).pausesMusic(id(showA, 2)))
+    }
+
+    @Test
+    fun `pause music survives a feed refresh`() {
+        val lib = library.withPauseMusic(showA, true).withFeed(showA, feed("A", 4, 3, 2, 1), nowMs = 200)
+        assertTrue(lib.pausesMusic(id(showA, 4)))
+    }
+
     private companion object {
         const val DAY = 86_400_000L
     }

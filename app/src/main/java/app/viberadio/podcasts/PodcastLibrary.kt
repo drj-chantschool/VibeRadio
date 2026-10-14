@@ -102,6 +102,14 @@ data class PodcastLibrary(
         podcasts = podcasts.map { if (it.feedUrl != feedUrl) it else it.copy(speed = PodcastSpeeds.snap(speed)) },
     )
 
+    fun withPauseMusic(feedUrl: String, pause: Boolean): PodcastLibrary = copy(
+        podcasts = podcasts.map { if (it.feedUrl != feedUrl) it else it.copy(pauseMusic = pause) },
+    )
+
+    /** Whether [episodeId]'s show has "Pause music" on; false if the show is gone. */
+    fun pausesMusic(episodeId: String): Boolean =
+        episode(episodeId)?.let { podcast(it.feedUrl) }?.pauseMusic ?: false
+
     /** How fast [episodeId] plays: its show's speed, or 1x if the show is gone. */
     fun speedOf(episodeId: String): Float =
         episode(episodeId)?.let { podcast(it.feedUrl) }?.speed ?: PodcastSpeeds.DEFAULT
