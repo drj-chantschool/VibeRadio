@@ -50,5 +50,11 @@
     <string name="episode_mark_played">Mark played</string>
     <string name="episode_mark_unplayed">Mark unplayed</string>
     <string name="episode_mark_older_played">Mark this and older played</string>
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_open">Settings</string>
+    <string name="settings_close">Back</string>
+    <string name="settings_empty">Nothing here yet.</string>
+
     <string name="pages_description">Page %1$d of %2$d</string>
 </resources>
