@@ -9,6 +9,8 @@ import app.viberadio.dial.PrefsChannelNameStore
 import app.viberadio.feedback.FeedbackDatabase
 import app.viberadio.feedback.FeedbackRecorder
 import app.viberadio.feedback.PlayHistory
+import app.viberadio.learning.Learner
+import app.viberadio.learning.LearningModels
 import app.viberadio.library.MediaStoreLibraryScanner
 import app.viberadio.playback.LiveRadio
 import app.viberadio.playback.RecencyWeightedStreamPlanner
@@ -36,21 +38,6 @@ class AppContainer(context: Context) {
 
     /** Lives as long as the process: feed refreshes, downloads and saves outlast any screen. */
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-
-    val channelRepository = ChannelRepository(
-        scanner = MediaStoreLibraryScanner(context.contentResolver),
-        generator = ChannelGenerator(
-            // Generated channels fill the five mood slots (The Breeze … The Hall) in order.
-            maxChannels = ChannelLineup.moods.size,
-            slotIds = ChannelLineup.moods,
-            labels = ChannelGenerator.Labels(
-                all = context.getString(R.string.channel_all),
-                other = context.getString(R.string.channel_other),
-                allSongs = context.getString(R.string.channel_shuffle),
-            ),
-        ),
-        ioDispatcher = Dispatchers.IO,
-    )
 
     /** What the named channels are called: the defaults, or the user's names from settings. */
     val channelNames = ChannelNamesRepository(
@@ -102,8 +89,37 @@ class AppContainer(context: Context) {
         ioDispatcher = Dispatchers.IO,
     ).also { radio -> appScope.launch(Dispatchers.IO) { radio.load() } }
 
+    /**
+     * Song placement and preference (#14), learned from the thumbs log. Swap models in
+     * [LearningModels]; nothing else constructs one. Log read off the main thread at startup.
+     */
+    val learner = Learner(
+        models = LearningModels(),
+        readEvents = feedbackDatabase.feedbackLog::readAll,
+        hashOf = playHistory::hashOf,
+    ).also { learner -> appScope.launch(Dispatchers.IO) { learner.load() } }
+
+    val channelRepository = ChannelRepository(
+        scanner = MediaStoreLibraryScanner(context.contentResolver),
+        generator = ChannelGenerator(
+            // Generated channels fill the five mood slots (The Breeze … The Hall) in order.
+            maxChannels = ChannelLineup.moods.size,
+            slotIds = ChannelLineup.moods,
+            labels = ChannelGenerator.Labels(
+                all = context.getString(R.string.channel_all),
+                other = context.getString(R.string.channel_other),
+                allSongs = context.getString(R.string.channel_shuffle),
+            ),
+        ),
+        ioDispatcher = Dispatchers.IO,
+        place = learner::place,
+    )
+
     /** #2 and #4 replace this. */
-    val streamPlanner: StreamPlanner = RecencyWeightedStreamPlanner(lastPlayedMs = playHistory::lastPlayedMs)
+    val streamPlanner: StreamPlanner = RecencyWeightedStreamPlanner(
+        lastPlayedMs = playHistory::lastPlayedMs,
+        preference = learner::preferenceWeight,
+    )
 
     /** #1, #5 and #6 add processors here. */
     val audioProcessors: AudioProcessorProvider = AudioProcessorProvider.None
