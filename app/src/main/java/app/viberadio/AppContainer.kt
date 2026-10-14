@@ -3,6 +3,8 @@ package app.viberadio
 import android.content.Context
 import app.viberadio.channels.ChannelGenerator
 import app.viberadio.channels.ChannelRepository
+import app.viberadio.dial.ChannelNamesRepository
+import app.viberadio.dial.PrefsChannelNameStore
 import app.viberadio.feedback.FeedbackDatabase
 import app.viberadio.feedback.FeedbackRecorder
 import app.viberadio.feedback.PlayHistory
@@ -13,6 +15,7 @@ import app.viberadio.podcasts.EpisodeDownloader
 import app.viberadio.podcasts.HttpFeedFetcher
 import app.viberadio.podcasts.JsonPodcastStore
 import app.viberadio.podcasts.PodcastRepository
+import app.viberadio.ui.LineupStrings
 import android.net.Uri
 import java.io.File
 import java.io.InputStream
@@ -39,9 +42,17 @@ class AppContainer(context: Context) {
             labels = ChannelGenerator.Labels(
                 all = context.getString(R.string.channel_all),
                 other = context.getString(R.string.channel_other),
-                allSongs = context.getString(R.string.channel_all_songs),
+                allSongs = context.getString(R.string.channel_shuffle),
             ),
         ),
+        ioDispatcher = Dispatchers.IO,
+    )
+
+    /** What the named channels are called: the defaults, or the user's names from settings. */
+    val channelNames = ChannelNamesRepository(
+        defaults = LineupStrings.defaultNames(context),
+        store = PrefsChannelNameStore(context),
+        scope = appScope,
         ioDispatcher = Dispatchers.IO,
     )
 

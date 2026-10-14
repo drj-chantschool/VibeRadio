@@ -1,7 +1,23 @@
 package app.viberadio.ui
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import app.viberadio.dial.ChannelNames
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -51,52 +67,176 @@ fun SettingsButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     }
 }
 
+/** The pages inside settings. Enum, so it survives rotation and process death as-is. */
+private enum class SettingsPage { Root, Channels }
+
 /**
  * The settings panel. A full page over the pager, closed by its back arrow or the system back
- * gesture. Empty for now: it exists so the way in and out can be tried before anything lives
- * here.
+ * gesture. Subpages open in place; back returns to the list first.
  */
 @Composable
-fun SettingsScreen(onClose: () -> Unit) {
+fun SettingsScreen(
+    channels: List<ChannelNameUi>,
+    onRename: (id: String, name: String) -> Unit,
+    onClose: () -> Unit,
+) {
+    var page by rememberSaveable { mutableStateOf(SettingsPage.Root) }
+    // Composed after MainActivity's handler, so it takes back first while a subpage is open.
+    BackHandler(enabled = page != SettingsPage.Root) { page = SettingsPage.Root }
+
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Start,
-                modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 24.dp, top = 12.dp),
-            ) {
-                IconButton(onClick = onClose) {
-                    Icon(
-                        imageVector = SettingsIcons.Back,
-                        contentDescription = stringResource(R.string.settings_close),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(22.dp),
+            when (page) {
+                SettingsPage.Root -> {
+                    SettingsHeader(stringResource(R.string.settings_title), onBack = onClose)
+                    SettingsLink(
+                        title = stringResource(R.string.settings_channels),
+                        summary = stringResource(R.string.settings_channels_summary),
+                        onClick = { page = SettingsPage.Channels },
                     )
+                    Rule()
                 }
-                Text(
-                    stringResource(R.string.settings_title),
-                    style = MaterialTheme.typography.displaySmall,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.padding(start = 4.dp),
-                )
-            }
-            Spacer(Modifier.height(16.dp))
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant,
-                modifier = Modifier.padding(horizontal = 24.dp),
-            )
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 32.dp),
-            ) {
-                Text(
-                    stringResource(R.string.settings_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.outline,
-                )
+                SettingsPage.Channels -> {
+                    SettingsHeader(stringResource(R.string.settings_channels), onBack = { page = SettingsPage.Root })
+                    ChannelNameList(channels, onRename)
+                }
             }
         }
     }
+}
+
+@Composable
+private fun SettingsHeader(title: String, onBack: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Start,
+        modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 24.dp, top = 12.dp),
+    ) {
+        IconButton(onClick = onBack) {
+            Icon(
+                imageVector = SettingsIcons.Back,
+                contentDescription = stringResource(R.string.settings_close),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+        Text(
+            title,
+            style = MaterialTheme.typography.displaySmall,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.padding(start = 4.dp),
+        )
+    }
+    Spacer(Modifier.height(16.dp))
+    Rule()
+}
+
+/** A row that opens a subpage: title, a faint line on what's there, and a quiet chevron. */
+@Composable
+private fun SettingsLink(title: String, summary: String, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 16.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground)
+            Text(summary, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Text("\u203A", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.outline)
+    }
+}
+
+@Composable
+private fun Rule() {
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(horizontal = 24.dp))
+}
+
+/** The named channels, each tappable to rename. */
+@Composable
+private fun ChannelNameList(channels: List<ChannelNameUi>, onRename: (id: String, name: String) -> Unit) {
+    var editing by rememberSaveable { mutableStateOf<String?>(null) }
+
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+        item {
+            Text(
+                stringResource(R.string.settings_channels_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+            )
+            Rule()
+        }
+        items(channels, key = { it.id }) { channel ->
+            ChannelNameRow(channel, onClick = { editing = channel.id })
+            Rule()
+        }
+    }
+
+    channels.firstOrNull { it.id == editing }?.let { channel ->
+        RenameDialog(
+            channel = channel,
+            onSave = { name ->
+                onRename(channel.id, name)
+                editing = null
+            },
+            onDismiss = { editing = null },
+        )
+    }
+}
+
+@Composable
+private fun ChannelNameRow(channel: ChannelNameUi, onClick: () -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClickLabel = stringResource(R.string.settings_rename_title), onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 14.dp),
+    ) {
+        Text(channel.name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground)
+        Text(
+            stringResource(channel.description),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (channel.custom) {
+            Text(
+                stringResource(R.string.settings_renamed_from, channel.defaultName),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+    }
+}
+
+/** Edit one name. Saving it empty puts the default back. */
+@Composable
+private fun RenameDialog(channel: ChannelNameUi, onSave: (String) -> Unit, onDismiss: () -> Unit) {
+    var draft by rememberSaveable(channel.id) { mutableStateOf(channel.name) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.settings_rename_title)) },
+        text = {
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { draft = it.replace('\n', ' ').take(ChannelNames.MAX_LENGTH) },
+                placeholder = { Text(channel.defaultName) },
+                supportingText = { Text(stringResource(R.string.settings_rename_reset_hint, channel.defaultName)) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { onSave(draft) }),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(draft) }) { Text(stringResource(R.string.settings_rename_save)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
 }
 
 /**
@@ -147,16 +287,30 @@ internal object SettingsIcons {
     private const val HOLE = 3.2f
 }
 
+private val previewChannels = listOf(
+    ChannelNameUi("breeze", "The Breeze", "The Breeze", R.string.channel_breeze_about, custom = false),
+    ChannelNameUi("buzz", "Morning coffee", "The Buzz", R.string.channel_buzz_about, custom = true),
+    ChannelNameUi("podcasts", "The Voice", "The Voice", R.string.channel_voice_about, custom = false),
+)
+
 @Preview(name = "Settings light", showBackground = true)
 @Composable
 private fun SettingsLightPreview() {
-    VibeRadioTheme(darkTheme = false) { SettingsScreen(onClose = {}) }
+    VibeRadioTheme(darkTheme = false) { SettingsScreen(previewChannels, onRename = { _, _ -> }, onClose = {}) }
 }
 
 @Preview(name = "Settings dark", showBackground = true)
 @Composable
 private fun SettingsDarkPreview() {
-    VibeRadioTheme(darkTheme = true) { SettingsScreen(onClose = {}) }
+    VibeRadioTheme(darkTheme = true) { SettingsScreen(previewChannels, onRename = { _, _ -> }, onClose = {}) }
+}
+
+@Preview(name = "Channels", showBackground = true, heightDp = 640)
+@Composable
+private fun ChannelNamesPreview() {
+    VibeRadioTheme(darkTheme = false) {
+        Surface(color = MaterialTheme.colorScheme.background) { ChannelNameList(previewChannels, onRename = { _, _ -> }) }
+    }
 }
 
 @Preview(name = "Gear", showBackground = true)

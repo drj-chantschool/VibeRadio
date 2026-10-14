@@ -57,7 +57,8 @@ internal fun Episode.toMediaItem(uri: String, showTitle: String?, stationId: Str
 
 internal val Track.mediaId: String get() = "track:$id"
 
-internal fun Track.toMediaItem(channel: Channel): MediaItem =
+/** [stationName] is what the notification shows as the station: the channel's name on the dial. */
+internal fun Track.toMediaItem(channel: Channel, stationName: String = channel.name): MediaItem =
     MediaItem.Builder()
         .setMediaId(mediaId)
         .setUri(uri)
@@ -66,7 +67,7 @@ internal fun Track.toMediaItem(channel: Channel): MediaItem =
                 .setTitle(title)
                 .setArtist(artist)
                 .setAlbumTitle(album)
-                .setStation(channel.name)
+                .setStation(stationName)
                 .setExtras(
                     Bundle().apply {
                         putString(ChannelRequest.EXTRA_CHANNEL_ID, channel.id)

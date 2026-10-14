@@ -10,8 +10,23 @@
     <string name="knob_state">%1$s, channel %2$d of %3$d</string>
     <string name="channel_all">All</string>
     <string name="channel_other">Everything else</string>
-    <string name="channel_all_songs">All songs</string>
-    <string name="channel_podcasts">Podcasts</string>
+
+    <!-- Named channels (settings → Channels). Defaults; the user can rename each one. -->
+    <string name="channel_breeze">The Breeze</string>
+    <string name="channel_buzz">The Buzz</string>
+    <string name="channel_zone">The Zone</string>
+    <string name="channel_breath">The Breath</string>
+    <string name="channel_hall">The Hall</string>
+    <string name="channel_shuffle">The Shuffle (all)</string>
+    <string name="channel_voice">The Voice</string>
+    <string name="channel_breeze_about">Easy listening that disappears while you work. Good under a podcast. Low stress.</string>
+    <string name="channel_buzz_about">Music that gives you energy.</string>
+    <string name="channel_zone_about">Music for focus.</string>
+    <string name="channel_breath_about">Chant, sacred music, anything that slows you down.</string>
+    <string name="channel_hall_about">Music for the sake of music. The heady stuff.</string>
+    <string name="channel_shuffle_about">Every song in your library, shuffled.</string>
+    <string name="channel_voice_about">Podcasts only.</string>
+
     <string name="idle">Turn the dial to tune in</string>
     <string name="play">Play</string>
     <string name="thumb_up">Thumbs up</string>
@@ -22,7 +37,7 @@
     <string name="podcasts_up_next">Up next</string>
     <string name="podcasts_shows">Shows</string>
     <string name="podcasts_nothing_queued">Nothing left to play. New episodes join the queue when the feeds update.</string>
-    <string name="podcasts_empty">Add a show by pasting its RSS feed link. It goes on the Podcasts channel, and you listen by tuning the dial to it.</string>
+    <string name="podcasts_empty">Add a show by pasting its RSS feed link. It goes on %1$s, and you listen by tuning the dial to it.</string>
     <string name="podcasts_unplayed">%1$d unplayed</string>
     <string name="podcasts_on_air">On air</string>
     <string name="podcasts_show_episodes">Show episodes</string>
@@ -54,7 +69,13 @@
     <string name="settings_title">Settings</string>
     <string name="settings_open">Settings</string>
     <string name="settings_close">Back</string>
-    <string name="settings_empty">Nothing here yet.</string>
+    <string name="settings_channels">Channels</string>
+    <string name="settings_channels_summary">The names on the dial</string>
+    <string name="settings_channels_hint">Tap a channel to rename it. A channel joins the dial once something is on it.</string>
+    <string name="settings_rename_title">Rename channel</string>
+    <string name="settings_rename_reset_hint">Leave empty for “%1$s”</string>
+    <string name="settings_rename_save">Save</string>
+    <string name="settings_renamed_from">Default: %1$s</string>
 
     <string name="pages_description">Page %1$d of %2$d</string>
 </resources>

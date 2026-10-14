@@ -10,9 +10,9 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
-import app.viberadio.R
 import app.viberadio.VibeRadioApp
 import app.viberadio.channels.ChannelRepository
+import app.viberadio.dial.ChannelNamesRepository
 import app.viberadio.dial.Dial
 import app.viberadio.dial.Station
 import app.viberadio.feedback.FeedbackRecorder
@@ -59,7 +59,7 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository: ChannelRepository = (application as VibeRadioApp).container.channelRepository
     private val podcasts: PodcastRepository = (application as VibeRadioApp).container.podcastRepository
-    private val podcastsName = application.getString(R.string.channel_podcasts)
+    private val names: ChannelNamesRepository = (application as VibeRadioApp).container.channelNames
     private val feedback: FeedbackRecorder = (application as VibeRadioApp).container.feedback
     private val appScope = (application as VibeRadioApp).container.appScope
 
@@ -77,12 +77,12 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
     private val playback = MutableStateFlow(Playback())
 
     val uiState: StateFlow<RadioUiState> =
-        combine(permission, repository.state, podcasts.library, playback) { perm, library, shows, play ->
+        combine(permission, repository.state, podcasts.library, names.names, playback) { perm, library, shows, channelNames, play ->
             when {
                 !perm.granted -> RadioUiState.NeedsPermission(perm.denied)
                 library !is ChannelRepository.State.Ready -> RadioUiState.Scanning
                 else -> {
-                    val stations = stations(library, shows)
+                    val stations = Dial.stations(library.channels, shows.channelIds, channelNames)
                     if (stations.isEmpty()) {
                         RadioUiState.Empty
                     } else {
@@ -212,7 +212,7 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Song channels plus podcast-only channels: the knob's positions. */
     private fun stations(library: ChannelRepository.State.Ready, shows: PodcastLibrary): List<Station> =
-        Dial.stations(library.channels, shows.channelIds, podcastsName)
+        Dial.stations(library.channels, shows.channelIds, names.names.value)
 
     private fun scanIfNeeded() {
         if (!permission.value.granted) return
