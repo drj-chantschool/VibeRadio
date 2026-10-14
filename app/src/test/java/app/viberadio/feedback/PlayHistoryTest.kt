@@ -11,9 +11,9 @@ import org.junit.Test
 class PlayHistoryTest {
 
     private class MemoryHistory : PlayHistoryStore {
-        val rows = mutableMapOf<String, Long>()
+        val rows = mutableMapOf<String, PlayRecord>()
         override fun readAll() = rows.toMap()
-        override fun put(trackHash: String, lastPlayedMs: Long) { rows[trackHash] = lastPlayedMs }
+        override fun put(trackHash: String, record: PlayRecord) { rows[trackHash] = record }
     }
 
     private class MemoryHashes : TrackHashStore {
@@ -26,6 +26,7 @@ class PlayHistoryTest {
     private val files = mutableMapOf(song.uri to "song a")
     private var opens = 0
     private var now = 1_000L
+    private var listened = 40L
     private val store = MemoryHistory()
     private val hashStore = MemoryHashes()
 
@@ -38,6 +39,7 @@ class PlayHistoryTest {
         },
         ioDispatcher = Dispatchers.Unconfined,
         clock = { now },
+        listeningClock = { listened },
     )
 
     private val hashA = ContentHash.of("song a".byteInputStream())
@@ -53,7 +55,7 @@ class PlayHistoryTest {
         assertEquals(hashA, h.markPlayed(song))
         now = 2_000L
         h.markPlayed(song)
-        assertEquals(mapOf(hashA to 2_000L), store.rows)
+        assertEquals(mapOf(hashA to PlayRecord(2_000L, 40L)), store.rows)
         assertEquals(2_000L, h.lastPlayedMs(song))
         assertEquals("hashed once", 1, opens)
     }
@@ -75,7 +77,7 @@ class PlayHistoryTest {
         assertNull("new URI isn't hashed yet", h.lastPlayedMs(moved))
         now = 5_000L
         assertEquals(hashA, h.markPlayed(moved))
-        assertEquals(mapOf(hashA to 5_000L), store.rows)
+        assertEquals(mapOf(hashA to PlayRecord(5_000L, 40L)), store.rows)
     }
 
     @Test
@@ -103,6 +105,24 @@ class PlayHistoryTest {
     @Test
     fun `unreadable file records nothing`() = runBlocking {
         assertNull(history().markPlayed(track("Jazz")))
-        assertEquals(emptyMap<String, Long>(), store.rows)
+        assertEquals(emptyMap<String, PlayRecord>(), store.rows)
+    }
+
+    @Test
+    fun `a play records the listening clock too`() = runBlocking {
+        val h = history()
+        listened = 90_000L
+        h.markPlayed(song)
+        assertEquals(90_000L, h.lastHeardAt(song))
+        assertEquals(1_000L, h.lastPlayedMs(song))
+    }
+
+    @Test
+    fun `plays from before the listening clock have no listening time`() {
+        store.rows[hashA] = PlayRecord(1_000L, null)
+        hashStore.rows[song.uri] = HashedFile(song.uri, song.sizeBytes, song.modifiedSec, hashA)
+        val h = history()
+        assertEquals(1_000L, h.lastPlayedMs(song))
+        assertNull(h.lastHeardAt(song))
     }
 }

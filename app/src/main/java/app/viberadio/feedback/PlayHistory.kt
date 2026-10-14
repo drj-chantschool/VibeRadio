@@ -8,12 +8,18 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
+/**
+ * When a song last started: [wallClockMs] (epoch ms) and [listeningMs], the [ListeningClock]
+ * reading at that moment, or null for plays recorded before the listening clock existed.
+ */
+data class PlayRecord(val wallClockMs: Long, val listeningMs: Long?)
+
 /** When each song last played, keyed on its [ContentHash]. One row per song, overwritten on every play. */
 interface PlayHistoryStore {
-    /** Content hash → epoch milliseconds of the last play. */
-    fun readAll(): Map<String, Long>
+    /** Content hash → its last play. */
+    fun readAll(): Map<String, PlayRecord>
 
-    fun put(trackHash: String, lastPlayedMs: Long)
+    fun put(trackHash: String, record: PlayRecord)
 }
 
 /**
@@ -31,8 +37,8 @@ interface TrackHashStore {
 }
 
 /**
- * Song play history for the shuffle: [lastPlayedMs] tells the planner how long ago a track last
- * played, and the service calls [markPlayed] whenever a song starts.
+ * Song play history for the shuffle: [lastHeardAt] tells the planner when, on the listening
+ * clock, a track last played, and the service calls [markPlayed] whenever a song starts.
  *
  * Both stores are read into memory once ([load], or lazily on the first lookup) so the planner,
  * which runs on the main thread, never touches the disk or reads a file. A track whose hash isn't
@@ -45,8 +51,10 @@ class PlayHistory(
     private val open: (uri: String) -> InputStream,
     private val ioDispatcher: CoroutineDispatcher,
     private val clock: () -> Long = System::currentTimeMillis,
+    /** The [ListeningClock] reading. */
+    private val listeningClock: () -> Long = { 0L },
 ) {
-    private val lastPlayed = ConcurrentHashMap<String, Long>()
+    private val lastPlayed = ConcurrentHashMap<String, PlayRecord>()
     private val hashes = ConcurrentHashMap<String, HashedFile>()
 
     private val loaded by lazy {
@@ -61,7 +69,15 @@ class PlayHistory(
     fun load() = loaded
 
     /** When [track] last started playing, epoch ms, or null if never (or its hash isn't known yet). */
-    fun lastPlayedMs(track: Track): Long? {
+    fun lastPlayedMs(track: Track): Long? = record(track)?.wallClockMs
+
+    /**
+     * The listening-clock reading when [track] last started playing, or null if never, if its
+     * hash isn't known yet, or if its last play predates the listening clock.
+     */
+    fun lastHeardAt(track: Track): Long? = record(track)?.listeningMs
+
+    private fun record(track: Track): PlayRecord? {
         load()
         return cachedHash(track)?.let(lastPlayed::get)
     }
@@ -77,13 +93,13 @@ class PlayHistory(
      * file changed). Returns the hash, or null if the file couldn't be read.
      */
     suspend fun markPlayed(track: Track): String? {
-        val atMs = clock()
+        val record = PlayRecord(clock(), listeningClock())
         return withContext(ioDispatcher) {
             mutex.withLock {
                 load()
                 val hash = cachedHash(track) ?: hashFile(track) ?: return@withLock null
-                lastPlayed[hash] = atMs
-                runCatching { store.put(hash, atMs) }
+                lastPlayed[hash] = record
+                runCatching { store.put(hash, record) }
                 hash
             }
         }

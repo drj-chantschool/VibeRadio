@@ -2,12 +2,12 @@ package app.viberadio.playback
 
 import app.viberadio.channels.Channel
 import app.viberadio.library.Track
-import kotlin.math.ln
 import kotlin.math.pow
 import kotlin.random.Random
 
 /**
- * Decides what a channel actually plays. Pure, so queue policy is unit-testable.
+ * Decides what a channel actually plays, one song at a time. Pure, so queue policy is
+ * unit-testable.
  *
  * Extension points:
  * - Issue #2 (auto-mixing): a mixed-channel planner interleaves or layers podcast and music items.
@@ -16,59 +16,93 @@ import kotlin.random.Random
  *   is never cut off.
  */
 interface StreamPlanner {
-    /** The ordered tracks to queue when [channel] is tuned in. */
-    fun plan(channel: Channel): List<Track>
+    /**
+     * The next song to play on [channel], or null if it has none. Songs in [avoid] (playing or
+     * already queued) are not picked unless nothing else is on the channel.
+     */
+    fun next(channel: Channel, avoid: Set<Track> = emptySet()): Track?
 
     /**
      * Called when [channel]'s queue has played to the end.
-     * Return the channel to continue on; returning [channel] itself replans (reshuffles) it.
+     * Return the channel to continue on; returning [channel] itself keeps playing it.
      */
     fun onExhausted(channel: Channel, allChannels: List<Channel>): Channel = channel
 }
 
+/** The next [count] songs for [channel], each avoiding the ones before it (and [avoid]). */
+fun StreamPlanner.upcoming(channel: Channel, count: Int, avoid: Set<Track> = emptySet()): List<Track> {
+    val picked = LinkedHashSet<Track>()
+    repeat(count) { next(channel, avoid + picked)?.let(picked::add) ?: return picked.toList() }
+    return picked.toList()
+}
+
 /**
- * A fresh shuffle each time, looping forever on the same channel, weighted so songs heard
- * recently tend to come later and songs the user prefers tend to come sooner. Every track is
- * still queued exactly once per plan.
+ * Every song is an independent weighted draw from the whole channel; there are no passes, so a
+ * song can come round again before others have played once, and a disliked one comes up rarely.
  *
- * A track's weight is its recency, `1 - 2^(-age / halfLife)` (just played ≈ 0, one half-life ago
- * 0.5, long ago or never → 1, floored at [MIN_WEIGHT] so nothing is pinned to the end), times its
- * [preference] (#14; positive, floored by the learning models). The order is a weighted random
- * permutation (Efraimidis–Spirakis: sort by `u^(1/w)` descending), so with no history and equal
- * preferences it's a uniform shuffle.
+ * A song's weight is `p × (p × age)^k`:
+ * - `age`: time since it was last heard, on the [ListeningClock][app.viberadio.feedback.ListeningClock]
+ *   (song listening time, so time away doesn't age everything alike). Just played → 0, so no
+ *   immediate repeats; it grows without limit, so nothing is starved. Capped at [capCycles]
+ *   cycles (a cycle = the channel's total running time) so a song returning to a channel after a
+ *   long absence (seasonal, a "Wrong channel" move) doesn't jump the line. A song never heard on
+ *   the listening clock counts as last heard one cycle ago, i.e. due about now.
+ * - `p`: the song's [preference] (#14), floored at [PREFERENCE_FLOOR]. Play frequency is roughly
+ *   proportional to p, whatever k: a weight `q × age^k` gives a mean gap between plays that goes
+ *   as `q^(-1/(k+1))`, so `q = p^(k+1)` makes the gap go as 1/p. (Without the extra factor of p,
+ *   frequency would only go as `p^(k/(k+1))`.)
+ * - `k` ([exponent]): randomness only. 1 is loose; higher approaches evenly spaced plays.
  */
-class RecencyWeightedStreamPlanner(
-    /** When a track last started playing, epoch ms, or null if never (or unknown). */
-    private val lastPlayedMs: (Track) -> Long? = { null },
+class WeightedRandomStreamPlanner(
+    /** The listening-clock reading when a track last started, or null if never (or unknown). */
+    private val lastHeardAt: (Track) -> Long? = { null },
+    /** The listening clock now. */
+    private val listeningNow: () -> Long = { 0L },
     /** How strongly the user wants to hear a track; must be positive. Must not block. */
     private val preference: (Track) -> Double = { 1.0 },
-    private val clock: () -> Long = System::currentTimeMillis,
-    private val halfLifeMs: Long = DEFAULT_HALF_LIFE_MS,
+    private val exponent: Double = DEFAULT_EXPONENT,
+    private val capCycles: Double = DEFAULT_CAP_CYCLES,
     private val random: Random = Random.Default,
 ) : StreamPlanner {
 
-    override fun plan(channel: Channel): List<Track> {
-        val now = clock()
-        return channel.tracks
-            .map { it to key(weight(it, now) * preference(it).coerceAtLeast(MIN_WEIGHT)) }
-            .sortedByDescending { it.second }
-            .map { it.first }
+    override fun next(channel: Channel, avoid: Set<Track>): Track? {
+        val tracks = channel.tracks
+        if (tracks.isEmpty()) return null
+        val candidates = tracks.filter { it !in avoid }.ifEmpty { tracks }
+        val weights = weights(channel, candidates)
+        val total = weights.sum()
+        if (!(total > 0)) return candidates[random.nextInt(candidates.size)]
+        var r = random.nextDouble() * total
+        for (i in candidates.indices) {
+            r -= weights[i]
+            if (r < 0) return candidates[i]
+        }
+        return candidates.last()
     }
 
-    internal fun weight(track: Track, now: Long): Double {
-        val played = lastPlayedMs(track) ?: return 1.0
-        val age = (now - played).coerceAtLeast(0).toDouble()
-        return (1 - 2.0.pow(-age / halfLifeMs)).coerceAtLeast(MIN_WEIGHT)
-    }
-
-    /** `ln(u) / w` orders the same as `u^(1/w)` without underflowing for tiny weights. */
-    private fun key(weight: Double): Double {
-        val u = random.nextDouble().coerceAtLeast(Double.MIN_VALUE)
-        return ln(u) / weight
+    /** The draw weights of [candidates] on [channel], in order. */
+    internal fun weights(channel: Channel, candidates: List<Track>): List<Double> {
+        val cycle = channel.tracks.sumOf { it.durationMs.coerceAtLeast(MIN_TRACK_MS) }.toDouble()
+        val cap = capCycles * cycle
+        val now = listeningNow()
+        return candidates.map { track ->
+            // Clock behind the record (e.g. a crash lost a checkpoint): treat as just played.
+            val age = lastHeardAt(track)?.let { (now - it).coerceAtLeast(0).toDouble() } ?: cycle
+            val p = preference(track).coerceAtLeast(PREFERENCE_FLOOR)
+            // Ages in cycles keep the numbers small; only the ratios matter.
+            p * (p * age.coerceAtMost(cap) / cycle).pow(exponent)
+        }
     }
 
     companion object {
-        const val DEFAULT_HALF_LIFE_MS = 3L * 24 * 60 * 60 * 1000
-        const val MIN_WEIGHT = 1e-3
+        const val DEFAULT_EXPONENT = 1.5
+
+        /** Bigger than the longest natural gap (about 1 / [PREFERENCE_FLOOR] cycles), so it only catches returns. */
+        const val DEFAULT_CAP_CYCLES = 20.0
+
+        const val PREFERENCE_FLOOR = 0.1
+
+        /** Tracks with missing or tiny durations still count for something in the cycle. */
+        const val MIN_TRACK_MS = 60_000L
     }
 }

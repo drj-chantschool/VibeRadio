@@ -15,7 +15,9 @@ import java.io.File
  * - `feedback`: the thumbs log, one row per press. Append-only is enforced by the schema:
  *   triggers abort any UPDATE or DELETE, so a later feature can't quietly rewrite history. Rows
  *   come back in insert order (`id`).
- * - `play_history`: one row per song, `last_played` (epoch ms) overwritten on every play.
+ * - `play_history`: one row per song, overwritten on every play: `last_played` (epoch ms) and
+ *   `listened_at` (the [ListeningClock] reading; null for plays from before version 4).
+ * - `listening_clock`: one row, the total song listening time.
  * - `track_hashes`: URI → content hash, valid while MediaStore's size and mtime still match, so
  *   play history can be looked up without re-reading every file.
  * - `channel_airings`: per song channel, the song it last put on air (hash, duration, wall-clock
@@ -57,6 +59,7 @@ class FeedbackDatabase(
         }
         createPlayHistory(db)
         createChannelAirings(db)
+        addListeningClock(db)
         legacyFile?.let { LegacyTsvLog.read(it) }?.forEach { insert(db, it) }
     }
 
@@ -69,6 +72,20 @@ class FeedbackDatabase(
         // Never drop the feedback table.
         if (oldVersion < 2) createPlayHistory(db)
         if (oldVersion < 3) createChannelAirings(db)
+        if (oldVersion < 4) addListeningClock(db)
+    }
+
+    /** Version 4. */
+    private fun addListeningClock(db: SQLiteDatabase) {
+        db.execSQL("ALTER TABLE play_history ADD COLUMN listened_at INTEGER")
+        db.execSQL(
+            """
+            CREATE TABLE listening_clock (
+                id INTEGER PRIMARY KEY CHECK (id = 0),
+                total_ms INTEGER NOT NULL
+            )
+            """.trimIndent(),
+        )
     }
 
     /** Version 3. */
@@ -129,16 +146,38 @@ class FeedbackDatabase(
     // REPLACE rather than UPSERT below: API 26 ships SQLite 3.18, before ON CONFLICT DO UPDATE.
 
     val playHistory: PlayHistoryStore = object : PlayHistoryStore {
-        override fun readAll(): Map<String, Long> =
-            readableDatabase.query("play_history", arrayOf("track_hash", "last_played"), null, null, null, null, null)
-                .use { c -> buildMap { while (c.moveToNext()) put(c.getString(0), c.getLong(1)) } }
+        override fun readAll(): Map<String, PlayRecord> =
+            readableDatabase.query(
+                "play_history",
+                arrayOf("track_hash", "last_played", "listened_at"),
+                null, null, null, null, null,
+            ).use { c ->
+                buildMap {
+                    while (c.moveToNext()) put(c.getString(0), PlayRecord(c.getLong(1), if (c.isNull(2)) null else c.getLong(2)))
+                }
+            }
 
-        override fun put(trackHash: String, lastPlayedMs: Long) {
+        override fun put(trackHash: String, record: PlayRecord) {
             val values = ContentValues().apply {
                 put("track_hash", trackHash)
-                put("last_played", lastPlayedMs)
+                put("last_played", record.wallClockMs)
+                put("listened_at", record.listeningMs)
             }
             writableDatabase.insertWithOnConflict("play_history", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        }
+    }
+
+    val listeningClock: ListeningClockStore = object : ListeningClockStore {
+        override fun read(): Long =
+            readableDatabase.query("listening_clock", arrayOf("total_ms"), "id = 0", null, null, null, null)
+                .use { c -> if (c.moveToFirst()) c.getLong(0) else 0L }
+
+        override fun write(totalMs: Long) {
+            val values = ContentValues().apply {
+                put("id", 0)
+                put("total_ms", totalMs)
+            }
+            writableDatabase.insertWithOnConflict("listening_clock", null, values, SQLiteDatabase.CONFLICT_REPLACE)
         }
     }
 
@@ -198,6 +237,6 @@ class FeedbackDatabase(
 
     private companion object {
         const val DB_NAME = "feedback.db"
-        const val DB_VERSION = 3
+        const val DB_VERSION = 4
     }
 }

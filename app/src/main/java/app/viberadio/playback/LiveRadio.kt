@@ -57,9 +57,9 @@ class LiveRadio(
     fun load() = loaded
 
     /**
-     * The queue for tuning in to [channel], given the shuffle [planned] for it. If the channel's
+     * The queue for tuning in to [channel], given the songs [planned] for it. If the channel's
      * last song is still on air it goes first, joined part-way, and is dropped from the rest so
-     * it isn't heard twice in the pass.
+     * it isn't heard twice in a row.
      */
     fun tuneIn(channel: Channel, planned: List<Track>): TuneIn {
         val (track, positionMs) = onAir(channel) ?: return TuneIn(planned, null)
