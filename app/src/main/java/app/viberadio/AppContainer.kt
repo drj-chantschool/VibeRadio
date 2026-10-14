@@ -7,6 +7,7 @@ import app.viberadio.feedback.FeedbackDatabase
 import app.viberadio.feedback.FeedbackRecorder
 import app.viberadio.feedback.PlayHistory
 import app.viberadio.library.MediaStoreLibraryScanner
+import app.viberadio.playback.LiveRadio
 import app.viberadio.playback.RecencyWeightedStreamPlanner
 import app.viberadio.podcasts.EpisodeDownloader
 import app.viberadio.podcasts.HttpFeedFetcher
@@ -78,6 +79,13 @@ class AppContainer(context: Context) {
         open = openTrack,
         ioDispatcher = Dispatchers.IO,
     ).also { history -> appScope.launch(Dispatchers.IO) { history.load() } }
+
+    /** What each song channel last aired, so tuning back in can join a song still on air. Loaded at startup. */
+    val liveRadio = LiveRadio(
+        store = feedbackDatabase.channelAirings,
+        hashOf = playHistory::hashOf,
+        ioDispatcher = Dispatchers.IO,
+    ).also { radio -> appScope.launch(Dispatchers.IO) { radio.load() } }
 
     /** #2 and #4 replace this. */
     val streamPlanner: StreamPlanner = RecencyWeightedStreamPlanner(lastPlayedMs = playHistory::lastPlayedMs)

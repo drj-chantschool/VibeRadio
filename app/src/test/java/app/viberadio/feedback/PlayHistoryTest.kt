@@ -90,6 +90,17 @@ class PlayHistoryTest {
     }
 
     @Test
+    fun `hashOf answers from the cache without reading the file`() = runBlocking {
+        assertNull("not hashed until it plays", history().hashOf(song))
+        assertEquals(0, opens)
+        history().markPlayed(song)
+        opens = 0
+        assertEquals(hashA, history().hashOf(song))
+        assertNull("a changed file's old hash isn't trusted", history().hashOf(song.copy(sizeBytes = 7)))
+        assertEquals(0, opens)
+    }
+
+    @Test
     fun `unreadable file records nothing`() = runBlocking {
         assertNull(history().markPlayed(track("Jazz")))
         assertEquals(emptyMap<String, Long>(), store.rows)

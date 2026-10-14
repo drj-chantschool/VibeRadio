@@ -4,11 +4,13 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import app.viberadio.playback.ChannelAiring
+import app.viberadio.playback.ChannelAiringStore
 import java.io.File
 
 /**
- * `feedback.db`: per-song state keyed on the file's [ContentHash]. The only Android code in
- * `feedback`; everything else is pure JVM.
+ * `feedback.db`: per-song state keyed on the file's [ContentHash], plus what each song channel
+ * last aired. The only Android code in `feedback`; everything else is pure JVM.
  *
  * - `feedback`: the thumbs log, one row per press. Append-only is enforced by the schema:
  *   triggers abort any UPDATE or DELETE, so a later feature can't quietly rewrite history. Rows
@@ -16,6 +18,8 @@ import java.io.File
  * - `play_history`: one row per song, `last_played` (epoch ms) overwritten on every play.
  * - `track_hashes`: URI → content hash, valid while MediaStore's size and mtime still match, so
  *   play history can be looked up without re-reading every file.
+ * - `channel_airings`: per song channel, the song it last put on air (hash, duration, wall-clock
+ *   start), for live-radio resume. One row per channel, overwritten.
  *
  * On first creation it imports [legacyFile] (the tab-separated log earlier builds wrote) in the
  * same transaction, then renames that file to `*.imported` so it's never read again.
@@ -52,6 +56,7 @@ class FeedbackDatabase(
             )
         }
         createPlayHistory(db)
+        createChannelAirings(db)
         legacyFile?.let { LegacyTsvLog.read(it) }?.forEach { insert(db, it) }
     }
 
@@ -63,6 +68,21 @@ class FeedbackDatabase(
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         // Never drop the feedback table.
         if (oldVersion < 2) createPlayHistory(db)
+        if (oldVersion < 3) createChannelAirings(db)
+    }
+
+    /** Version 3. */
+    private fun createChannelAirings(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE channel_airings (
+                channel_id TEXT PRIMARY KEY NOT NULL,
+                track_hash TEXT NOT NULL,
+                duration_ms INTEGER NOT NULL,
+                started_at_ms INTEGER NOT NULL
+            ) WITHOUT ROWID
+            """.trimIndent(),
+        )
     }
 
     /** Version 2. */
@@ -143,6 +163,28 @@ class FeedbackDatabase(
         }
     }
 
+    /** What each song channel last aired, for live-radio resume. */
+    val channelAirings: ChannelAiringStore = object : ChannelAiringStore {
+        override fun readAll(): List<ChannelAiring> =
+            readableDatabase.query(
+                "channel_airings",
+                arrayOf("channel_id", "track_hash", "duration_ms", "started_at_ms"),
+                null, null, null, null, null,
+            ).use { c ->
+                buildList { while (c.moveToNext()) add(ChannelAiring(c.getString(0), c.getString(1), c.getLong(2), c.getLong(3))) }
+            }
+
+        override fun put(airing: ChannelAiring) {
+            val values = ContentValues().apply {
+                put("channel_id", airing.channelId)
+                put("track_hash", airing.trackHash)
+                put("duration_ms", airing.durationMs)
+                put("started_at_ms", airing.startedAtMs)
+            }
+            writableDatabase.insertWithOnConflict("channel_airings", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        }
+    }
+
     private fun insert(db: SQLiteDatabase, e: FeedbackEvent) {
         val values = ContentValues().apply {
             put("track_hash", e.trackHash)
@@ -156,6 +198,6 @@ class FeedbackDatabase(
 
     private companion object {
         const val DB_NAME = "feedback.db"
-        const val DB_VERSION = 2
+        const val DB_VERSION = 3
     }
 }

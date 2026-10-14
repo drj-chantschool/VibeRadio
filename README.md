@@ -10,6 +10,7 @@ The goal is to break the fast-dopamine loop of endless browsing and skipping, an
 
 - **A few channels, not a library browser.** Channels are generated from the diversity of genres in your collection.
 - **One control.** Turn the knob to change channel. There's no track list to dig through and no skip button.
+- **Channels keep playing.** Turn back to a channel and you rejoin the song it was playing, part-way through, as if it never stopped. Podcasts pick up exactly where you left off.
 - **Music and podcasts on the same dial.** Some channels are vocal-only, some are music-only, and some mix both.
 
 ## Planned features

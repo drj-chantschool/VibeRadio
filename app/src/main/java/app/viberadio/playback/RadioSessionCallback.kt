@@ -34,17 +34,24 @@ import kotlinx.coroutines.launch
  * Episodes play at their show's speed (pitch preserved), songs always at 1x. Speed is set
  * here on the player directly; controllers still can't change it.
  *
- * Every song that becomes the current item is reported to [onSongStarted], which feeds the
- * play history the shuffle weights by.
+ * Every song that becomes the current item is reported to [onSongStarted] with its channel and
+ * wall-clock start, which feeds the play history the shuffle weights by and [LiveRadio]'s record
+ * of what each channel last aired.
+ *
+ * Tuning in to a song channel whose last song would still be on air joins it part-way
+ * ([LiveRadio.tuneIn]) with a short fade-in, like tuning in to a real station. That join is a
+ * continuation, not a new play, so it isn't reported again.
  */
 @OptIn(UnstableApi::class)
 class RadioSessionCallback(
     private val repository: ChannelRepository,
     private val podcasts: PodcastRepository,
     private val planner: StreamPlanner,
+    private val liveRadio: LiveRadio,
     private val scope: CoroutineScope,
     private val podcastsStationName: String,
-    private val onSongStarted: (Track) -> Unit = {},
+    private val onSongStarted: (channelId: String, track: Track, startedAtMs: Long) -> Unit = { _, _, _ -> },
+    private val clock: () -> Long = System::currentTimeMillis,
 ) : MediaSession.Callback, Player.Listener {
 
     private var player: Player? = null
@@ -61,7 +68,36 @@ class RadioSessionCallback(
         }
     }
 
-    private data class Queue(val channelId: String, val items: List<MediaItem>, val startPositionMs: Long = C.TIME_UNSET)
+    /**
+     * The media ID of a song being joined part-way by live-radio resume, until it becomes current.
+     * It keeps its original start, so it isn't reported as a new play.
+     */
+    private var joiningMediaId: String? = null
+
+    /** How far the fade-in has got, in ms of playback, or -1 when not fading. */
+    private var fadeElapsedMs = -1L
+    private val fadeTick = object : Runnable {
+        override fun run() {
+            val player = player ?: return
+            if (player.isPlaying) fadeElapsedMs += FADE_STEP_MS
+            if (fadeElapsedMs >= FADE_IN_MS) {
+                stopFade()
+                return
+            }
+            val t = fadeElapsedMs.toFloat() / FADE_IN_MS
+            // Squared: closer to an even rise in loudness than a linear gain ramp.
+            player.volume = t * t
+            handler.postDelayed(this, FADE_STEP_MS)
+        }
+    }
+
+    private data class Queue(
+        val channelId: String,
+        val items: List<MediaItem>,
+        val startPositionMs: Long = C.TIME_UNSET,
+        /** The first item is a song joined part-way (live-radio resume). */
+        val joined: Boolean = false,
+    )
 
     fun attach(player: Player) {
         this.player = player
@@ -78,6 +114,7 @@ class RadioSessionCallback(
     fun detach() {
         savePosition()
         handler.removeCallbacks(positionTick)
+        stopFade()
         player?.removeListener(this)
         player = null
     }
@@ -103,13 +140,20 @@ class RadioSessionCallback(
     ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
         val queue = mediaItems.singleOrNull()
             ?.let(ChannelRequest::channelId)
-            ?.let(::queueFor)
+            ?.let(::tuneIn)
             ?: return Futures.immediateFailedFuture(
                 IllegalArgumentException("Expected a single channel request for a known channel"),
             )
         // Still on the old item here, so this keeps the place in an episode being tuned away from.
         savePosition()
         currentChannelId = queue.channelId
+        if (queue.joined) {
+            joiningMediaId = queue.items.first().mediaId
+            startFade()
+        } else {
+            joiningMediaId = null
+            stopFade()
+        }
         return Futures.immediateFuture(
             MediaSession.MediaItemsWithStartPosition(queue.items, 0, queue.startPositionMs),
         )
@@ -130,14 +174,16 @@ class RadioSessionCallback(
         // Posted, not called inline: changing player state inside this callback gets folded into
         // the same session update as the transition, and controllers can miss the transition.
         handler.post(::applySpeed)
-        songTrack(mediaItem)?.let(onSongStarted)
+        val joined = mediaItem != null && mediaItem.mediaId == joiningMediaId
+        joiningMediaId = null
+        if (joined) return
+        val channelId = mediaItem?.mediaMetadata?.extras?.getString(ChannelRequest.EXTRA_CHANNEL_ID) ?: return
+        songTrack(channelId, mediaItem)?.let { onSongStarted(channelId, it, clock()) }
     }
 
     /** The library track behind a queued song item, or null for episodes and stale items. */
-    private fun songTrack(item: MediaItem?): Track? {
-        val channelId = item?.mediaMetadata?.extras?.getString(ChannelRequest.EXTRA_CHANNEL_ID) ?: return null
-        return repository.channel(channelId)?.tracks?.firstOrNull { it.mediaId == item.mediaId }
-    }
+    private fun songTrack(channelId: String, item: MediaItem): Track? =
+        repository.channel(channelId)?.tracks?.firstOrNull { it.mediaId == item.mediaId }
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {
         handler.removeCallbacks(positionTick)
@@ -156,20 +202,49 @@ class RadioSessionCallback(
         } else {
             podcastQueue(channelId)
         } ?: return
+        joiningMediaId = null
+        stopFade()
         currentChannelId = next.channelId
         player.setMediaItems(next.items, 0, next.startPositionMs)
         player.prepare()
         player.play()
     }
 
-    private fun queueFor(channelId: String): Queue? {
-        repository.channel(channelId)?.let { return songQueue(it) }
+    /** The queue for tuning in to [channelId]: song channels join their last song if it's still on air. */
+    private fun tuneIn(channelId: String): Queue? {
+        repository.channel(channelId)?.let { channel ->
+            val tuneIn = liveRadio.tuneIn(channel, planner.plan(channel))
+            return Queue(
+                channelId = channel.id,
+                items = tuneIn.tracks.map { it.toMediaItem(channel) },
+                startPositionMs = tuneIn.resumeAtMs ?: C.TIME_UNSET,
+                joined = tuneIn.resumeAtMs != null,
+            )
+        }
         if (channelId !in podcasts.library.value.channelIds) return null
         return podcastQueue(channelId)
     }
 
+    /** A fresh shuffle of [channel], from the top. */
     private fun songQueue(channel: Channel): Queue =
         Queue(channel.id, planner.plan(channel).map { it.toMediaItem(channel) })
+
+    /**
+     * Silences the player and raises it over [FADE_IN_MS] of actual playback. Started when the
+     * queue is handed over, before the joined song loads, so it never starts at full volume.
+     */
+    private fun startFade() {
+        handler.removeCallbacks(fadeTick)
+        fadeElapsedMs = 0
+        player?.volume = 0f
+        handler.postDelayed(fadeTick, FADE_STEP_MS)
+    }
+
+    private fun stopFade() {
+        handler.removeCallbacks(fadeTick)
+        if (fadeElapsedMs >= 0) player?.volume = 1f
+        fadeElapsedMs = -1
+    }
 
     /** The channel's episodes, resuming a started one; or the #4 fallback if there are none. */
     private fun podcastQueue(channelId: String): Queue? {
@@ -231,6 +306,8 @@ class RadioSessionCallback(
 
     private companion object {
         const val POSITION_SAVE_INTERVAL_MS = 15_000L
+        const val FADE_IN_MS = 1_500L
+        const val FADE_STEP_MS = 50L
 
         val FORBIDDEN_COMMANDS = intArrayOf(
             Player.COMMAND_SEEK_TO_NEXT,
