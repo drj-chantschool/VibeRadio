@@ -5,6 +5,7 @@ import androidx.annotation.StringRes
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.viberadio.VibeRadioApp
+import app.viberadio.bluetooth.BluetoothSettings
 import app.viberadio.dial.ChannelLineup
 import app.viberadio.dial.ChannelNames
 import app.viberadio.dial.ChannelNamesRepository
@@ -32,6 +33,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ui(names.names.value))
 
     fun rename(id: String, name: String) = names.rename(id, name)
+
+    private val bluetooth: BluetoothSettings = (application as VibeRadioApp).container.bluetoothSettings
+
+    /** Settings → Bluetooth → "Resume on Bluetooth connection". */
+    val resumeOnConnect: StateFlow<Boolean> = bluetooth.resumeOnConnect
+
+    fun setResumeOnConnect(on: Boolean) = bluetooth.setResumeOnConnect(on)
 
     private fun ui(names: ChannelNames): List<ChannelNameUi> = ChannelLineup.ids.map { id ->
         ChannelNameUi(

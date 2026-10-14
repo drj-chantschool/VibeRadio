@@ -1,6 +1,8 @@
 package app.viberadio
 
 import android.content.Context
+import app.viberadio.bluetooth.BluetoothSettings
+import app.viberadio.bluetooth.PrefsBluetoothSettingsStore
 import app.viberadio.channels.ChannelGenerator
 import app.viberadio.channels.ChannelRepository
 import app.viberadio.dial.ChannelLineup
@@ -13,7 +15,9 @@ import app.viberadio.feedback.PlayHistory
 import app.viberadio.learning.Learner
 import app.viberadio.learning.LearningModels
 import app.viberadio.library.MediaStoreLibraryScanner
+import app.viberadio.playback.LastChannelStore
 import app.viberadio.playback.LiveRadio
+import app.viberadio.playback.PrefsLastChannelStore
 import app.viberadio.podcasts.EpisodeDownloader
 import app.viberadio.podcasts.HttpFeedFetcher
 import app.viberadio.podcasts.JsonPodcastStore
@@ -47,6 +51,16 @@ class AppContainer(context: Context) {
         scope = appScope,
         ioDispatcher = Dispatchers.IO,
     )
+
+    /** Settings → Bluetooth: resume when a Bluetooth audio device connects. */
+    val bluetoothSettings = BluetoothSettings(
+        store = PrefsBluetoothSettingsStore(context),
+        scope = appScope,
+        ioDispatcher = Dispatchers.IO,
+    )
+
+    /** The channel that played last, across restarts; Bluetooth resume tunes it when nothing is loaded. */
+    val lastChannel: LastChannelStore = PrefsLastChannelStore(context)
 
     /** The podcast pipeline (#17): hand-assigned shows, one global queue. Independent of [channelRepository]. */
     val podcastRepository = PodcastRepository(

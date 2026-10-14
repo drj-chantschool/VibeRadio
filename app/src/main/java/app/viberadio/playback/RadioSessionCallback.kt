@@ -56,6 +56,8 @@ class RadioSessionCallback(
     /** The user's name for a named channel, or null for a generated one. */
     private val stationName: (channelId: String) -> String? = { null },
     private val onSongStarted: (channelId: String, track: Track, startedAtMs: Long) -> Unit = { _, _, _ -> },
+    /** Each channel the player switches to, by tuning or by fallback (#4); remembered for Bluetooth resume. */
+    private val onChannelTuned: (channelId: String) -> Unit = {},
     private val clock: () -> Long = System::currentTimeMillis,
 ) : MediaSession.Callback, Player.Listener {
 
@@ -154,6 +156,7 @@ class RadioSessionCallback(
         // Still on the old item here, so this keeps the place in an episode being tuned away from.
         savePosition()
         currentChannelId = queue.channelId
+        onChannelTuned(queue.channelId)
         if (queue.joined) {
             joiningMediaId = queue.items.first().mediaId
             startFade()
@@ -215,6 +218,7 @@ class RadioSessionCallback(
         joiningMediaId = null
         stopFade()
         currentChannelId = next.channelId
+        onChannelTuned(next.channelId)
         player.setMediaItems(next.items, 0, next.startPositionMs)
         player.prepare()
         player.play()

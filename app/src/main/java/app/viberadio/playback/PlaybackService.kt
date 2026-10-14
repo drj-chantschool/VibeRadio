@@ -68,6 +68,7 @@ class PlaybackService : MediaSessionService() {
             listening = container.listeningClock,
             scope = scope,
             stationName = { id -> container.channelNames.names.value.of(id) },
+            onChannelTuned = container.lastChannel::write,
             // App scope, not the service's: a play still gets recorded if the service stops meanwhile.
             onSongStarted = { channelId, track, startedAtMs ->
                 container.appScope.launch {
