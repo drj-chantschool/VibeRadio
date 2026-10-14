@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
@@ -57,8 +58,8 @@ import java.time.format.FormatStyle
 
 /**
  * The podcast page (#20). More control than the song page, because podcasts are curated and
- * long-form: add a feed, put a show on the podcast-only channel or take it off, and mark episodes
- * played before they come up. There is still no play button here; listening happens by
+ * long-form: add a feed, choose the channels a show plays on and whether it pauses the music,
+ * and mark episodes played before they come up. There is still no play button here; listening happens by
  * tuning the dial.
  */
 @Composable
@@ -66,7 +67,8 @@ fun PodcastScreen(
     state: PodcastUiState,
     onDraftChange: (String) -> Unit,
     onAdd: () -> Unit,
-    onSetOnAir: (feedUrl: String, onAir: Boolean) -> Unit,
+    onSetChannel: (feedUrl: String, channelId: String, on: Boolean) -> Unit,
+    onSetPauseMusic: (feedUrl: String, on: Boolean) -> Unit,
     onTogglePlayed: (EpisodeUi) -> Unit,
     onMarkOlderPlayed: (EpisodeUi) -> Unit,
     onSetSpeed: (feedUrl: String, speed: Float) -> Unit,
@@ -107,10 +109,15 @@ fun PodcastScreen(
                             show = show,
                             open = open,
                             onToggleOpen = { expanded = if (open) expanded - show.feedUrl else expanded + show.feedUrl },
-                            onSetOnAir = { onSetOnAir(show.feedUrl, it) },
                         )
                     }
                     if (open) {
+                        item(key = "channels:" + show.feedUrl) {
+                            ChannelChoices(show.channels) { id, on -> onSetChannel(show.feedUrl, id, on) }
+                        }
+                        item(key = "pause:" + show.feedUrl) {
+                            PauseMusicRow(show.pauseMusic) { onSetPauseMusic(show.feedUrl, it) }
+                        }
                         item(key = "speed:" + show.feedUrl) {
                             SpeedRow(show.speed) { onSetSpeed(show.feedUrl, it) }
                         }
@@ -223,18 +230,17 @@ private fun UpNextRow(episode: EpisodeUi) {
 }
 
 @Composable
-private fun ShowRow(show: ShowUi, open: Boolean, onToggleOpen: () -> Unit, onSetOnAir: (Boolean) -> Unit) {
+private fun ShowRow(show: ShowUi, open: Boolean, onToggleOpen: () -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClickLabel = stringResource(if (open) R.string.podcasts_hide_episodes else R.string.podcasts_show_episodes)) {
+                onToggleOpen()
+            }
+            .padding(vertical = 12.dp),
     ) {
-        Column(
-            Modifier
-                .weight(1f)
-                .clickable(onClickLabel = stringResource(if (open) R.string.podcasts_hide_episodes else R.string.podcasts_show_episodes)) {
-                    onToggleOpen()
-                },
-        ) {
+        Column(Modifier.weight(1f)) {
             Text(
                 show.title,
                 style = MaterialTheme.typography.titleMedium,
@@ -246,20 +252,82 @@ private fun ShowRow(show: ShowUi, open: Boolean, onToggleOpen: () -> Unit, onSet
                 listOfNotNull(
                     stringResource(R.string.podcasts_unplayed, show.unplayed),
                     formatSpeed(show.speed).takeIf { show.speed != PodcastSpeeds.DEFAULT },
+                    stringResource(R.string.podcasts_pause_music).takeIf { show.pauseMusic },
                 ).joinToString(" · "),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.outline,
             )
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Switch(checked = show.onAir, onCheckedChange = onSetOnAir)
+            val on = show.channels.filter { it.checked }.map { it.name }
             Text(
-                stringResource(R.string.podcasts_on_air),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                if (on.isEmpty()) stringResource(R.string.podcasts_off_air) else on.joinToString(", "),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.outline,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
         }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            if (open) "\u2212" else "+",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.outline,
+        )
+    }
+}
+
+/** A checkbox per named channel: the channels this show plays on (#18). */
+@Composable
+private fun ChannelChoices(channels: List<ChannelChoiceUi>, onSet: (id: String, on: Boolean) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Text(
+            stringResource(R.string.podcasts_channels),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        for (channel in channels) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .toggleable(value = channel.checked, role = Role.Checkbox) { onSet(channel.id, it) },
+            ) {
+                // The row handles the tap, so the box itself isn't a separate target.
+                Checkbox(checked = channel.checked, onCheckedChange = null)
+                Text(
+                    channel.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+        }
+    }
+}
+
+/** "Pause music": the music stops while this show plays, and picks up after (#2). */
+@Composable
+private fun PauseMusicRow(on: Boolean, onSet: (Boolean) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(value = on, role = Role.Switch, onValueChange = onSet)
+            .padding(vertical = 8.dp),
+    ) {
+        Column(Modifier.weight(1f).padding(end = 16.dp)) {
+            Text(
+                stringResource(R.string.podcasts_pause_music),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            Text(
+                stringResource(R.string.podcasts_pause_music_about),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.outline,
+            )
+        }
+        // The row handles the toggle, so the switch itself is display-only.
+        Switch(checked = on, onCheckedChange = null)
     }
 }
 
@@ -364,23 +432,27 @@ private val previewEpisodes = listOf(
     EpisodeUi("3", "Pilot", "Slow Radio", 1_700_000_000_000, played = true, downloaded = false, started = false),
 )
 
+private fun previewChannels(vararg on: String) = listOf(
+    "breeze" to "The Breeze", "buzz" to "The Buzz", "podcasts" to "The Voice",
+).map { (id, name) -> ChannelChoiceUi(id, name, checked = id in on) }
+
 private val previewState = PodcastUiState(
     loaded = true,
     upNext = previewEpisodes.take(2),
     shows = listOf(
-        ShowUi("a", "Slow Radio", onAir = true, unplayed = 2, speed = 1.0f, episodes = previewEpisodes),
-        ShowUi("b", "Field Notes", onAir = false, unplayed = 14, speed = 1.5f, episodes = emptyList()),
+        ShowUi("a", "Slow Radio", previewChannels("breeze", "podcasts"), pauseMusic = false, unplayed = 2, speed = 1.0f, episodes = previewEpisodes),
+        ShowUi("b", "Field Notes", previewChannels(), pauseMusic = true, unplayed = 14, speed = 1.5f, episodes = emptyList()),
     ),
 )
 
 @Preview(name = "Light", showBackground = true)
 @Composable
 private fun PodcastScreenLightPreview() {
-    VibeRadioTheme(darkTheme = false) { PodcastScreen(previewState, {}, {}, { _, _ -> }, {}, {}, { _, _ -> }, {}) }
+    VibeRadioTheme(darkTheme = false) { PodcastScreen(previewState, {}, {}, { _, _, _ -> }, { _, _ -> }, {}, {}, { _, _ -> }, {}) }
 }
 
 @Preview(name = "Dark", showBackground = true)
 @Composable
 private fun PodcastScreenDarkPreview() {
-    VibeRadioTheme(darkTheme = true) { PodcastScreen(previewState, {}, {}, { _, _ -> }, {}, {}, { _, _ -> }, {}) }
+    VibeRadioTheme(darkTheme = true) { PodcastScreen(previewState, {}, {}, { _, _, _ -> }, { _, _ -> }, {}, {}, { _, _ -> }, {}) }
 }
