@@ -14,6 +14,7 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import app.viberadio.R
 import app.viberadio.VibeRadioApp
+import app.viberadio.playback.audio.AudioStream
 import app.viberadio.playback.audio.ProcessingRenderersFactory
 import app.viberadio.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
@@ -23,18 +24,21 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
- * Owns the player and the media session. Media3 promotes it to a foreground service with a
+ * Owns the players and the media session. Media3 promotes it to a foreground service with a
  * media notification while playing, so playback continues with the app in the background.
  *
- * Podcast-only channels play through the same player. Mixed channels (#2) will need a second
- * player (or a custom mixing source) for the podcast stream; it belongs here alongside the song
- * player, with the session exposing the combined state.
+ * Two players, one per stream (#2), each with its own EQ ([AudioStream]); the system mixes
+ * their output. The session player carries the music, podcast-only channels and music
+ * podcasts playing by themselves, and is what every controller sees. The overlay player only
+ * plays podcasts over the music on song channels; it takes no audio focus and follows the
+ * session player's play/pause ([RadioSessionCallback]).
  */
 @OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
 
     private var session: MediaSession? = null
     private var callback: RadioSessionCallback? = null
+    private var overlayPlayer: ExoPlayer? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onCreate() {
@@ -46,8 +50,10 @@ class PlaybackService : MediaSessionService() {
         val http = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)
             .setUserAgent(getString(R.string.app_name))
-        val player = ExoPlayer.Builder(this, ProcessingRenderersFactory(this, container.audioProcessors))
-            .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(this, http)))
+        // One per player: a media source factory holds per-player state.
+        fun sources() = DefaultMediaSourceFactory(DefaultDataSource.Factory(this, http))
+        val player = ExoPlayer.Builder(this, ProcessingRenderersFactory(this, container.audioProcessors, AudioStream.MUSIC))
+            .setMediaSourceFactory(sources())
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -59,6 +65,19 @@ class PlaybackService : MediaSessionService() {
             // Network: keeps Wi-Fi up while an episode streams.
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
+        val overlayPlayer = ExoPlayer.Builder(this, ProcessingRenderersFactory(this, container.audioProcessors, AudioStream.PODCAST))
+            .setMediaSourceFactory(sources())
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_SPEECH)
+                    .build(),
+                // The session player holds focus for both; this one follows it.
+                /* handleAudioFocus = */ false,
+            )
+            .setWakeMode(C.WAKE_MODE_NETWORK)
+            .build()
+        this.overlayPlayer = overlayPlayer
 
         val callback = RadioSessionCallback(
             repository = container.channelRepository,
@@ -77,7 +96,7 @@ class PlaybackService : MediaSessionService() {
                 }
             },
         )
-        callback.attach(player)
+        callback.attach(player, overlayPlayer, container.mix)
         this.callback = callback
 
         val openApp = PendingIntent.getActivity(
@@ -98,6 +117,8 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         callback?.detach()
         callback = null
+        overlayPlayer?.release()
+        overlayPlayer = null
         scope.cancel()
         session?.run {
             player.release()
