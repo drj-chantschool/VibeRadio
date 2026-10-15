@@ -12,6 +12,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -53,6 +55,11 @@ import app.viberadio.R
 import androidx.annotation.StringRes
 import androidx.compose.ui.text.input.KeyboardType
 import app.viberadio.playback.audio.AudioSettings
+import app.viberadio.playback.GapParam
+import app.viberadio.playback.GapUnit
+import app.viberadio.playback.PodcastGapRule
+import app.viberadio.playback.PodcastGapSettings
+import java.math.RoundingMode
 import app.viberadio.diagnostics.DiagnosticsExporter
 import app.viberadio.diagnostics.ExportOutcome
 import app.viberadio.ui.theme.VibeRadioTheme
@@ -80,7 +87,7 @@ fun SettingsButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
 }
 
 /** The pages inside settings. Enum, so it survives rotation and process death as-is. */
-private enum class SettingsPage { Root, Channels, Bluetooth, Audio, Debug }
+private enum class SettingsPage { Root, Channels, Bluetooth, Audio, Podcasts, Debug }
 
 /** Settings → Debug as the page shows it. */
 data class DebugSettingsUi(
@@ -117,6 +124,12 @@ fun SettingsScreen(
     /** Applies the change if valid; false (nothing changed) if not. */
     onAudioChange: ((AudioSettings) -> AudioSettings) -> Boolean,
     onRestoreAudio: () -> Unit,
+    /** Settings → Podcasts (developer mode): the gap rule between episodes and its parameters. */
+    podcastGap: PodcastGapSettings,
+    onSelectGapRule: (id: String) -> Unit,
+    /** Sets one parameter of a rule if the value is accepted; false (nothing changed) if not. */
+    onGapParam: (ruleId: String, key: String, value: Double) -> Boolean,
+    onRestoreGap: () -> Unit,
     /** The version line at the foot of the list; tapping it seven times turns developer mode on. */
     version: String,
     onVersionTap: () -> Unit,
@@ -131,9 +144,9 @@ fun SettingsScreen(
     var page by rememberSaveable { mutableStateOf(SettingsPage.Root) }
     // Composed after MainActivity's handler, so it takes back first while a subpage is open.
     BackHandler(enabled = page != SettingsPage.Root) { page = SettingsPage.Root }
-    // Turning developer mode off hides its page.
+    // Turning developer mode off hides its pages.
     LaunchedEffect(debug.developerMode) {
-        if (!debug.developerMode && page == SettingsPage.Debug) page = SettingsPage.Root
+        if (!debug.developerMode && (page == SettingsPage.Debug || page == SettingsPage.Podcasts)) page = SettingsPage.Root
     }
 
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
@@ -161,6 +174,12 @@ fun SettingsScreen(
                     Rule()
                     if (debug.developerMode) {
                         SettingsLink(
+                            title = stringResource(R.string.settings_podcasts),
+                            summary = stringResource(R.string.settings_podcasts_summary),
+                            onClick = { page = SettingsPage.Podcasts },
+                        )
+                        Rule()
+                        SettingsLink(
                             title = stringResource(R.string.settings_debug),
                             summary = stringResource(R.string.settings_debug_summary),
                             onClick = { page = SettingsPage.Debug },
@@ -181,6 +200,10 @@ fun SettingsScreen(
                 SettingsPage.Audio -> {
                     SettingsHeader(stringResource(R.string.settings_audio), onBack = { page = SettingsPage.Root })
                     AudioSettingsList(audio, onAudioChange, onRestoreAudio)
+                }
+                SettingsPage.Podcasts -> {
+                    SettingsHeader(stringResource(R.string.settings_podcasts), onBack = { page = SettingsPage.Root })
+                    PodcastSettingsList(podcastGap, onSelectGapRule, onGapParam, onRestoreGap)
                 }
                 SettingsPage.Debug -> {
                     SettingsHeader(stringResource(R.string.settings_debug), onBack = { page = SettingsPage.Root })
@@ -544,15 +567,42 @@ private fun AudioSettingsList(
 /** Edit one figure. Out-of-range values, or a low edge not below its high edge, are refused. */
 @Composable
 private fun AudioFieldDialog(field: AudioField, current: AudioSettings, onSave: (Double) -> Boolean, onDismiss: () -> Unit) {
-    var draft by rememberSaveable(field) { mutableStateOf(field.format(current).replace('\u2212', '-')) }
-    var invalid by rememberSaveable(field) { mutableStateOf(false) }
+    FigureDialog(
+        key = field.name,
+        title = stringResource(field.label),
+        unit = stringResource(field.unit),
+        current = field.format(current),
+        default = field.format(AudioSettings.DEFAULT),
+        invalidText = stringResource(R.string.settings_audio_invalid),
+        onSave = onSave,
+        onDismiss = onDismiss,
+    )
+}
+
+/**
+ * Edit one number: a text field with its unit, the default under it, and [invalidText] instead
+ * when [onSave] refuses the value. [key] keeps the draft per figure across rotation.
+ */
+@Composable
+private fun FigureDialog(
+    key: String,
+    title: String,
+    unit: String?,
+    current: String,
+    default: String,
+    invalidText: String,
+    onSave: (Double) -> Boolean,
+    onDismiss: () -> Unit,
+) {
+    var draft by rememberSaveable(key) { mutableStateOf(current.replace('\u2212', '-')) }
+    var invalid by rememberSaveable(key) { mutableStateOf(false) }
     fun save() {
         val value = draft.trim().replace('\u2212', '-').replace(',', '.').toDoubleOrNull()
         if (value != null && value.isFinite() && onSave(value)) onDismiss() else invalid = true
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(field.label)) },
+        title = { Text(title) },
         text = {
             OutlinedTextField(
                 value = draft,
@@ -560,14 +610,18 @@ private fun AudioFieldDialog(field: AudioField, current: AudioSettings, onSave: 
                     draft = it.take(12)
                     invalid = false
                 },
-                suffix = { Text(stringResource(field.unit)) },
+                suffix = if (unit != null) {
+                    { Text(unit) }
+                } else {
+                    null
+                },
                 isError = invalid,
                 supportingText = {
                     Text(
                         if (invalid) {
-                            stringResource(R.string.settings_audio_invalid)
+                            invalidText
                         } else {
-                            stringResource(R.string.settings_audio_default, field.format(AudioSettings.DEFAULT), stringResource(field.unit))
+                            stringResource(R.string.settings_audio_default, default, unit.orEmpty()).trimEnd()
                         },
                     )
                 },
@@ -583,6 +637,161 @@ private fun AudioFieldDialog(field: AudioField, current: AudioSettings, onSave: 
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         },
     )
+}
+
+/** Labels for the podcast gap rules and their parameters; the rules themselves are pure. */
+internal object GapStrings {
+    @StringRes
+    fun title(ruleId: String): Int = when (ruleId) {
+        PodcastGapRule.TracksByLength.ID -> R.string.gap_rule_tracks_by_length
+        PodcastGapRule.MusicRatio.ID -> R.string.gap_rule_music_ratio
+        else -> throw IllegalArgumentException(ruleId)
+    }
+
+    @StringRes
+    fun about(ruleId: String): Int = when (ruleId) {
+        PodcastGapRule.TracksByLength.ID -> R.string.gap_rule_tracks_by_length_about
+        PodcastGapRule.MusicRatio.ID -> R.string.gap_rule_music_ratio_about
+        else -> throw IllegalArgumentException(ruleId)
+    }
+
+    @StringRes
+    fun label(key: String): Int = when (key) {
+        PodcastGapRule.TracksByLength.LONG_MINUTES -> R.string.gap_param_long_minutes
+        PodcastGapRule.TracksByLength.LONG_TRACKS -> R.string.gap_param_long_tracks
+        PodcastGapRule.TracksByLength.VERY_LONG_MINUTES -> R.string.gap_param_very_long_minutes
+        PodcastGapRule.TracksByLength.VERY_LONG_TRACKS -> R.string.gap_param_very_long_tracks
+        PodcastGapRule.MusicRatio.RATIO -> R.string.gap_param_ratio
+        PodcastGapRule.MusicRatio.FLOOR_SECONDS -> R.string.gap_param_floor_seconds
+        PodcastGapRule.MusicRatio.TOLERANCE_PERCENT -> R.string.gap_param_tolerance_percent
+        else -> throw IllegalArgumentException(key)
+    }
+
+    /** The unit shown after a value; null for a plain number (the ratio). */
+    @StringRes
+    fun unit(unit: GapUnit): Int? = when (unit) {
+        GapUnit.Minutes -> R.string.unit_minutes
+        GapUnit.Tracks -> R.string.unit_tracks
+        GapUnit.Seconds -> R.string.unit_seconds
+        GapUnit.Percent -> R.string.unit_percent
+        GapUnit.Ratio -> null
+    }
+
+    /** Whole numbers as such, others to three decimals at most, without trailing zeros. */
+    fun format(param: GapParam, value: Double): String {
+        val scale = if (param.whole) 0 else 3
+        return BigDecimal(value.toString()).setScale(scale, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
+    }
+}
+
+/**
+ * Settings → Podcasts (developer mode): which rule sets the gap between episodes on a song
+ * channel, one radio row per rule, then the chosen rule's own parameters, each tappable to
+ * change, and a way back to the defaults. Each rule keeps its parameters while another is chosen.
+ */
+@Composable
+private fun PodcastSettingsList(
+    settings: PodcastGapSettings,
+    onSelect: (id: String) -> Unit,
+    onParam: (ruleId: String, key: String, value: Double) -> Boolean,
+    onRestore: () -> Unit,
+) {
+    var editing by rememberSaveable { mutableStateOf<String?>(null) }
+    val active = settings.active
+    val defaults = PodcastGapRule.all.first { it.id == active.id }
+
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+        item {
+            Text(
+                stringResource(R.string.settings_podcasts_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+            )
+            Rule()
+        }
+        items(settings.rules, key = { "rule:" + it.id }) { rule ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectable(selected = rule.id == settings.selected, role = Role.RadioButton, onClick = { onSelect(rule.id) })
+                    .padding(horizontal = 24.dp, vertical = 14.dp),
+            ) {
+                Column(Modifier.weight(1f).padding(end = 16.dp)) {
+                    Text(stringResource(GapStrings.title(rule.id)), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground)
+                    Text(stringResource(GapStrings.about(rule.id)), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                // The row handles the choice, so the button itself is display-only.
+                RadioButton(selected = rule.id == settings.selected, onClick = null)
+            }
+            Rule()
+        }
+        item {
+            Text(
+                stringResource(R.string.settings_podcasts_params, stringResource(GapStrings.title(active.id))),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 8.dp),
+            )
+            Rule()
+        }
+        items(active.params, key = { active.id + "." + it.key }) { param ->
+            val unit = GapStrings.unit(param.unit)?.let { stringResource(it) }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = { editing = param.key })
+                    .padding(horizontal = 24.dp, vertical = 14.dp),
+            ) {
+                Text(
+                    stringResource(GapStrings.label(param.key)),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.weight(1f).padding(end = 16.dp),
+                )
+                Text(
+                    listOfNotNull(GapStrings.format(param, active[param.key]), unit).joinToString(" "),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (active[param.key] == defaults[param.key]) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.onBackground
+                    },
+                )
+            }
+            Rule()
+        }
+        item {
+            TextButton(
+                onClick = onRestore,
+                enabled = settings.rules != PodcastGapRule.all,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            ) { Text(stringResource(R.string.settings_audio_restore)) }
+        }
+    }
+
+    active.params.firstOrNull { it.key == editing }?.let { param ->
+        FigureDialog(
+            key = active.id + "." + param.key,
+            title = stringResource(GapStrings.label(param.key)),
+            unit = GapStrings.unit(param.unit)?.let { stringResource(it) },
+            current = GapStrings.format(param, active[param.key]),
+            default = GapStrings.format(param, defaults[param.key]),
+            invalidText = stringResource(
+                when {
+                    param.whole -> R.string.settings_podcasts_invalid_whole
+                    param.unit == GapUnit.Minutes -> R.string.settings_podcasts_invalid_minutes
+                    else -> R.string.settings_podcasts_invalid
+                },
+                GapStrings.format(param, param.range.start),
+                GapStrings.format(param, param.range.endInclusive),
+            ),
+            onSave = { value -> onParam(active.id, param.key, value) },
+            onDismiss = { editing = null },
+        )
+    }
 }
 
 /** The named channels, each tappable to rename. */
@@ -747,6 +956,10 @@ private fun SettingsLightPreview() {
             audio = AudioSettings.DEFAULT,
             onAudioChange = { true },
             onRestoreAudio = {},
+            podcastGap = PodcastGapSettings.DEFAULT,
+            onSelectGapRule = {},
+            onGapParam = { _, _, _ -> true },
+            onRestoreGap = {},
             version = "0.4.0",
             onVersionTap = {},
             debug = previewDebug,
@@ -771,6 +984,10 @@ private fun SettingsDarkPreview() {
             audio = AudioSettings.DEFAULT,
             onAudioChange = { true },
             onRestoreAudio = {},
+            podcastGap = PodcastGapSettings.DEFAULT,
+            onSelectGapRule = {},
+            onGapParam = { _, _, _ -> true },
+            onRestoreGap = {},
             version = "0.4.0",
             onVersionTap = {},
             debug = previewDebug,
@@ -811,6 +1028,21 @@ private fun AudioSettingsPreview() {
     VibeRadioTheme(darkTheme = false) {
         Surface(color = MaterialTheme.colorScheme.background) {
             AudioSettingsList(AudioSettings.DEFAULT.copy(musicDepthDb = -12f), onAudioChange = { true }, onRestore = {})
+        }
+    }
+}
+
+@Preview(name = "Podcasts", showBackground = true, heightDp = 640)
+@Composable
+private fun PodcastSettingsPreview() {
+    VibeRadioTheme(darkTheme = false) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            PodcastSettingsList(
+                PodcastGapSettings.DEFAULT.select(PodcastGapRule.MusicRatio.ID),
+                onSelect = {},
+                onParam = { _, _, _ -> true },
+                onRestore = {},
+            )
         }
     }
 }

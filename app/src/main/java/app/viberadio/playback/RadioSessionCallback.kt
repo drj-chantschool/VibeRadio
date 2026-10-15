@@ -2,6 +2,7 @@ package app.viberadio.playback
 
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -46,11 +47,14 @@ import kotlinx.coroutines.launch
  * ([LiveRadio.tuneIn]) with a short fade-in, like tuning in to a real station. That join is a
  * continuation, not a new play, so it isn't reported again.
  *
- * Shows assigned to a song channel (#2) play on it at track boundaries, following
- * [PodcastSchedule]. A music podcast ("Pause music" on) takes the next song's place in this
- * player's queue and plays by itself; the music resumes after it. Any other show plays over the
- * music on the overlay player ([PodcastOverlay]), which follows this player's play/pause.
- * Tuning in fresh counts as a boundary; joining a song part-way doesn't.
+ * Shows assigned to a song channel (#2) play on it following [PodcastSchedule], with the gap
+ * between episodes set by [gapRule]: at track boundaries, or (if the rule allows) part-way
+ * through a song once the music has run long enough. A music podcast ("Pause music" on) takes
+ * the next song's place in this player's queue and plays by itself, so it always waits for a
+ * track boundary; the music resumes after it. Any other show plays over the music on the
+ * overlay player ([PodcastOverlay]), which follows this player's play/pause. Tuning in fresh
+ * counts as a boundary; joining a song part-way doesn't. The schedule's times are on [onAir],
+ * which runs only while this player plays.
  */
 @OptIn(UnstableApi::class)
 class RadioSessionCallback(
@@ -66,6 +70,8 @@ class RadioSessionCallback(
     private val onSongStarted: (channelId: String, track: Track, startedAtMs: Long) -> Unit = { _, _, _ -> },
     /** Each channel the player switches to, by tuning or by fallback (#4); remembered for Bluetooth resume. */
     private val onChannelTuned: (channelId: String) -> Unit = {},
+    /** How long the music runs between episodes on a song channel; read as each episode ends. */
+    private val gapRule: () -> PodcastGapRule = { PodcastGapRule.DEFAULT },
     private val clock: () -> Long = System::currentTimeMillis,
 ) : MediaSession.Callback, Player.Listener {
 
@@ -74,7 +80,13 @@ class RadioSessionCallback(
     private var currentChannelId: String? = null
 
     /** When episodes may start on the current song channel. */
-    private val schedule = PodcastSchedule()
+    private val schedule = PodcastSchedule(gapRule)
+
+    /** Runs while the session player plays; the schedule measures podcast and music time on it. */
+    private val onAir = OnAirClock(SystemClock::elapsedRealtime)
+
+    /** The last [PodcastSchedule.dueAtBoundary] answer, so the queue is topped up only when it changes. */
+    private var dueAtBoundary = false
 
     /** The first item of a fresh tune-in to a song channel is a track boundary. */
     private var tuneBoundary = false
@@ -86,6 +98,14 @@ class RadioSessionCallback(
     private var currentEpisodeId: String? = null
 
     private val handler = Handler(Looper.getMainLooper())
+
+    /** While playing: whether an episode should start part-way through the song, or be queued after it. */
+    private val scheduleTick = object : Runnable {
+        override fun run() {
+            checkSchedule()
+            handler.postDelayed(this, SCHEDULE_CHECK_INTERVAL_MS)
+        }
+    }
     private val positionTick = object : Runnable {
         override fun run() {
             savePosition()
@@ -141,8 +161,8 @@ class RadioSessionCallback(
                 podcasts = podcasts,
                 mix = mix,
                 onEnded = { _, durationMs -> onOverlayEnded(durationMs) },
-                // Not marked played; it's tried again at a later boundary.
-                onFailed = { onOverlayEnded(0) },
+                // Not marked played; it's tried again at the next boundary.
+                onFailed = { onOverlayFailed() },
             )
         }
         scope.launch {
@@ -163,7 +183,9 @@ class RadioSessionCallback(
         overlay?.release()
         overlay = null
         listening?.stop()
+        onAir.stop()
         handler.removeCallbacks(positionTick)
+        handler.removeCallbacks(scheduleTick)
         stopFade()
         player?.removeListener(this)
         player = null
@@ -255,19 +277,49 @@ class RadioSessionCallback(
         val boundary = tuneBoundary
         tuneBoundary = false
         val episodeId = currentEpisodeId
+        val now = onAir.now()
         when {
             episodeId != null -> {
-                schedule.episodeStarted()
+                schedule.episodeStarted(now)
                 val saved = podcasts.library.value.positions[episodeId]
                 // An episode reached mid-queue can't carry a start position; pick up where it was left.
                 if (auto && saved != null && saved > 0) {
                     handler.post { if (currentEpisodeId == episodeId) player?.seekTo(saved) }
                 }
             }
-            endedEpisode != null -> schedule.episodeEnded(endedDurationMs)
-            auto -> if (schedule.songBoundary()) startOverlay(channelId)
+            endedEpisode != null -> {
+                schedule.episodeEnded(endedDurationMs, now)
+                // The rule may want the next episode straight away, over this song.
+                handler.post(::checkSchedule)
+            }
+            auto -> if (schedule.songBoundary(now)) startOverlay(channelId)
             boundary -> startOverlay(channelId)
         }
+    }
+
+    /**
+     * Between boundaries on a song channel: starts the next episode over the song once the gap
+     * rule says it can't wait for the song to end, and re-queues when whether one is due at the
+     * song's end changes (a music podcast takes the next song's place).
+     */
+    private fun checkSchedule() {
+        val channelId = currentChannelId ?: return
+        if (repository.channel(channelId) == null || currentEpisodeId != null) return
+        val now = onAir.now()
+        val songEndsAt = songEndsAt(now)
+        if (schedule.startMidSong(now, songEndsAt)) startOverlay(channelId)
+        val due = schedule.dueAtBoundary(songEndsAt)
+        if (due != dueAtBoundary) {
+            dueAtBoundary = due
+            topUpSongQueue()
+        }
+    }
+
+    /** When the song playing ends, on the [onAir] clock; null if its length isn't known yet. */
+    private fun songEndsAt(now: Long): Long? {
+        val player = player ?: return null
+        if (player.currentMediaItem == null || player.duration == C.TIME_UNSET) return null
+        return now + (player.duration - player.currentPosition).coerceAtLeast(0)
     }
 
     /** The next episode for [channelId] that isn't already playing somewhere. */
@@ -282,7 +334,7 @@ class RadioSessionCallback(
         val library = podcasts.library.value
         val episode = nextEpisode(channelId) ?: return
         if (library.pausesMusic(episode.id)) return
-        schedule.episodeStarted()
+        schedule.episodeStarted(onAir.now())
         overlay.start(
             item = episodeItem(library, episode.id, channelId),
             episodeId = episode.id,
@@ -293,7 +345,14 @@ class RadioSessionCallback(
     }
 
     private fun onOverlayEnded(durationMs: Long) {
-        schedule.episodeEnded(durationMs)
+        schedule.episodeEnded(durationMs, onAir.now())
+        handler.post(::topUpSongQueue)
+        // The rule may want the next episode straight away, over this song.
+        handler.post(::checkSchedule)
+    }
+
+    private fun onOverlayFailed() {
+        schedule.episodeFailed()
         handler.post(::topUpSongQueue)
     }
 
@@ -313,7 +372,15 @@ class RadioSessionCallback(
     override fun onIsPlayingChanged(isPlaying: Boolean) {
         syncListening()
         handler.removeCallbacks(positionTick)
-        if (isPlaying) handler.postDelayed(positionTick, POSITION_SAVE_INTERVAL_MS) else savePosition()
+        handler.removeCallbacks(scheduleTick)
+        if (isPlaying) {
+            onAir.start()
+            handler.postDelayed(positionTick, POSITION_SAVE_INTERVAL_MS)
+            handler.post(scheduleTick)
+        } else {
+            onAir.stop()
+            savePosition()
+        }
     }
 
     override fun onPlaybackStateChanged(playbackState: Int) {
@@ -393,7 +460,9 @@ class RadioSessionCallback(
         val library = podcasts.library.value
         val songPlaying = EpisodeMediaId.episodeId(player.getMediaItemAt(0)) == null
         val overlay = overlay
-        val solo = if (overlay != null && !overlay.isActive && songPlaying && schedule.due) {
+        val due = schedule.dueAtBoundary(songEndsAt(onAir.now()))
+        dueAtBoundary = due
+        val solo = if (overlay != null && !overlay.isActive && songPlaying && due) {
             nextEpisode(channel.id)?.takeIf { library.pausesMusic(it.id) }
         } else {
             null
@@ -498,6 +567,9 @@ class RadioSessionCallback(
 
     private companion object {
         const val POSITION_SAVE_INTERVAL_MS = 15_000L
+
+        /** How often, while playing, a song channel checks whether an episode is due part-way through a song. */
+        const val SCHEDULE_CHECK_INTERVAL_MS = 500L
 
         /** Songs queued after the current one, so the next is preloaded. */
         const val LOOKAHEAD = 1

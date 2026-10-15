@@ -1,64 +1,137 @@
 package app.viberadio.playback
 
+import kotlin.math.roundToLong
+
 /**
  * When podcast episodes may start on a song channel (#2). Pure; [RadioSessionCallback] reports
  * song boundaries and episode starts and ends, and asks whether an episode is due.
  *
- * - An episode only starts at a music track boundary, never part-way through a song.
  * - One episode at a time.
- * - After an episode ends, the music carries on and the next episode waits for the current
- *   track to finish. After an episode longer than 15 minutes one more full track plays first;
- *   after one longer than 30 minutes, three more.
+ * - Fresh (tuned in, or after an episode that failed to play): the next track boundary.
+ * - After an episode ends, the music carries on for as long as [rule] says ([PodcastGapRule]):
+ *   a number of track boundaries ([Gap.Tracks]), or a stretch of music ([Gap.Music]), after
+ *   which an episode may start part-way through a song.
  *
- * Applies to every podcast, whether it plays over the music or (a music podcast) by itself.
+ * Times are on a clock that runs only while the channel is playing ([OnAirClock]), so a pause
+ * doesn't count as music. Applies to every podcast, whether it plays over the music or (a music
+ * podcast) by itself; a music podcast still waits for a track boundary.
  */
-class PodcastSchedule {
+class PodcastSchedule(private val rule: () -> PodcastGapRule = { PodcastGapRule.DEFAULT }) {
 
-    /** Track boundaries still to pass before an episode may start. */
-    var waitTracks: Int = 0
+    /** What the next episode waits for. */
+    sealed interface Wait {
+        /** The next track boundary. */
+        data object Boundary : Wait
+
+        /** [left] more track boundaries, then the one after. */
+        data class Tracks(val left: Int) : Wait
+
+        /**
+         * A stretch of music: any track boundary from [openAt], or part-way through a song from
+         * [nominalAt] if no boundary comes by [closeAt].
+         */
+        data class Music(val openAt: Long, val nominalAt: Long, val closeAt: Long) : Wait
+    }
+
+    var wait: Wait = Wait.Boundary
         private set
 
     var episodeActive: Boolean = false
         private set
 
-    /** An episode would start at the next track boundary. */
-    val due: Boolean get() = !episodeActive && waitTracks == 0
+    /** Podcast time played back to back, up to the end of the last episode. */
+    var streakMs: Long = 0
+        private set
+
+    private var episodeStartedAt = 0L
+
+    /** The episode now playing continues the streak. */
+    private var continuesStreak = false
+
+    /** When the last episode ended, if it asked for no gap (so the next one can join its streak). */
+    private var noGapSince: Long? = null
 
     /** Fresh state, e.g. on tuning to a channel. */
     fun reset() {
-        waitTracks = 0
+        wait = Wait.Boundary
         episodeActive = false
+        streakMs = 0
+        continuesStreak = false
+        noGapSince = null
     }
 
-    /** A song just ended and the next one starts. True if an episode may start here. */
-    fun songBoundary(): Boolean {
+    /**
+     * Whether an episode would start at a track boundary at [boundaryAtMs] (null if not known).
+     * For queueing a music podcast in the song's place ahead of time.
+     */
+    fun dueAtBoundary(boundaryAtMs: Long?): Boolean {
         if (episodeActive) return false
-        if (waitTracks > 0) {
-            waitTracks--
-            return false
+        return when (val w = wait) {
+            Wait.Boundary -> true
+            is Wait.Tracks -> w.left == 0
+            is Wait.Music -> boundaryAtMs != null && boundaryAtMs >= w.openAt
         }
-        return true
     }
 
-    fun episodeStarted() {
+    /** A song just ended at [nowMs] and the next one starts. True if an episode may start here. */
+    fun songBoundary(nowMs: Long): Boolean {
+        if (episodeActive) return false
+        return when (val w = wait) {
+            Wait.Boundary -> true
+            is Wait.Tracks -> if (w.left > 0) {
+                wait = Wait.Tracks(w.left - 1)
+                false
+            } else {
+                true
+            }
+            is Wait.Music -> nowMs >= w.openAt
+        }
+    }
+
+    /**
+     * Whether an episode should start now, at [nowMs], part-way through the song playing, which
+     * ends at [songEndsAtMs] (null if not known): the wait is over and no boundary is coming soon
+     * enough to wait for.
+     */
+    fun startMidSong(nowMs: Long, songEndsAtMs: Long?): Boolean {
+        if (episodeActive) return false
+        val w = wait as? Wait.Music ?: return false
+        if (nowMs < w.nominalAt) return false
+        return songEndsAtMs == null || songEndsAtMs > w.closeAt
+    }
+
+    fun episodeStarted(nowMs: Long) {
         episodeActive = true
+        episodeStartedAt = nowMs
+        val since = noGapSince
+        continuesStreak = since != null && nowMs - since <= BACK_TO_BACK_MS
+        noGapSince = null
     }
 
-    /** The episode that was playing ended after [durationMs] of content (0 if unknown). */
-    fun episodeEnded(durationMs: Long) {
+    /** The episode that was playing ended at [nowMs] after [contentMs] of content (0 if unknown). */
+    fun episodeEnded(contentMs: Long, nowMs: Long) {
         episodeActive = false
-        waitTracks = extraTracksAfter(durationMs)
+        streakMs = (if (continuesStreak) streakMs else 0) + (nowMs - episodeStartedAt).coerceAtLeast(0)
+        wait = when (val gap = rule().gapAfter(contentMs, streakMs)) {
+            is Gap.Tracks -> Wait.Tracks(gap.count)
+            is Gap.Music -> {
+                val slack = (gap.musicMs * gap.tolerance).roundToLong()
+                Wait.Music(nowMs + gap.musicMs - slack, nowMs + gap.musicMs, nowMs + gap.musicMs + slack)
+            }
+        }
+        noGapSince = nowMs.takeIf { (wait as? Wait.Music)?.nominalAt == nowMs }
+    }
+
+    /** The episode couldn't play. It's tried again at the next track boundary, not straight away. */
+    fun episodeFailed() {
+        episodeActive = false
+        wait = Wait.Boundary
+        continuesStreak = false
+        noGapSince = null
     }
 
     companion object {
-        const val LONG_EPISODE_MS = 15 * 60_000L
-        const val VERY_LONG_EPISODE_MS = 30 * 60_000L
-
-        /** Full tracks to play, after the current one finishes, before the next episode. */
-        fun extraTracksAfter(durationMs: Long): Int = when {
-            durationMs > VERY_LONG_EPISODE_MS -> 3
-            durationMs > LONG_EPISODE_MS -> 1
-            else -> 0
-        }
+        /** An episode starting this soon after one that asked for no gap continues its streak. */
+        const val BACK_TO_BACK_MS = 2_000L
     }
 }

@@ -140,6 +140,14 @@ class DiagnosticsBundleTest {
     }
 
     @Test
+    fun `settings carry the podcast gap rule and every rule's figures`() {
+        val settings = files().getValue("settings.json").text
+        assertTrue(settings.contains("\"rule\": \"tracks_by_length\""))
+        assertTrue(settings.contains("\"long_minutes\": 15.0"))
+        assertTrue(settings.contains("\"ratio\": 0.5"))
+    }
+
+    @Test
     fun `json escapes text and writes non-finite numbers as null`() {
         assertEquals(
             "{\n  \"a\": \"q\\\"\\n\\u0001\",\n  \"b\": null,\n  \"c\": [],\n  \"d\": [\n    1,\n    true\n  ]\n}\n",

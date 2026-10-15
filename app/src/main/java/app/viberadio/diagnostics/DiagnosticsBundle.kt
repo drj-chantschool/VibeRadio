@@ -9,6 +9,7 @@ import app.viberadio.learning.FeatureLayout
 import app.viberadio.learning.FeatureVectors
 import app.viberadio.library.Track
 import app.viberadio.playback.ChannelAiring
+import app.viberadio.playback.PodcastGapSettings
 import app.viberadio.playback.audio.AudioSettings
 import app.viberadio.playback.audio.TrackLevel
 import java.time.Instant
@@ -27,6 +28,8 @@ data class DiagnosticsSnapshot(
     /** The device's UTC offset at export, in minutes; names the bundle and shows local times. */
     val utcOffsetMinutes: Int,
     val audio: AudioSettings,
+    /** Settings → Podcasts: the gap rule between episodes on song channels. */
+    val podcastGap: PodcastGapSettings = PodcastGapSettings.DEFAULT,
     val resumeOnBluetooth: Boolean,
     val channelNames: List<ChannelNameRow>,
     val lastChannelId: String?,
@@ -124,6 +127,11 @@ object DiagnosticsBundle {
                 "ramp_ms" to s.audio.rampMs,
                 "is_default" to (s.audio == AudioSettings.DEFAULT),
             ),
+            "podcast_gap" to linkedMapOf(
+                "rule" to s.podcastGap.selected,
+                "rules" to s.podcastGap.rules.associate { rule -> rule.id to rule.params.associate { it.key to rule[it.key] } },
+                "is_default" to (s.podcastGap == PodcastGapSettings.DEFAULT),
+            ),
             "bluetooth" to linkedMapOf("resume_on_connect" to s.resumeOnBluetooth),
             "channels" to s.channelNames.map {
                 linkedMapOf("id" to it.id, "default_name" to it.defaultName, "name" to it.name)
@@ -197,7 +205,7 @@ object DiagnosticsBundle {
         `all-songs`, `podcasts`); display names are in settings.json. Empty cells are unknown.
 
         - summary.json: app version, export time, feature layout version, counts
-        - settings.json: audio and Bluetooth settings, channel names
+        - settings.json: audio settings, the podcast gap rule and its parameters, Bluetooth setting, channel names
         - feedback.csv: every thumbs press, oldest first (the append-only log; source of truth for learning)
         - play_history.csv: per song, its last play (wall clock and listening-clock reading)
         - channel_airings.csv: what each song channel last aired (live-radio resume)
