@@ -9,6 +9,7 @@ import app.viberadio.bluetooth.BluetoothSettings
 import app.viberadio.dial.ChannelLineup
 import app.viberadio.dial.ChannelNames
 import app.viberadio.dial.ChannelNamesRepository
+import app.viberadio.playback.PodcastGapSettings
 import app.viberadio.playback.audio.AudioSettings
 import app.viberadio.playback.audio.AudioSettingsRepository
 import android.content.Intent
@@ -65,6 +66,20 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun restoreAudioDefaults() = audio.restoreDefaults()
 
     private val container = (application as VibeRadioApp).container
+
+    /** Settings → Podcasts, in developer mode: the gap rule between episodes and each rule's figures. */
+    val podcastGap: StateFlow<PodcastGapSettings> = container.podcastGapSettings.settings
+
+    fun selectGapRule(id: String) {
+        container.podcastGapSettings.select(id)
+    }
+
+    /** Sets one figure of rule [ruleId] if accepted; false (nothing changes) if not. */
+    fun setGapParam(ruleId: String, key: String, value: Double): Boolean = container.podcastGapSettings.set(ruleId, key, value)
+
+    fun restoreGapDefaults() {
+        container.podcastGapSettings.restoreDefaults()
+    }
 
     /** The version line at the foot of settings, which developer mode is unlocked from. */
     val appVersion: String = runCatching {

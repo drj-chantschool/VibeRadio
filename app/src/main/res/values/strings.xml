@@ -104,8 +104,28 @@
         <item quantity="one">%1$d step away from developer mode</item>
         <item quantity="other">%1$d steps away from developer mode</item>
     </plurals>
-    <string name="developer_mode_on">Developer mode is on. Settings now has a Debug page.</string>
+    <string name="developer_mode_on">Developer mode is on. Settings now has a Debug page, and Podcasts has the gap between episodes.</string>
     <string name="developer_mode_already_on">Developer mode is already on.</string>
+    <string name="settings_podcasts">Podcasts</string>
+    <string name="settings_podcasts_summary">How podcasts play on the channels</string>
+    <string name="settings_podcasts_empty">Nothing to set here yet. Each show’s channels, speed and Pause music are on the podcast page.</string>
+    <string name="settings_podcasts_gap">Gap between episodes (developer mode)</string>
+    <string name="settings_podcasts_gap_hint">How long the music runs between podcast episodes on a music channel. Pick a rule, then set its figures; each rule keeps its own. Music podcasts (Pause music on) always wait for the song to end.</string>
+    <string name="settings_podcasts_params">%1$s: figures</string>
+    <string name="settings_podcasts_invalid">Out of range: %1$s to %2$s.</string>
+    <string name="settings_podcasts_invalid_whole">Out of range: a whole number, %1$s to %2$s.</string>
+    <string name="settings_podcasts_invalid_minutes">Out of range (%1$s to %2$s), or a long episode would be longer than a very long one.</string>
+    <string name="gap_rule_tracks_by_length">Tracks by episode length</string>
+    <string name="gap_rule_tracks_by_length_about">The next episode waits for the song to end, plus a few more full songs after a long episode.</string>
+    <string name="gap_rule_music_ratio">Music to podcast ratio</string>
+    <string name="gap_rule_music_ratio_about">Music for a fraction of the podcast time just played back to back. Starts at a song’s end if one falls near that time, otherwise over the song.</string>
+    <string name="gap_param_long_minutes">Long episode, over</string>
+    <string name="gap_param_long_tracks">Extra songs after a long one</string>
+    <string name="gap_param_very_long_minutes">Very long episode, over</string>
+    <string name="gap_param_very_long_tracks">Extra songs after a very long one</string>
+    <string name="gap_param_ratio">Music per unit of podcast time (0–1)</string>
+    <string name="gap_param_floor_seconds">Shortest gap; below it, episodes run back to back</string>
+    <string name="gap_param_tolerance_percent">Window for a song’s end, either side</string>
     <string name="settings_debug">Debug</string>
     <string name="settings_debug_summary">Diagnostics export</string>
     <string name="settings_debug_hint">Exports the app’s data (thumbs log, play history, feature vectors, channel placement, library, levels and settings) as CSV and JSON files, one dated folder per export. Song titles and artists are included.</string>
@@ -126,11 +146,14 @@
     <string name="settings_debug_nightly_about">Once a day, while the phone is charging and idle.</string>
     <string name="settings_debug_nightly_no_folder">Once a day, while the phone is charging and idle. Pick a diagnostics folder first, or the exports stay on the phone.</string>
     <string name="settings_debug_developer_mode">Developer mode</string>
-    <string name="settings_debug_developer_mode_about">Turning it off hides this page and stops the nightly export. Exports already made stay where they are.</string>
+    <string name="settings_debug_developer_mode_about">Turning it off hides this page and the podcast gap rule, and stops the nightly export. Exports already made stay where they are, and the podcast gap rule stays as set.</string>
     <string name="unit_hz">Hz</string>
     <string name="unit_db">dB</string>
     <string name="unit_lufs">LUFS</string>
     <string name="unit_seconds">s</string>
+    <string name="unit_minutes">min</string>
+    <string name="unit_tracks">songs</string>
+    <string name="unit_percent" formatted="false">%</string>
 
     <string name="pages_description">Page %1$d of %2$d</string>
 </resources>

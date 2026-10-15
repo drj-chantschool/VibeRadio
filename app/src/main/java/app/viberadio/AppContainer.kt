@@ -17,7 +17,9 @@ import app.viberadio.learning.LearningModels
 import app.viberadio.library.MediaStoreLibraryScanner
 import app.viberadio.playback.LastChannelStore
 import app.viberadio.playback.LiveRadio
+import app.viberadio.playback.PodcastGapSettingsRepository
 import app.viberadio.playback.PrefsLastChannelStore
+import app.viberadio.playback.PrefsPodcastGapStore
 import app.viberadio.podcasts.EpisodeDownloader
 import app.viberadio.podcasts.HttpFeedFetcher
 import app.viberadio.podcasts.JsonPodcastStore
@@ -181,6 +183,13 @@ class AppContainer(context: Context) {
         ioDispatcher = Dispatchers.IO,
     )
 
+    /** Settings → Podcasts, in developer mode: the rule for the gap between episodes on a song channel. */
+    val podcastGapSettings = PodcastGapSettingsRepository(
+        store = PrefsPodcastGapStore(context),
+        scope = appScope,
+        ioDispatcher = Dispatchers.IO,
+    )
+
     /** Whether a podcast is playing over the music; the music's EQ follows it. */
     val mix = MixState()
 
@@ -260,6 +269,7 @@ class AppContainer(context: Context) {
                 exportedAtMs = now,
                 utcOffsetMinutes = TimeZone.getDefault().getOffset(now) / 60_000,
                 audio = audioSettings.settings.value,
+                podcastGap = podcastGapSettings.settings.value,
                 resumeOnBluetooth = bluetoothSettings.awaitResumeOnConnect(),
                 channelNames = ChannelLineup.ids.map { id ->
                     ChannelNameRow(id = id, defaultName = names.defaults[id].orEmpty(), name = names.of(id).orEmpty())
