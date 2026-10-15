@@ -11,6 +11,17 @@ import app.viberadio.dial.ChannelNames
 import app.viberadio.dial.ChannelNamesRepository
 import app.viberadio.playback.audio.AudioSettings
 import app.viberadio.playback.audio.AudioSettingsRepository
+import android.content.Intent
+import android.net.Uri
+import android.os.SystemClock
+import app.viberadio.diagnostics.DevModeUnlock
+import app.viberadio.diagnostics.DiagnosticsExporter
+import app.viberadio.diagnostics.DiagnosticsPrefs
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -52,6 +63,69 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun updateAudio(change: (AudioSettings) -> AudioSettings): Boolean = audio.update(change)
 
     fun restoreAudioDefaults() = audio.restoreDefaults()
+
+    private val container = (application as VibeRadioApp).container
+
+    /** The version line at the foot of settings, which developer mode is unlocked from. */
+    val appVersion: String = runCatching {
+        application.packageManager.getPackageInfo(application.packageName, 0).versionName
+    }.getOrNull().orEmpty()
+
+    /** Developer mode and Settings → Debug. */
+    val diagnostics: StateFlow<DiagnosticsPrefs> = container.diagnosticsSettings.prefs
+
+    private val unlock = DevModeUnlock()
+
+    /** One tap on the version line; seven in a row turn developer mode on. */
+    fun tapVersion(): DevModeUnlock.Result {
+        val result = unlock.tap(SystemClock.elapsedRealtime(), alreadyOn = diagnostics.value.developerMode)
+        if (result == DevModeUnlock.Result.Unlocked) container.diagnosticsSettings.setDeveloperMode(true)
+        return result
+    }
+
+    fun setDeveloperMode(on: Boolean) = container.diagnosticsSettings.setDeveloperMode(on)
+
+    fun setNightly(on: Boolean) = container.diagnosticsSettings.setNightly(on)
+
+    /** A folder from the system picker, its permission already persisted by the caller. */
+    fun setFolder(uri: Uri) {
+        viewModelScope.launch {
+            val name = withContext(Dispatchers.IO) { DiagnosticsExporter.folderName(getApplication<Application>().contentResolver, uri) }
+            container.diagnosticsSettings.setFolder(uri.toString(), name)
+        }
+    }
+
+    private val _exporting = MutableStateFlow(false)
+
+    /** An export is under way (Export now or Share export). */
+    val exporting: StateFlow<Boolean> = _exporting.asStateFlow()
+
+    /** Writes a bundle to the diagnostics folder. Outlives the screen: runs on the app scope. */
+    fun exportNow() {
+        if (_exporting.value) return
+        _exporting.value = true
+        container.appScope.launch {
+            try {
+                container.diagnostics.export()
+            } finally {
+                _exporting.value = false
+            }
+        }
+    }
+
+    /** Exports, then hands [onReady] a share sheet for that bundle (null if there's nothing to share). */
+    fun share(onReady: (Intent?) -> Unit) {
+        if (_exporting.value) return
+        _exporting.value = true
+        viewModelScope.launch {
+            try {
+                container.diagnostics.export()
+                onReady(container.diagnostics.shareIntent())
+            } finally {
+                _exporting.value = false
+            }
+        }
+    }
 
     private fun ui(names: ChannelNames): List<ChannelNameUi> = ChannelLineup.ids.map { id ->
         ChannelNameUi(

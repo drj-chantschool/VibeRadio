@@ -41,14 +41,30 @@ import app.viberadio.playback.EpisodeMediaId
 import app.viberadio.playback.TrackMediaId
 import app.viberadio.playback.audio.MixState
 import app.viberadio.playback.audio.PrefsAudioSettingsStore
+import app.viberadio.diagnostics.ChannelNameRow
+import app.viberadio.diagnostics.DiagnosticsExporter
+import app.viberadio.diagnostics.DiagnosticsSettings
+import app.viberadio.diagnostics.DiagnosticsSnapshot
+import app.viberadio.diagnostics.NightlyExportJob
+import app.viberadio.diagnostics.PrefsDiagnosticsStore
+import app.viberadio.library.AudioPermission
+import android.util.AtomicFile
+import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Manual dependency wiring, shared by the UI and the playback service (same process).
  * Swap implementations here when the issues land; nothing else should construct these.
  */
 class AppContainer(context: Context) {
+
+    private val appContext: Context = context.applicationContext
 
     /** Lives as long as the process: feed refreshes, downloads and saves outlast any screen. */
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -72,11 +88,14 @@ class AppContainer(context: Context) {
     val lastChannel: LastChannelStore = PrefsLastChannelStore(context)
 
     // App-specific storage: no permission needed, removed with the app.
+    private val podcastsFile = File(context.filesDir, "podcasts.json")
+    private val levelsFile = File(context.filesDir, "levels.tsv")
+
     private val episodeDownloader = EpisodeDownloader(File(context.getExternalFilesDir(null) ?: context.filesDir, "episodes"))
 
     /** The podcast pipeline (#17): hand-assigned shows, one global queue. Independent of [channelRepository]. */
     val podcastRepository = PodcastRepository(
-        store = JsonPodcastStore(File(context.filesDir, "podcasts.json")),
+        store = JsonPodcastStore(podcastsFile),
         fetcher = HttpFeedFetcher(),
         downloader = episodeDownloader,
         scope = appScope,
@@ -173,7 +192,7 @@ class AppContainer(context: Context) {
      * episodes aren't measured (they play at 0 dB until downloaded).
      */
     val leveling = Leveling(
-        store = FileLevelStore(File(context.filesDir, "levels.tsv")),
+        store = FileLevelStore(levelsFile),
         keyOf = { request -> levelKey(request) },
         measure = { request -> loudnessAnalyzer.measure(request.uri) },
         scope = appScope,
@@ -200,4 +219,67 @@ class AppContainer(context: Context) {
     /** Each stream's chain: its gain (leveling #1, mixing factor #2), then its EQ (#2). #5 and #6 add processors here. */
     val audioProcessors: AudioProcessorProvider =
         AudioProcessorProvider.leveledEq(leveling, mix) { audioSettings.settings.value }
+
+    /** Developer mode and Settings → Debug. */
+    val diagnosticsSettings = DiagnosticsSettings(
+        store = PrefsDiagnosticsStore(context),
+        scope = appScope,
+        ioDispatcher = Dispatchers.IO,
+    ).also { settings ->
+        // Keep the nightly job in step with the switch (and with developer mode, which turns it off).
+        appScope.launch(Dispatchers.IO) {
+            settings.await()
+            settings.prefs.map { it.nightly }.distinctUntilChanged().collect { on -> NightlyExportJob.sync(appContext, on) }
+        }
+    }
+
+    /** Settings → Debug → Export: everything below, as a bundle of CSV and JSON files. */
+    val diagnostics = DiagnosticsExporter(
+        context = context,
+        settings = diagnosticsSettings,
+        snapshot = ::diagnosticsSnapshot,
+        ioDispatcher = Dispatchers.IO,
+    )
+
+    private suspend fun diagnosticsSnapshot(): DiagnosticsSnapshot {
+        // The nightly job can run in a fresh process, before anything scanned the library.
+        if (channelRepository.state.value == ChannelRepository.State.NotScanned && AudioPermission.isGranted(appContext)) {
+            runCatching { channelRepository.refresh() }
+        }
+        val channels = withTimeoutOrNull(SCAN_WAIT_MS) {
+            channelRepository.state.first { it is ChannelRepository.State.Ready || it == ChannelRepository.State.NotScanned }
+        } as? ChannelRepository.State.Ready
+        val names = channelNames.names.value
+        val now = System.currentTimeMillis()
+        return withContext(Dispatchers.IO) {
+            val tracks = channels?.channels.orEmpty().flatMap { it.tracks }.distinctBy { it.uri }
+            DiagnosticsSnapshot(
+                appVersion = runCatching {
+                    appContext.packageManager.getPackageInfo(appContext.packageName, 0).versionName
+                }.getOrNull() ?: "unknown",
+                exportedAtMs = now,
+                utcOffsetMinutes = TimeZone.getDefault().getOffset(now) / 60_000,
+                audio = audioSettings.settings.value,
+                resumeOnBluetooth = bluetoothSettings.awaitResumeOnConnect(),
+                channelNames = ChannelLineup.ids.map { id ->
+                    ChannelNameRow(id = id, defaultName = names.defaults[id].orEmpty(), name = names.of(id).orEmpty())
+                },
+                lastChannelId = runCatching { lastChannel.read() }.getOrNull(),
+                libraryScanned = channels != null,
+                channels = channels?.channels.orEmpty(),
+                trackHashes = tracks.mapNotNull { track -> playHistory.hashOf(track)?.let { track.uri to it } }.toMap(),
+                feedback = feedbackDatabase.feedbackLog.readAll(),
+                playHistory = runCatching { feedbackDatabase.playHistory.readAll() }.getOrDefault(emptyMap()),
+                listeningClockMs = runCatching { feedbackDatabase.listeningClock.read() }.getOrDefault(0L),
+                airings = runCatching { feedbackDatabase.channelAirings.readAll() }.getOrDefault(emptyList()),
+                levels = runCatching { FileLevelStore(levelsFile).readAll() }.getOrDefault(emptyMap()),
+                podcastsJson = runCatching { AtomicFile(podcastsFile).readFully().decodeToString() }.getOrNull(),
+            )
+        }
+    }
+
+    private companion object {
+        /** How long an export waits for a library scan already under way. */
+        const val SCAN_WAIT_MS = 60_000L
+    }
 }

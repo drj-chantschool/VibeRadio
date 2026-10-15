@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -40,6 +41,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.viberadio.R
 import app.viberadio.bluetooth.BluetoothPermission
+import app.viberadio.diagnostics.DevModeUnlock
 import app.viberadio.library.AudioPermission
 import app.viberadio.ui.theme.VibeRadioTheme
 
@@ -108,6 +110,17 @@ class MainActivity : ComponentActivity() {
         val channels by viewModel.channels.collectAsStateWithLifecycle()
         val resumeOnConnect by viewModel.resumeOnConnect.collectAsStateWithLifecycle()
         val audio by viewModel.audioSettings.collectAsStateWithLifecycle()
+        val diagnostics by viewModel.diagnostics.collectAsStateWithLifecycle()
+        val exporting by viewModel.exporting.collectAsStateWithLifecycle()
+
+        val folderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            if (uri == null) return@rememberLauncherForActivityResult
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            // Keep access across restarts, so the nightly export can write there too.
+            runCatching { contentResolver.takePersistableUriPermission(uri, flags) }
+                .onSuccess { viewModel.setFolder(uri) }
+                .onFailure { showToast(getString(R.string.settings_debug_folder_refused)) }
+        }
 
         // Re-checked on resume, so a grant made in system settings shows up on return.
         var bluetoothGranted by remember { mutableStateOf(BluetoothPermission.isGranted(this)) }
@@ -151,8 +164,43 @@ class MainActivity : ComponentActivity() {
             audio = audio,
             onAudioChange = viewModel::updateAudio,
             onRestoreAudio = viewModel::restoreAudioDefaults,
+            version = viewModel.appVersion,
+            onVersionTap = {
+                when (val result = viewModel.tapVersion()) {
+                    is DevModeUnlock.Result.Countdown ->
+                        showToast(resources.getQuantityString(R.plurals.developer_mode_steps, result.remaining, result.remaining))
+                    DevModeUnlock.Result.Unlocked -> showToast(getString(R.string.developer_mode_on))
+                    DevModeUnlock.Result.AlreadyOn -> showToast(getString(R.string.developer_mode_already_on))
+                    DevModeUnlock.Result.Quiet -> Unit
+                }
+            },
+            debug = DebugSettingsUi(
+                developerMode = diagnostics.developerMode,
+                folderName = diagnostics.folderName,
+                folderChosen = diagnostics.folderUri != null,
+                nightly = diagnostics.nightly,
+                exporting = exporting,
+                lastExport = diagnostics.lastExport,
+            ),
+            onDeveloperMode = viewModel::setDeveloperMode,
+            onPickFolder = { runCatching { folderLauncher.launch(null) } },
+            onExportNow = viewModel::exportNow,
+            onShareExport = {
+                viewModel.share { intent ->
+                    if (intent == null) showToast(getString(R.string.settings_debug_share_nothing)) else startActivity(intent)
+                }
+            },
+            onNightly = viewModel::setNightly,
             onClose = onClose,
         )
+    }
+
+    private var toast: Toast? = null
+
+    /** One toast at a time, so a run of taps on the version line counts down in place. */
+    private fun showToast(text: String) {
+        toast?.cancel()
+        toast = Toast.makeText(this, text, Toast.LENGTH_SHORT).also { it.show() }
     }
 
     @Composable
