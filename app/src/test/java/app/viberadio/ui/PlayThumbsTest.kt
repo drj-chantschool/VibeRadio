@@ -39,4 +39,19 @@ class PlayThumbsTest {
     fun `a podcast episode clears it`() {
         assertNull(PlayThumbs.carry(Thumb.UP, song, null, newPlay = true, ended = false))
     }
+
+    @Test
+    fun `a press lights the thumb`() {
+        assertEquals(Thumb.UP, PlayThumbs.press(null, Thumb.UP))
+    }
+
+    @Test
+    fun `pressing the lit thumb again cancels it`() {
+        assertNull(PlayThumbs.press(Thumb.UP, Thumb.UP))
+    }
+
+    @Test
+    fun `pressing the other thumb switches to it`() {
+        assertEquals(Thumb.DOWN, PlayThumbs.press(Thumb.UP, Thumb.DOWN))
+    }
 }

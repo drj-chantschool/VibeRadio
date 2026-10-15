@@ -115,9 +115,9 @@ private fun Tuner(state: RadioUiState.Ready, onTune: (Int) -> Unit, onPlay: () -
 }
 
 /**
- * Thumbs up / down for the playing song (#13). Feedback only: neither skips. The last thumb
- * pressed during this play is drawn darker as a quiet "noted" until the play ends; every play
- * starts with both faint, whatever the song's history.
+ * Thumbs up / down for the playing song (#13). Feedback only: neither skips. The lit thumb is
+ * drawn darker as a quiet "noted" until the play ends; pressing it again turns it off, pressing
+ * the other switches. Every play starts with both faint, whatever the song's history.
  */
 @Composable
 private fun Thumbs(feedback: SongFeedback, onThumb: (Thumb) -> Unit) {

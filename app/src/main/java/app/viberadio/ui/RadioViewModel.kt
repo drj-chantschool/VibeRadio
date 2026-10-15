@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -49,22 +50,29 @@ sealed interface RadioUiState {
 data class NowPlaying(val title: String, val artist: String?)
 
 /**
- * The thumbs under the playing song. [lastPress] is the thumb last pressed during the current
- * play only: it is never read back from the log, so every play starts neutral (#13).
+ * The thumbs under the playing song. [lastPress] is the thumb lit for the current play only: it
+ * is never read back from the log, so every play starts neutral (#13).
  */
 data class SongFeedback(val lastPress: Thumb?)
 
 /**
  * Thumbs state is per play, not per song (#13). A press is lit until the play ends; the next play,
- * even of the same song, starts neutral. Pure, so the rule is covered by JVM tests.
+ * even of the same song, starts neutral. Until then the press can still be changed, and only the
+ * thumb lit when the play ends is logged. Pure, so the rule is covered by JVM tests.
  */
 internal object PlayThumbs {
+    /**
+     * The thumb lit after pressing [pressed] while [lit] is lit: the same thumb again cancels it,
+     * the other thumb takes over.
+     */
+    fun press(lit: Thumb?, pressed: Thumb): Thumb? = if (pressed == lit) null else pressed
+
     /**
      * Whether [lastPress] still applies after a player update. It is cleared when the song changes,
      * when a new play starts ([newPlay]: any media item transition, including a retune or live-radio
      * resume landing on the same song), or when playback has [ended].
      */
-    fun carry(lastPress: Thumb?, previousUri: String?, currentUri: String?, newPlay: Boolean, ended: Boolean): Thumb? =
+    fun <T> carry(lastPress: T?, previousUri: String?, currentUri: String?, newPlay: Boolean, ended: Boolean): T? =
         if (newPlay || ended || currentUri == null || currentUri != previousUri) null else lastPress
 }
 
@@ -82,14 +90,17 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
     private val appScope = (application as VibeRadioApp).container.appScope
 
     private data class Permission(val granted: Boolean, val denied: Boolean)
+
+    /** The thumb lit for the current play, with the song and channel it will be logged against. */
+    private data class Press(val trackUri: String, val channelId: String, val thumb: Thumb)
+
     private data class Playback(
         val channelId: String? = null,
         val nowPlaying: NowPlaying? = null,
         /** Content URI of the playing song; null for podcast episodes or before anything plays. */
         val trackUri: String? = null,
-        val lastPress: Thumb? = null,
-        /** Counts plays, so a late log failure only un-lights the play it was pressed in. */
-        val play: Long = 0,
+        /** Not logged yet: logged when the play ends, so a press changed or cancelled meanwhile never is. */
+        val press: Press? = null,
         val playing: Boolean = false,
     )
 
@@ -110,7 +121,7 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
                             channelNames = stations.map { it.name },
                             tunedIndex = stations.indexOfFirst { it.id == play.channelId }.takeIf { it >= 0 },
                             nowPlaying = play.nowPlaying,
-                            feedback = play.trackUri?.let { SongFeedback(play.lastPress) },
+                            feedback = play.trackUri?.let { SongFeedback(play.press?.thumb) },
                             playing = play.playing,
                         )
                     }
@@ -154,15 +165,19 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
         val extras = mediaItem?.mediaMetadata?.extras
         val id = extras?.getString(ChannelRequest.EXTRA_CHANNEL_ID)
         val trackUri = extras?.getString(ChannelRequest.EXTRA_TRACK_URI)
-        playback.update {
+        while (true) {
+            val before = playback.value
             // A press belongs to the play it was made in; a new play (even of the same song) starts neutral.
-            val samePlay = !newPlay && trackUri == it.trackUri
-            it.copy(
-                channelId = id ?: it.channelId,
+            val after = before.copy(
+                channelId = id ?: before.channelId,
                 trackUri = trackUri,
-                lastPress = PlayThumbs.carry(it.lastPress, it.trackUri, trackUri, newPlay, ended),
-                play = if (samePlay) it.play else it.play + 1,
+                press = PlayThumbs.carry(before.press, before.trackUri, trackUri, newPlay, ended),
             )
+            if (playback.compareAndSet(before, after)) {
+                // The play it belonged to is over: its final thumb goes in the log.
+                if (after.press == null) before.press?.let(::log)
+                return
+            }
         }
     }
 
@@ -223,22 +238,26 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Logs [thumb] for the playing song (#13). Feedback only: the song keeps playing. Recorded on
-     * the app scope so a press made just before leaving the screen still lands in the log.
+     * Presses [thumb] for the playing song (#13). Feedback only: the song keeps playing. Pressing
+     * the lit thumb again cancels it and pressing the other one switches; nothing is logged until
+     * the play ends, and then only the thumb still lit.
      */
     fun press(thumb: Thumb) {
-        val current = playback.value
-        val uri = current.trackUri ?: return
-        val channelId = current.channelId ?: return
-        val play = current.play
-        playback.update { if (it.play == play) it.copy(lastPress = thumb) else it }
+        playback.update { current ->
+            val uri = current.trackUri ?: return@update current
+            val channelId = current.channelId ?: return@update current
+            val lit = PlayThumbs.press(current.press?.thumb, thumb)
+            current.copy(press = lit?.let { Press(uri, channelId, it) })
+        }
+    }
+
+    /**
+     * Appends [press] to the feedback log. On the app scope, so it still lands when the screen is
+     * gone; a failure (file unreadable or disk full) just drops it, as the play is already over.
+     */
+    private fun log(press: Press) {
         appScope.launch {
-            val event = feedback.record(uri, channelId, thumb)
-            if (event == null) {
-                // Not logged (file unreadable or disk full): don't show it as pressed.
-                playback.update { if (it.play == play && it.lastPress == thumb) it.copy(lastPress = null) else it }
-                return@launch
-            }
+            val event = feedback.record(press.trackUri, press.channelId, press.thumb) ?: return@launch
             // Placement follows the new feedback; the queue already playing is left alone.
             learner.add(event)
             repository.replace()
@@ -257,6 +276,8 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         controller?.removeListener(listener)
+        // No more player updates reach us, so the press lit now is this play's final one.
+        playback.getAndUpdate { it.copy(press = null) }.press?.let(::log)
         MediaController.releaseFuture(controllerFuture)
     }
 }
