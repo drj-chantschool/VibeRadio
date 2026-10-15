@@ -32,20 +32,25 @@ Principle: you still have control, but you shouldn't need it, and the app doesn'
 
 ## Audio chain
 
-- Each stream (podcast, music) goes through its own gain stage, then its own EQ, then the two are mixed
+- Each stream (podcast, music) goes through its own gain stage, then its own tone EQ, then its own separation EQ, then the two are mixed. The streams are the two players: music is the session player (songs, and also episodes on podcast-only channels and music podcasts), podcasts are shows played over music
 - Auto track leveling, songs and podcasts: each song or episode is measured once (integrated loudness, BS.1770 LUFS, plus peak) and played at one fixed gain that brings it to the target loudness. Not compression; the gain never changes within an item. Boosts stop before the peak passes −1 dBFS, so nothing clips. Results are cached (songs by file hash, episodes by ID); downloaded episodes are measured ahead, streamed ones play unadjusted. An item not yet measured when it starts plays unadjusted; its level is ramped in if it arrives within 15 s, otherwise used from its next play
 - Mixing factor: while a podcast plays over music, the music drops by the mixing factor (ramped)
-- Only one stream active: that stream's EQ is flat
-- Both active: podcast EQ is a band pass centered at 2 kHz; music EQ is a band gap (notch) centered at 2 kHz, wider than the podcast band pass and a partial cut rather than full removal
-- A music podcast playing by itself counts as one stream active (flat EQ, no mixing factor)
-- EQ and mixing factor changes ramp when a stream starts or stops, so the sound never snaps
-- Settings → Audio: target loudness, mixing factor, EQ figures and ramp time are adjustable, with a "Restore defaults" option. Defaults:
+- Tone EQ (user-facing): one 10-band graphic EQ per stream, always on, flat by default. Bands at 31, 62, 125, 250, 500 Hz and 1, 2, 4, 8, 16 kHz, ±12 dB each: the middle eight are one-octave peaking filters, 31 Hz and 16 kHz are low and high shelves (half-gain corner on the edge with the next band in). A preamp of −(largest boost) is applied automatically, so a boost never clips; it sits after leveling, so the −1 dBFS rule still holds. A band change glides (about 48 dB/s, coefficients recomputed every 32 frames), never zippers
+- Separation EQ: how the two streams are pulled apart in frequency while both play. A swappable module (`SeparationEq`), chosen in developer mode; each owns how it ramps:
+  - Band pass and notch (default): the podcast through a band pass centred at 2 kHz; the music through a band gap (notch) centred at 2 kHz, wider than the podcast band pass and a partial cut rather than full removal. Ramps by crossfading dry and filtered signal
+  - Graphic: per-band dB offsets on the tone EQ's ten bands, one set per stream, added to that stream's tone curve: final band gain = tone + offset × ramp. Offsets ±24 dB. Defaults, roughly the band pass and notch: music −9 dB at 1, 2 and 4 kHz, −4 dB at 500 Hz and 8 kHz, 0 elsewhere; podcast −12 dB at 31–250 Hz, −6 at 500 Hz, 0 at 1–4 kHz, −6 at 8 kHz, −12 at 16 kHz. Neighbouring bands overlap, so the music's cut around 2 kHz comes out deeper than −9 dB (about −13); a graphic EQ can't make a true band pass, so the podcast gets a voice-forward tilt. That difference is what comparing the two modules is for
+- Only one stream active: separation is flat (whatever the module); the tone EQ still applies
+- A music podcast playing by itself counts as one stream active (no separation, no mixing factor)
+- Separation and mixing factor changes ramp when a stream starts or stops, so the sound never snaps. Switching module, or changing its figures, while both streams play ramps the current one out, then the new one in; while separation is flat, the switch is immediate
+- Settings → Audio: target loudness, mixing factor and ramp time are adjustable, with a "Restore defaults" option (these three; tone curves and separation keep their own). Defaults:
   - Target loudness: −18 LUFS
   - Mixing factor (music under a podcast): −10 dB
+  - Ramp time (separation and mixing factor): 1.5 s
+- Settings → Audio → Equalizer: the tone curve for each stream (Music, Podcasts), band by band, each edited in a dialog (±12 dB; invalid values refused), with "Restore defaults" (both flat). Available to everyone but tucked a level down, in line with the product principle
+- Settings → Audio → Separation EQ (developer mode only), same layout as the gap rule: the modules (one selected), then the selected module's parameters, each edited in a dialog with its range (invalid values refused), and "Restore defaults" (every module's parameters; the selection stays). Each module keeps its own parameters while another is selected, and the choice stays in force with developer mode off. Band pass and notch defaults:
   - Podcast band pass: 1 kHz – 4 kHz
   - Music notch: 700 Hz – 5.7 kHz
   - Music notch depth: −9 dB
-  - Ramp time (EQ and mixing factor): 1.5 s
 - Settings → Audio → "Library folders": which folders are in the library. Shows only folders that hold audio (songs or MediaStore podcasts, as scanned) and the folders on the way to them; a folder holding nothing but one subfolder folds into it ("Music/Albums"). Each row has a checkbox (in, partly in, out) and its track count; everything is in by default, and the user unchecks what shouldn't be there. Unchecking a folder leaves out it and everything under it, including subfolders added later. Checking a subfolder of an unchecked folder puts back only that subfolder; the rest of the parent stays out. Tapping a partly-in folder puts all of it back. Left-out tracks are on no channel (The Shuffle included) and learn nothing; their feedback and history stay in the log. A change rebuilds the channels from the last scan straight away; the song playing finishes, and a queued one may still play
 
 ## Songs
@@ -70,8 +75,8 @@ Principle: you still have control, but you shouldn't need it, and the app doesn'
 - Bundle: one subfolder per export, named by local time (e.g. 2026-10-15_081203), so the latest is the last by name. Text formats that read without tools:
   - README.md: what each file holds
   - summary.json: app version, export time, feature layout version, counts, songs per channel, feedback date range
-  - settings.json: audio settings, the podcast gap rule (selected rule and every rule's parameters), Bluetooth setting, folders left out of the library, channel names (ID, default and current name)
-  - feedback.csv: every thumbs event (hash, thumb, time, local time, UTC offset, channel ID), log order
+  - settings.json: audio settings (both tone curves, with the band frequencies), the separation EQ (selected module and every module's parameters), the podcast gap rule (selected rule and every rule's parameters), Bluetooth setting, folders left out of the library, channel names (ID, default and current name)
+  - feedback.csv: every thumbs event (hash, thumb, time, local time, UTC offset, channel ID, separation EQ module in effect at the press: its ID while a podcast played over the music, empty otherwise or for presses from before it was recorded), log order
   - play_history.csv: per song, last played (wall clock) and listening-clock reading
   - channel_airings.csv: what each song channel last aired
   - features.csv: hash + feature vector rebuilt from the log, with named columns

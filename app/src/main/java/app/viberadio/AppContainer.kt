@@ -45,6 +45,8 @@ import app.viberadio.playback.EpisodeMediaId
 import app.viberadio.playback.TrackMediaId
 import app.viberadio.playback.audio.MixState
 import app.viberadio.playback.audio.PrefsAudioSettingsStore
+import app.viberadio.playback.audio.PrefsSeparationStore
+import app.viberadio.playback.audio.SeparationSettingsRepository
 import app.viberadio.diagnostics.ChannelNameRow
 import app.viberadio.diagnostics.DiagnosticsExporter
 import app.viberadio.diagnostics.DiagnosticsSettings
@@ -190,7 +192,14 @@ class AppContainer(context: Context) {
         preference = learner::preferenceWeight,
     )
 
-    /** Settings → Audio: the EQ figures for mixing a podcast over music, and the ramp time. */
+    /** Settings → Audio → Separation EQ, in developer mode: how a podcast and the music are pulled apart (#2). */
+    val separationSettings = SeparationSettingsRepository(
+        store = PrefsSeparationStore(context),
+        scope = appScope,
+        ioDispatcher = Dispatchers.IO,
+    )
+
+    /** Settings → Audio: the leveling target, mixing factor, ramp time and each stream's tone EQ. */
     val audioSettings = AudioSettingsRepository(
         store = PrefsAudioSettingsStore(context),
         scope = appScope,
@@ -206,6 +215,12 @@ class AppContainer(context: Context) {
 
     /** Whether a podcast is playing over the music; the music's EQ follows it. */
     val mix = MixState()
+
+    /**
+     * The separation module in effect right now: the selected one while a podcast plays over the
+     * music, null otherwise (with one stream, separation is flat). Recorded with each thumbs press.
+     */
+    fun separationInEffect(): String? = if (mix.podcastOverMusic) separationSettings.settings.value.selected else null
 
     private val loudnessAnalyzer = LoudnessAnalyzer(context)
 
@@ -239,9 +254,14 @@ class AppContainer(context: Context) {
         return null
     }
 
-    /** Each stream's chain: its gain (leveling #1, mixing factor #2), then its EQ (#2). #5 and #6 add processors here. */
+    /** Each stream's chain: its gain (leveling #1, mixing factor #2), then its EQ (tone, then separation #2). #5 and #6 add processors here. */
     val audioProcessors: AudioProcessorProvider =
-        AudioProcessorProvider.leveledEq(leveling, mix) { audioSettings.settings.value }
+        AudioProcessorProvider.leveledEq(
+            leveling,
+            mix,
+            settings = { audioSettings.settings.value },
+            separation = { separationSettings.settings.value.active },
+        )
 
     /** Developer mode and Settings → Debug. */
     val diagnosticsSettings = DiagnosticsSettings(
@@ -283,6 +303,7 @@ class AppContainer(context: Context) {
                 exportedAtMs = now,
                 utcOffsetMinutes = TimeZone.getDefault().getOffset(now) / 60_000,
                 audio = audioSettings.settings.value,
+                separation = separationSettings.settings.value,
                 podcastGap = podcastGapSettings.settings.value,
                 resumeOnBluetooth = bluetoothSettings.awaitResumeOnConnect(),
                 libraryFolders = libraryFolders.awaitExclusions(),

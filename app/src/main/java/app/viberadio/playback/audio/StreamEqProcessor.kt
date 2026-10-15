@@ -8,11 +8,12 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * Runs one stream's [StreamEq] on the decoded PCM in ExoPlayer's audio sink (#2). The music
- * stream is filtered while a podcast plays over it ([MixState]); the podcast stream only ever
- * plays over music, so it is always filtered.
+ * Runs one stream's [StreamEq] on the decoded PCM in ExoPlayer's audio sink: its tone EQ, then
+ * its separation EQ (#2). The music stream's separation applies while a podcast plays over it
+ * ([MixState]); the podcast stream only ever plays over music, so its separation always applies.
  *
- * Reads [settings] each buffer, so a change in Settings → Audio is heard straight away.
+ * Reads [settings] and [separation] each buffer, so a change in Settings → Audio is heard
+ * straight away (gliding or ramping, never snapping).
  * 16-bit and float PCM are handled; anything else passes through untouched.
  */
 @UnstableApi
@@ -20,6 +21,7 @@ class StreamEqProcessor(
     private val stream: AudioStream,
     private val mix: MixState,
     private val settings: () -> AudioSettings,
+    private val separation: () -> SeparationEq,
 ) : BaseAudioProcessor() {
 
     private var eq: StreamEq? = null
@@ -37,16 +39,17 @@ class StreamEqProcessor(
         AudioStream.MUSIC -> if (mix.podcastOverMusic) 1f else 0f
     }
 
-    /** The EQ for the current format and EQ figures, rebuilt when either changes; the blend carries over. */
+    /** The EQ for the current format, rebuilt when it changes (the separation's blend carries over), otherwise brought up to date. */
     private fun eqFor(format: AudioFormat): StreamEq {
-        val current = settings()
+        val s = settings()
+        val module = separation()
+        val tone = s.tone(stream)
         val existing = eq
-        if (existing != null && existing.sampleRate == format.sampleRate &&
-            existing.channels == format.channelCount && existing.settings.sameEqAs(current)
-        ) {
+        if (existing != null && existing.sampleRate == format.sampleRate && existing.channels == format.channelCount) {
+            existing.configure(module, tone, s.rampMs)
             return existing
         }
-        return StreamEq(stream, format.sampleRate, format.channelCount, current, initialMix = existing?.mix ?: target())
+        return StreamEq(stream, format.sampleRate, format.channelCount, module, tone, s.rampMs, initialMix = existing?.mix ?: target())
             .also {
                 eq = it
                 if (frame.size != format.channelCount) frame = FloatArray(format.channelCount)

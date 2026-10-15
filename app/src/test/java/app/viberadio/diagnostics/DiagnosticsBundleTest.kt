@@ -23,7 +23,7 @@ class DiagnosticsBundleTest {
     private fun snapshot(
         feedback: List<FeedbackEvent> = listOf(
             FeedbackEvent("hashA", Thumb.UP, 1_000, -300, "breeze"),
-            FeedbackEvent("hashA", Thumb.DOWN, 2_000, -300, "all-songs"),
+            FeedbackEvent("hashA", Thumb.DOWN, 2_000, -300, "all-songs", separationEq = "graphic"),
         ),
         podcastsJson: String? = """{"version":1}""",
     ) = DiagnosticsSnapshot(
@@ -72,9 +72,9 @@ class DiagnosticsBundleTest {
     @Test
     fun `feedback rows keep the log order and show local time`() {
         val lines = files().getValue("feedback.csv").text.lines()
-        assertEquals("track_hash,thumb,at_ms,at_local,utc_offset_minutes,channel_id", lines[0])
-        assertEquals("hashA,UP,1000,1969-12-31T19:00:01-05:00,-300,breeze", lines[1])
-        assertEquals("hashA,DOWN,2000,1969-12-31T19:00:02-05:00,-300,all-songs", lines[2])
+        assertEquals("track_hash,thumb,at_ms,at_local,utc_offset_minutes,channel_id,separation_eq", lines[0])
+        assertEquals("hashA,UP,1000,1969-12-31T19:00:01-05:00,-300,breeze,", lines[1])
+        assertEquals("hashA,DOWN,2000,1969-12-31T19:00:02-05:00,-300,all-songs,graphic", lines[2])
     }
 
     @Test
@@ -137,6 +137,16 @@ class DiagnosticsBundleTest {
         assertTrue(settings.contains("\"default_name\": \"The Breeze\""))
         assertTrue(settings.contains("\"name\": \"Work\""))
         assertTrue(settings.contains("\"is_default\": true"))
+    }
+
+    @Test
+    fun `settings carry both tone curves and every separation module's figures`() {
+        val settings = files().getValue("settings.json").text
+        assertTrue(settings.contains("\"music_tone_db\": ["))
+        assertTrue(settings.contains("\"podcast_tone_db\": ["))
+        assertTrue(settings.contains("\"module\": \"band_pass_notch\""))
+        assertTrue(settings.contains("\"music_depth_db\": -9.0"))
+        assertTrue(settings.contains("\"podcast_16k\": -12.0"))
     }
 
     @Test

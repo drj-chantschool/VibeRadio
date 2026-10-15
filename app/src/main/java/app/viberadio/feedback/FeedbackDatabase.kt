@@ -14,7 +14,8 @@ import java.io.File
  *
  * - `feedback`: the thumbs log, one row per press. Append-only is enforced by the schema:
  *   triggers abort any UPDATE or DELETE, so a later feature can't quietly rewrite history. Rows
- *   come back in insert order (`id`).
+ *   come back in insert order (`id`). `separation_eq` (version 5) is the separation module in
+ *   effect at the press; null when no podcast played over the music, or for older rows.
  * - `play_history`: one row per song, overwritten on every play: `last_played` (epoch ms) and
  *   `listened_at` (the [ListeningClock] reading; null for plays from before version 4).
  * - `listening_clock`: one row, the total song listening time.
@@ -60,6 +61,7 @@ class FeedbackDatabase(
         createPlayHistory(db)
         createChannelAirings(db)
         addListeningClock(db)
+        addSeparationEq(db)
         legacyFile?.let { LegacyTsvLog.read(it) }?.forEach { insert(db, it) }
     }
 
@@ -73,6 +75,12 @@ class FeedbackDatabase(
         if (oldVersion < 2) createPlayHistory(db)
         if (oldVersion < 3) createChannelAirings(db)
         if (oldVersion < 4) addListeningClock(db)
+        if (oldVersion < 5) addSeparationEq(db)
+    }
+
+    /** Version 5. Adding a column isn't an UPDATE, so the append-only triggers don't fire. */
+    private fun addSeparationEq(db: SQLiteDatabase) {
+        db.execSQL("ALTER TABLE feedback ADD COLUMN separation_eq TEXT")
     }
 
     /** Version 4. */
@@ -131,13 +139,13 @@ class FeedbackDatabase(
         override fun readAll(): List<FeedbackEvent> =
             readableDatabase.query(
                 "feedback",
-                arrayOf("track_hash", "thumb", "at_ms", "utc_offset_minutes", "channel_id"),
+                arrayOf("track_hash", "thumb", "at_ms", "utc_offset_minutes", "channel_id", "separation_eq"),
                 null, null, null, null, "id",
             ).use { c ->
                 buildList {
                     while (c.moveToNext()) {
                         val thumb = Thumb.entries.firstOrNull { it.name == c.getString(1) } ?: continue
-                        add(FeedbackEvent(c.getString(0), thumb, c.getLong(2), c.getInt(3), c.getString(4)))
+                        add(FeedbackEvent(c.getString(0), thumb, c.getLong(2), c.getInt(3), c.getString(4), if (c.isNull(5)) null else c.getString(5)))
                     }
                 }
             }
@@ -231,12 +239,13 @@ class FeedbackDatabase(
             put("at_ms", e.atMs)
             put("utc_offset_minutes", e.utcOffsetMinutes)
             put("channel_id", e.channelId)
+            put("separation_eq", e.separationEq)
         }
         db.insertOrThrow("feedback", null, values)
     }
 
     private companion object {
         const val DB_NAME = "feedback.db"
-        const val DB_VERSION = 4
+        const val DB_VERSION = 5
     }
 }

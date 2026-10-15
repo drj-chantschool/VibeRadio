@@ -30,16 +30,17 @@ class FeedbackRecorder(
     private val hashes = HashMap<String, String>()
 
     /**
-     * Records [thumb] for the song at [trackUri] playing on [channelId]. The timestamp is taken
-     * at the call, before hashing. Returns the logged event, or null if the file couldn't be read
-     * or the log couldn't be written.
+     * Records [thumb] for the song at [trackUri] playing on [channelId], with the
+     * [separationEq] module in effect at the press (null if none). The timestamp is taken at the
+     * call, before hashing. Returns the logged event, or null if the file couldn't be read or the
+     * log couldn't be written.
      */
-    suspend fun record(trackUri: String, channelId: String, thumb: Thumb): FeedbackEvent? {
+    suspend fun record(trackUri: String, channelId: String, thumb: Thumb, separationEq: String? = null): FeedbackEvent? {
         val atMs = clock()
         return withContext(ioDispatcher) {
             mutex.withLock {
                 val hash = hashOf(trackUri) ?: return@withLock null
-                val event = FeedbackEvent(hash, thumb, atMs, utcOffsetMinutes(atMs), channelId)
+                val event = FeedbackEvent(hash, thumb, atMs, utcOffsetMinutes(atMs), channelId, separationEq)
                 runCatching { log.append(event) }.getOrNull()?.let { event }
             }
         }

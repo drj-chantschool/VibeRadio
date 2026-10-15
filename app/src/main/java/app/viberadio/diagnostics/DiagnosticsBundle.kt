@@ -12,6 +12,8 @@ import app.viberadio.library.Track
 import app.viberadio.playback.ChannelAiring
 import app.viberadio.playback.PodcastGapSettings
 import app.viberadio.playback.audio.AudioSettings
+import app.viberadio.playback.audio.SeparationSettings
+import app.viberadio.playback.audio.ToneBands
 import app.viberadio.playback.audio.TrackLevel
 import java.time.Instant
 import java.time.ZoneOffset
@@ -29,6 +31,8 @@ data class DiagnosticsSnapshot(
     /** The device's UTC offset at export, in minutes; names the bundle and shows local times. */
     val utcOffsetMinutes: Int,
     val audio: AudioSettings,
+    /** Settings → Audio → Separation EQ: the chosen module and every module's parameters. */
+    val separation: SeparationSettings = SeparationSettings.DEFAULT,
     /** Settings → Podcasts: the gap rule between episodes on song channels. */
     val podcastGap: PodcastGapSettings = PodcastGapSettings.DEFAULT,
     val resumeOnBluetooth: Boolean,
@@ -122,13 +126,16 @@ object DiagnosticsBundle {
             "audio" to linkedMapOf(
                 "target_lufs" to s.audio.targetLufs,
                 "mixing_factor_db" to s.audio.mixingFactorDb,
-                "podcast_low_hz" to s.audio.podcastLowHz,
-                "podcast_high_hz" to s.audio.podcastHighHz,
-                "music_low_hz" to s.audio.musicLowHz,
-                "music_high_hz" to s.audio.musicHighHz,
-                "music_depth_db" to s.audio.musicDepthDb,
                 "ramp_ms" to s.audio.rampMs,
+                "tone_bands_hz" to ToneBands.HZ.toList(),
+                "music_tone_db" to s.audio.musicTone.bandsDb,
+                "podcast_tone_db" to s.audio.podcastTone.bandsDb,
                 "is_default" to (s.audio == AudioSettings.DEFAULT),
+            ),
+            "separation_eq" to linkedMapOf(
+                "module" to s.separation.selected,
+                "modules" to s.separation.modules.associate { module -> module.id to module.params.associate { it.key to module[it.key] } },
+                "is_default" to (s.separation == SeparationSettings.DEFAULT),
             ),
             "podcast_gap" to linkedMapOf(
                 "rule" to s.podcastGap.selected,
@@ -148,8 +155,10 @@ object DiagnosticsBundle {
     )
 
     private fun feedback(events: List<FeedbackEvent>) = Csv.table(
-        listOf("track_hash", "thumb", "at_ms", "at_local", "utc_offset_minutes", "channel_id"),
-        events.map { listOf(it.trackHash, it.thumb.name, it.atMs, local(it.atMs, it.utcOffsetMinutes), it.utcOffsetMinutes, it.channelId) },
+        listOf("track_hash", "thumb", "at_ms", "at_local", "utc_offset_minutes", "channel_id", "separation_eq"),
+        events.map {
+            listOf(it.trackHash, it.thumb.name, it.atMs, local(it.atMs, it.utcOffsetMinutes), it.utcOffsetMinutes, it.channelId, it.separationEq)
+        },
     )
 
     private fun playHistory(history: Map<String, PlayRecord>) = Csv.table(
@@ -212,8 +221,8 @@ object DiagnosticsBundle {
         `all-songs`, `podcasts`); display names are in settings.json. Empty cells are unknown.
 
         - summary.json: app version, export time, feature layout version, counts
-        - settings.json: audio settings, the podcast gap rule and its parameters, Bluetooth setting, folders left out of the library, channel names
-        - feedback.csv: every thumbs press, oldest first (the append-only log; source of truth for learning)
+        - settings.json: audio settings (both tone curves), the separation EQ module and every module's parameters, the podcast gap rule and its parameters, Bluetooth setting, folders left out of the library, channel names
+        - feedback.csv: every thumbs press, oldest first (the append-only log; source of truth for learning); `separation_eq` is the separation module in effect at the press, empty when no podcast played over the music
         - play_history.csv: per song, its last play (wall clock and listening-clock reading)
         - channel_airings.csv: what each song channel last aired (live-radio resume)
         - features.csv: per song, the feature vector rebuilt from feedback.csv (layout in summary.json)
