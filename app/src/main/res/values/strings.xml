@@ -8,6 +8,8 @@
     <string name="library_empty">No audio found on this device.</string>
     <string name="knob_description">Channel dial</string>
     <string name="knob_state">%1$s, channel %2$d of %3$d</string>
+    <string name="notification_channel_down">Previous channel</string>
+    <string name="notification_channel_up">Next channel</string>
     <string name="channel_all">All</string>
     <string name="channel_other">Everything else</string>
 

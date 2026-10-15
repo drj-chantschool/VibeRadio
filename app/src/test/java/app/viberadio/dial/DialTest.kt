@@ -58,4 +58,27 @@ class DialTest {
         assertEquals(jazz, Dial.fallback(listOf(jazz)))
         assertNull(Dial.fallback(emptyList()))
     }
+
+    private val lineup = listOf("a", "b", "c").map { Station(it, it, ChannelType.MUSIC_ONLY) }
+
+    @Test
+    fun `step moves one station either way and wraps past the ends`() {
+        assertEquals("b", Dial.step(lineup, "a", 1)?.id)
+        assertEquals("a", Dial.step(lineup, "b", -1)?.id)
+        assertEquals("a", Dial.step(lineup, "c", 1)?.id)
+        assertEquals("c", Dial.step(lineup, "a", -1)?.id)
+    }
+
+    @Test
+    fun `step from off the dial starts at the end it moves from`() {
+        assertEquals("a", Dial.step(lineup, null, 1)?.id)
+        assertEquals("c", Dial.step(lineup, "gone", -1)?.id)
+    }
+
+    @Test
+    fun `step has nowhere to go on an empty or one-station dial`() {
+        assertNull(Dial.step(emptyList(), "a", 1))
+        assertNull(Dial.step(lineup.take(1), "a", 1))
+        assertEquals("a", Dial.step(lineup.take(1), null, -1)?.id)
+    }
 }
