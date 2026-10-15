@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The staged diagnostics bundle (DiagnosticsExporter.STAGING_DIR), shared from Settings → Debug. -->
+<paths>
+    <cache-path name="diagnostics" path="diagnostics/" />
+</paths>

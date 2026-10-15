@@ -13,6 +13,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -52,6 +53,8 @@ import app.viberadio.R
 import androidx.annotation.StringRes
 import androidx.compose.ui.text.input.KeyboardType
 import app.viberadio.playback.audio.AudioSettings
+import app.viberadio.diagnostics.DiagnosticsExporter
+import app.viberadio.diagnostics.ExportOutcome
 import app.viberadio.ui.theme.VibeRadioTheme
 import java.math.BigDecimal
 import kotlin.math.abs
@@ -77,7 +80,18 @@ fun SettingsButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
 }
 
 /** The pages inside settings. Enum, so it survives rotation and process death as-is. */
-private enum class SettingsPage { Root, Channels, Bluetooth, Audio }
+private enum class SettingsPage { Root, Channels, Bluetooth, Audio, Debug }
+
+/** Settings → Debug as the page shows it. */
+data class DebugSettingsUi(
+    val developerMode: Boolean,
+    /** The diagnostics folder's name; null until one is picked. */
+    val folderName: String?,
+    val folderChosen: Boolean,
+    val nightly: Boolean,
+    val exporting: Boolean,
+    val lastExport: ExportOutcome?,
+)
 
 /** Settings → Bluetooth as the page shows it. */
 data class BluetoothSettingsUi(
@@ -103,11 +117,24 @@ fun SettingsScreen(
     /** Applies the change if valid; false (nothing changed) if not. */
     onAudioChange: ((AudioSettings) -> AudioSettings) -> Boolean,
     onRestoreAudio: () -> Unit,
+    /** The version line at the foot of the list; tapping it seven times turns developer mode on. */
+    version: String,
+    onVersionTap: () -> Unit,
+    debug: DebugSettingsUi,
+    onDeveloperMode: (Boolean) -> Unit,
+    onPickFolder: () -> Unit,
+    onExportNow: () -> Unit,
+    onShareExport: () -> Unit,
+    onNightly: (Boolean) -> Unit,
     onClose: () -> Unit,
 ) {
     var page by rememberSaveable { mutableStateOf(SettingsPage.Root) }
     // Composed after MainActivity's handler, so it takes back first while a subpage is open.
     BackHandler(enabled = page != SettingsPage.Root) { page = SettingsPage.Root }
+    // Turning developer mode off hides its page.
+    LaunchedEffect(debug.developerMode) {
+        if (!debug.developerMode && page == SettingsPage.Debug) page = SettingsPage.Root
+    }
 
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
@@ -132,6 +159,16 @@ fun SettingsScreen(
                         onClick = { page = SettingsPage.Audio },
                     )
                     Rule()
+                    if (debug.developerMode) {
+                        SettingsLink(
+                            title = stringResource(R.string.settings_debug),
+                            summary = stringResource(R.string.settings_debug_summary),
+                            onClick = { page = SettingsPage.Debug },
+                        )
+                        Rule()
+                    }
+                    Spacer(Modifier.weight(1f))
+                    VersionLine(version, onVersionTap)
                 }
                 SettingsPage.Channels -> {
                     SettingsHeader(stringResource(R.string.settings_channels), onBack = { page = SettingsPage.Root })
@@ -144,6 +181,10 @@ fun SettingsScreen(
                 SettingsPage.Audio -> {
                     SettingsHeader(stringResource(R.string.settings_audio), onBack = { page = SettingsPage.Root })
                     AudioSettingsList(audio, onAudioChange, onRestoreAudio)
+                }
+                SettingsPage.Debug -> {
+                    SettingsHeader(stringResource(R.string.settings_debug), onBack = { page = SettingsPage.Root })
+                    DebugSettingsList(debug, onDeveloperMode, onPickFolder, onExportNow, onShareExport, onNightly)
                 }
             }
         }
@@ -252,6 +293,137 @@ private fun BluetoothSettingsList(
             )
             Rule()
         }
+    }
+}
+
+/** The app version, faint at the foot of settings. Tapping it is the way into developer mode. */
+@Composable
+private fun VersionLine(version: String, onTap: () -> Unit) {
+    Text(
+        stringResource(R.string.settings_version, version),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.outline,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onTap)
+            .padding(horizontal = 24.dp, vertical = 16.dp),
+    )
+}
+
+/** A row with a title, a faint line under it, and a switch; the whole row toggles. */
+@Composable
+private fun SwitchRow(title: String, about: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onChange)
+            .padding(horizontal = 24.dp, vertical = 16.dp),
+    ) {
+        Column(Modifier.weight(1f).padding(end = 16.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground)
+            Text(about, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        // The row handles the toggle, so the switch itself is display-only.
+        Switch(checked = checked, onCheckedChange = null)
+    }
+}
+
+/** A tappable row with a title and a faint line under it. */
+@Composable
+private fun ActionRow(title: String, about: String, enabled: Boolean = true, onClick: () -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 16.dp),
+    ) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleMedium,
+            color = if (enabled) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.outline,
+        )
+        Text(about, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/**
+ * Settings → Debug (developer mode only): where diagnostics go, exporting them now or nightly,
+ * sharing the latest, and the switch that turns developer mode back off.
+ */
+@Composable
+private fun DebugSettingsList(
+    debug: DebugSettingsUi,
+    onDeveloperMode: (Boolean) -> Unit,
+    onPickFolder: () -> Unit,
+    onExportNow: () -> Unit,
+    onShareExport: () -> Unit,
+    onNightly: (Boolean) -> Unit,
+) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+        item {
+            Text(
+                stringResource(R.string.settings_debug_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+            )
+            Rule()
+            ActionRow(
+                title = stringResource(R.string.settings_debug_folder),
+                about = when {
+                    !debug.folderChosen -> stringResource(R.string.settings_debug_folder_none)
+                    debug.folderName != null -> debug.folderName
+                    else -> stringResource(R.string.settings_debug_folder_unnamed)
+                },
+                onClick = onPickFolder,
+            )
+            Rule()
+            ActionRow(
+                title = stringResource(R.string.settings_debug_export),
+                about = exportStatus(debug),
+                enabled = !debug.exporting,
+                onClick = onExportNow,
+            )
+            Rule()
+            ActionRow(
+                title = stringResource(R.string.settings_debug_share),
+                about = stringResource(R.string.settings_debug_share_about),
+                enabled = !debug.exporting,
+                onClick = onShareExport,
+            )
+            Rule()
+            SwitchRow(
+                title = stringResource(R.string.settings_debug_nightly),
+                about = stringResource(
+                    if (debug.folderChosen) R.string.settings_debug_nightly_about else R.string.settings_debug_nightly_no_folder,
+                ),
+                checked = debug.nightly,
+                onChange = onNightly,
+            )
+            Rule()
+            SwitchRow(
+                title = stringResource(R.string.settings_debug_developer_mode),
+                about = stringResource(R.string.settings_debug_developer_mode_about),
+                checked = debug.developerMode,
+                onChange = onDeveloperMode,
+            )
+            Rule()
+        }
+    }
+}
+
+/** The line under "Export now": under way, or how the last one went. */
+@Composable
+private fun exportStatus(debug: DebugSettingsUi): String {
+    val last = debug.lastExport
+    return when {
+        debug.exporting -> stringResource(R.string.settings_debug_exporting)
+        last == null -> stringResource(R.string.settings_debug_export_never)
+        last.bundle == null -> last.error.orEmpty()
+        last.savedToFolder -> stringResource(R.string.settings_debug_export_saved, last.bundle)
+        last.error == DiagnosticsExporter.NO_FOLDER -> stringResource(R.string.settings_debug_export_staged, last.bundle)
+        else -> stringResource(R.string.settings_debug_export_failed, last.bundle, last.error.orEmpty())
     }
 }
 
@@ -546,6 +718,15 @@ internal object SettingsIcons {
     private const val HOLE = 3.2f
 }
 
+private val previewDebug = DebugSettingsUi(
+    developerMode = true,
+    folderName = "VibeRadio diagnostics",
+    folderChosen = true,
+    nightly = false,
+    exporting = false,
+    lastExport = ExportOutcome(atMs = 0, bundle = "2026-10-15_081203", savedToFolder = true),
+)
+
 private val previewBluetooth = BluetoothSettingsUi(resumeOnConnect = true, permission = BluetoothPermissionUi.Granted)
 
 private val previewChannels = listOf(
@@ -566,6 +747,14 @@ private fun SettingsLightPreview() {
             audio = AudioSettings.DEFAULT,
             onAudioChange = { true },
             onRestoreAudio = {},
+            version = "0.4.0",
+            onVersionTap = {},
+            debug = previewDebug,
+            onDeveloperMode = {},
+            onPickFolder = {},
+            onExportNow = {},
+            onShareExport = {},
+            onNightly = {},
             onClose = {},
         ) }
 }
@@ -582,6 +771,14 @@ private fun SettingsDarkPreview() {
             audio = AudioSettings.DEFAULT,
             onAudioChange = { true },
             onRestoreAudio = {},
+            version = "0.4.0",
+            onVersionTap = {},
+            debug = previewDebug,
+            onDeveloperMode = {},
+            onPickFolder = {},
+            onExportNow = {},
+            onShareExport = {},
+            onNightly = {},
             onClose = {},
         ) }
 }
@@ -614,6 +811,16 @@ private fun AudioSettingsPreview() {
     VibeRadioTheme(darkTheme = false) {
         Surface(color = MaterialTheme.colorScheme.background) {
             AudioSettingsList(AudioSettings.DEFAULT.copy(musicDepthDb = -12f), onAudioChange = { true }, onRestore = {})
+        }
+    }
+}
+
+@Preview(name = "Debug", showBackground = true, heightDp = 640)
+@Composable
+private fun DebugSettingsPreview() {
+    VibeRadioTheme(darkTheme = false) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            DebugSettingsList(previewDebug, onDeveloperMode = {}, onPickFolder = {}, onExportNow = {}, onShareExport = {}, onNightly = {})
         }
     }
 }
