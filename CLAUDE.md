@@ -23,6 +23,8 @@ Requires JDK 17+ (CI uses 21) and an Android SDK (`ANDROID_HOME` or `local.prope
 
 CI (`.github/workflows/ci.yml`, job `check`, required by the "Protect main" ruleset) runs actionlint, then `assembleDebug assembleRelease lint testDebugUnitTest` on every PR and push to `main`.
 
+**Cloud sessions (Claude Code on the web or the mobile app) don't build: CI is the build.** Their containers have no Android SDK (no `ANDROID_HOME`, no `local.properties`), so don't run `./gradlew`, and don't try to download or install an SDK, Gradle distribution or JDK to make it work. Review the diff carefully instead, open the PR, and let the `check` job build, lint and test it. If `check` fails, read the job log through the GitHub tools, fix it on the same branch and push again. Only build locally when the SDK is already there.
+
 The app version comes from the release tag, never from source: `-Pviberadio.versionName=1.2.3` (or `1.2.3-alpha|beta|rc.N`) sets `versionName`, and `versionCodeOf` in `app/build.gradle.kts` derives a `versionCode` that sorts the same way. Without the property the build is `0.0.0-dev`, versionCode 1.
 
 Release signing reads `VIBERADIO_KEYSTORE_PATH`, `VIBERADIO_KEYSTORE_PASSWORD`, `VIBERADIO_KEY_ALIAS` and `VIBERADIO_KEY_PASSWORD` from the environment; without them `assembleRelease` produces an unsigned APK. Debug builds use the `app.viberadio.debug` ID and the label "VibeRadio dev", so they install next to the release app.
