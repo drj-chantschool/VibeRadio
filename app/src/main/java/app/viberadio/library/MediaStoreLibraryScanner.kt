@@ -4,6 +4,7 @@ import android.content.ContentResolver
 import android.content.ContentUris
 import android.database.Cursor
 import android.os.Build
+import android.os.Environment
 import android.provider.MediaStore
 
 /**
@@ -39,10 +40,19 @@ class MediaStoreLibraryScanner(
             add(MediaStore.Audio.Media.DISPLAY_NAME)
             add(MediaStore.Audio.Media.SIZE)
             add(MediaStore.Audio.Media.DATE_MODIFIED)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) add(MediaStore.Audio.Media.IS_AUDIOBOOK)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                add(MediaStore.Audio.Media.IS_AUDIOBOOK)
+                add(MediaStore.Audio.Media.RELATIVE_PATH)
+                add(MediaStore.Audio.Media.VOLUME_NAME)
+            } else {
+                @Suppress("DEPRECATION") // The file path is the only folder source below API 29.
+                add(MediaStore.Audio.Media.DATA)
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) add(MediaStore.Audio.Media.GENRE)
         }.toTypedArray()
 
+        @Suppress("DEPRECATION") // Only used to make pre-29 file paths relative, like RELATIVE_PATH.
+        val legacyRoot = Environment.getExternalStorageDirectory().absolutePath
         val legacyGenres = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) legacyGenreMap() else emptyMap()
 
         val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 OR ${MediaStore.Audio.Media.IS_PODCAST} != 0"
@@ -59,6 +69,9 @@ class MediaStoreLibraryScanner(
             val sizeCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
             val modifiedCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
             val audiobookCol = c.getColumnIndex(MediaStore.Audio.Media.IS_AUDIOBOOK)
+            val relativePathCol = c.getColumnIndex("relative_path")
+            val volumeCol = c.getColumnIndex("volume_name")
+            val dataCol = c.getColumnIndex("_data")
             val genreCol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 c.getColumnIndex(MediaStore.Audio.Media.GENRE)
             } else {
@@ -87,6 +100,11 @@ class MediaStoreLibraryScanner(
                     kind = kind,
                     sizeBytes = c.getLong(sizeCol),
                     modifiedSec = c.getLong(modifiedCol),
+                    folder = if (relativePathCol >= 0) {
+                        LibraryFolderPaths.fromRelativePath(c.getString(relativePathCol), if (volumeCol >= 0) c.getString(volumeCol) else null)
+                    } else {
+                        LibraryFolderPaths.fromFilePath(if (dataCol >= 0) c.getString(dataCol) else null, legacyRoot)
+                    },
                 )
             }
         }

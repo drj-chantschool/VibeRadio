@@ -14,7 +14,9 @@ import app.viberadio.feedback.ListeningClock
 import app.viberadio.feedback.PlayHistory
 import app.viberadio.learning.Learner
 import app.viberadio.learning.LearningModels
+import app.viberadio.library.LibraryFolderSettings
 import app.viberadio.library.MediaStoreLibraryScanner
+import app.viberadio.library.PrefsLibraryFolderStore
 import app.viberadio.playback.LastChannelStore
 import app.viberadio.playback.LiveRadio
 import app.viberadio.playback.PodcastGapSettingsRepository
@@ -54,6 +56,7 @@ import android.util.AtomicFile
 import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -153,6 +156,13 @@ class AppContainer(context: Context) {
         hashOf = playHistory::hashOf,
     ).also { learner -> appScope.launch(Dispatchers.IO) { learner.load() } }
 
+    /** Settings → Audio → Library folders: folders left out of the library. */
+    val libraryFolders = LibraryFolderSettings(
+        store = PrefsLibraryFolderStore(context),
+        scope = appScope,
+        ioDispatcher = Dispatchers.IO,
+    )
+
     val channelRepository = ChannelRepository(
         scanner = MediaStoreLibraryScanner(context.contentResolver),
         generator = ChannelGenerator(
@@ -167,7 +177,11 @@ class AppContainer(context: Context) {
         ),
         ioDispatcher = Dispatchers.IO,
         place = learner::place,
-    )
+        filter = { tracks -> libraryFolders.awaitExclusions().filter(tracks) },
+    ).also { repository ->
+        // A folder put back or left out rebuilds the channels from the last scan; the playing queue is left alone.
+        appScope.launch { libraryFolders.exclusions.drop(1).collect { repository.regenerate() } }
+    }
 
     /** #2 and #4 replace this. */
     val streamPlanner: StreamPlanner = WeightedRandomStreamPlanner(
@@ -271,6 +285,7 @@ class AppContainer(context: Context) {
                 audio = audioSettings.settings.value,
                 podcastGap = podcastGapSettings.settings.value,
                 resumeOnBluetooth = bluetoothSettings.awaitResumeOnConnect(),
+                libraryFolders = libraryFolders.awaitExclusions(),
                 channelNames = ChannelLineup.ids.map { id ->
                     ChannelNameRow(id = id, defaultName = names.defaults[id].orEmpty(), name = names.of(id).orEmpty())
                 },

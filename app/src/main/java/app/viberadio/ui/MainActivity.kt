@@ -110,6 +110,7 @@ class MainActivity : ComponentActivity() {
         val channels by viewModel.channels.collectAsStateWithLifecycle()
         val resumeOnConnect by viewModel.resumeOnConnect.collectAsStateWithLifecycle()
         val audio by viewModel.audioSettings.collectAsStateWithLifecycle()
+        val libraryFolders by viewModel.libraryFolders.collectAsStateWithLifecycle()
         val podcastGap by viewModel.podcastGap.collectAsStateWithLifecycle()
         val diagnostics by viewModel.diagnostics.collectAsStateWithLifecycle()
         val exporting by viewModel.exporting.collectAsStateWithLifecycle()
@@ -165,6 +166,8 @@ class MainActivity : ComponentActivity() {
             audio = audio,
             onAudioChange = viewModel::updateAudio,
             onRestoreAudio = viewModel::restoreAudioDefaults,
+            libraryFolders = libraryFolders,
+            onToggleFolder = viewModel::toggleFolder,
             podcastGap = podcastGap,
             onSelectGapRule = viewModel::selectGapRule,
             onGapParam = viewModel::setGapParam,

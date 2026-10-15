@@ -26,6 +26,11 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
+import app.viberadio.library.FolderNode
+import app.viberadio.library.FolderState
+import app.viberadio.library.FolderTree
 import kotlinx.coroutines.flow.stateIn
 
 /** One named channel on the Channels settings page. */
@@ -37,6 +42,19 @@ data class ChannelNameUi(
     /** True when the user renamed it. */
     val custom: Boolean,
 )
+
+/** Settings → Audio → Library folders as the page shows it. */
+data class LibraryFoldersUi(
+    /** False until the library has been scanned; there's nothing to show before that. */
+    val scanned: Boolean,
+    val tree: List<FolderNode>,
+    /** Every row's checkbox, by [FolderNode.path]. */
+    val states: Map<String, FolderState>,
+) {
+    companion object {
+        val EMPTY = LibraryFoldersUi(scanned = false, tree = emptyList(), states = emptyMap())
+    }
+}
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -66,6 +84,33 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun restoreAudioDefaults() = audio.restoreDefaults()
 
     private val container = (application as VibeRadioApp).container
+
+    /** Folder → tracks directly in it, from the last scan before anything is left out. */
+    private val folderCounts = container.channelRepository.scanned
+        .map { tracks -> tracks?.let(FolderTree::counts) }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** Settings → Audio → Library folders: the folders that hold audio, each in, partly in or out. */
+    val libraryFolders: StateFlow<LibraryFoldersUi> = combine(folderCounts, container.libraryFolders.exclusions) { counts, exclusions ->
+        if (counts == null) return@combine LibraryFoldersUi.EMPTY
+        val tree = FolderTree.build(counts)
+        val states = HashMap<String, FolderState>()
+        fun visit(node: FolderNode) {
+            states[node.path] = FolderTree.state(node, exclusions, counts)
+            node.children.forEach(::visit)
+        }
+        tree.forEach(::visit)
+        LibraryFoldersUi(scanned = true, tree = tree, states = states)
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LibraryFoldersUi.EMPTY)
+
+    /** The checkbox on [node]: leaves it out when it's all in, otherwise puts all of it back. */
+    fun toggleFolder(node: FolderNode) {
+        val counts = folderCounts.value ?: return
+        container.libraryFolders.update { FolderTree.toggle(node, it, counts) }
+    }
 
     /** Settings → Podcasts, in developer mode: the gap rule between episodes and each rule's figures. */
     val podcastGap: StateFlow<PodcastGapSettings> = container.podcastGapSettings.settings
