@@ -37,4 +37,16 @@ object Dial {
      */
     fun fallback(songChannels: List<Channel>): Channel? =
         songChannels.firstOrNull { it.id == ChannelGenerator.ALL_SONGS_ID } ?: songChannels.firstOrNull()
+
+    /**
+     * The station [delta] places from [currentId] on [stations], wrapping past either end: the
+     * notification's channel buttons. Not on the dial (or nothing tuned): the first station going
+     * up, the last going down. Null if there is nowhere else to go.
+     */
+    fun step(stations: List<Station>, currentId: String?, delta: Int): Station? {
+        if (stations.isEmpty()) return null
+        val index = stations.indexOfFirst { it.id == currentId }
+        if (index < 0) return if (delta > 0) stations.first() else stations.last()
+        return stations[Math.floorMod(index + delta, stations.size)].takeIf { it.id != currentId }
+    }
 }

@@ -2,7 +2,9 @@ package app.viberadio.playback
 
 import android.app.PendingIntent
 import android.content.Intent
+import androidx.annotation.DrawableRes
 import androidx.annotation.OptIn
+import androidx.annotation.StringRes
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
@@ -10,8 +12,10 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.SessionCommand
 import app.viberadio.R
 import app.viberadio.VibeRadioApp
 import app.viberadio.playback.audio.AudioStream
@@ -33,6 +37,9 @@ import kotlinx.coroutines.launch
  * podcasts playing by themselves, and is what every controller sees. The overlay player only
  * plays podcasts over the music on song channels; it takes no audio focus and follows the
  * session player's play/pause ([RadioSessionCallback]).
+ *
+ * The notification's only buttons besides play/pause are channel down and up ([ChannelStep]),
+ * in the slots skip buttons would take.
  */
 @OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
@@ -118,8 +125,22 @@ class PlaybackService : MediaSessionService() {
         session = MediaSession.Builder(this, player)
             .setCallback(callback)
             .setSessionActivity(openApp)
+            .setMediaButtonPreferences(
+                listOf(
+                    channelButton(ChannelStep.DOWN, R.drawable.ic_channel_down, R.string.notification_channel_down, CommandButton.SLOT_BACK),
+                    channelButton(ChannelStep.UP, R.drawable.ic_channel_up, R.string.notification_channel_up, CommandButton.SLOT_FORWARD),
+                ),
+            )
             .build()
     }
+
+    private fun channelButton(command: SessionCommand, @DrawableRes icon: Int, @StringRes label: Int, slot: Int): CommandButton =
+        CommandButton.Builder(CommandButton.ICON_UNDEFINED)
+            .setCustomIconResId(icon)
+            .setDisplayName(getString(label))
+            .setSessionCommand(command)
+            .setSlots(slot)
+            .build()
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 

@@ -1,5 +1,6 @@
 package app.viberadio.playback
 
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -9,8 +10,12 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionError
+import androidx.media3.session.SessionResult
 import app.viberadio.channels.Channel
 import app.viberadio.channels.ChannelRepository
+import app.viberadio.dial.ChannelNames
 import app.viberadio.dial.Dial
 import app.viberadio.feedback.ListeningClock
 import app.viberadio.library.Track
@@ -27,7 +32,8 @@ import kotlinx.coroutines.launch
 /**
  * Turns channel requests into queues and enforces the radio rules on every controller,
  * including the system media notification and headset buttons: no skip, no seek, no
- * shuffle/repeat toggles. Play/pause and tuning remain.
+ * shuffle/repeat toggles. Play/pause and tuning remain, including [ChannelStep]: the
+ * notification's channel down/up buttons, which tune the neighbouring station on the dial.
  *
  * Song channels queue from [StreamPlanner] one song at a time: the current song plus
  * [LOOKAHEAD] more (so the player can preload), topped up each time a song starts. Podcast-only channels queue from the global
@@ -198,10 +204,40 @@ class RadioSessionCallback(
         val commands = MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon()
             .removeAll(*FORBIDDEN_COMMANDS)
             .build()
+        val sessionCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
+            .add(ChannelStep.DOWN)
+            .add(ChannelStep.UP)
+            .build()
         return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
             .setAvailablePlayerCommands(commands)
+            .setAvailableSessionCommands(sessionCommands)
             .build()
     }
+
+    /** [ChannelStep]: tunes the next or previous station on the dial and plays it, as the knob does. */
+    override fun onCustomCommand(
+        session: MediaSession,
+        controller: MediaSession.ControllerInfo,
+        customCommand: SessionCommand,
+        args: Bundle,
+    ): ListenableFuture<SessionResult> {
+        val delta = when (customCommand.customAction) {
+            ChannelStep.DOWN.customAction -> -1
+            ChannelStep.UP.customAction -> 1
+            else -> return failed(SessionError(SessionError.ERROR_NOT_SUPPORTED, "Unknown command"))
+        }
+        val player = player ?: return failed(SessionError(SessionError.ERROR_INVALID_STATE, "No player"))
+        // Only the order matters here, not the names.
+        val stations = Dial.stations(songChannels(), podcasts.library.value.channelIds, ChannelNames(emptyMap()))
+        val queue = Dial.step(stations, currentChannelId, delta)?.id?.let(::tune)
+            ?: return failed(SessionError(SessionError.ERROR_BAD_VALUE, "No other channel to tune"))
+        player.setMediaItems(queue.items, 0, queue.startPositionMs)
+        player.prepare()
+        player.play()
+        return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+    }
+
+    private fun failed(error: SessionError): ListenableFuture<SessionResult> = Futures.immediateFuture(SessionResult(error))
 
     override fun onSetMediaItems(
         mediaSession: MediaSession,
@@ -212,10 +248,21 @@ class RadioSessionCallback(
     ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
         val queue = mediaItems.singleOrNull()
             ?.let(ChannelRequest::channelId)
-            ?.let(::tuneIn)
+            ?.let(::tune)
             ?: return Futures.immediateFailedFuture(
                 IllegalArgumentException("Expected a single channel request for a known channel"),
             )
+        return Futures.immediateFuture(
+            MediaSession.MediaItemsWithStartPosition(queue.items, 0, queue.startPositionMs),
+        )
+    }
+
+    /**
+     * Switches to [channelId] and returns the queue to put on the player, or null for an unknown
+     * channel. Call before the player gets the new items.
+     */
+    private fun tune(channelId: String): Queue? {
+        val queue = tuneIn(channelId) ?: return null
         // Still on the old item here, so this keeps the place in an episode being tuned away from.
         savePosition()
         overlay?.stop()
@@ -230,9 +277,7 @@ class RadioSessionCallback(
             joiningMediaId = null
             stopFade()
         }
-        return Futures.immediateFuture(
-            MediaSession.MediaItemsWithStartPosition(queue.items, 0, queue.startPositionMs),
-        )
+        return queue
     }
 
     /** Arbitrary item additions would let a controller build its own playlist. */
@@ -590,4 +635,13 @@ class RadioSessionCallback(
             Player.COMMAND_SET_SPEED_AND_PITCH,
         )
     }
+}
+
+/**
+ * The notification's channel buttons: the knob turned one station down or up, wrapping past
+ * the ends ([Dial.step]). Tuning, not skipping: the channel decides what plays.
+ */
+object ChannelStep {
+    val DOWN = SessionCommand("app.viberadio.CHANNEL_DOWN", Bundle.EMPTY)
+    val UP = SessionCommand("app.viberadio.CHANNEL_UP", Bundle.EMPTY)
 }
