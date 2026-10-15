@@ -10,9 +10,10 @@ import androidx.media3.common.util.UnstableApi
  * sink. The two streams (music on the session player, podcasts played over it on a second
  * player) each go through their own chain and are then mixed by the system.
  *
- * Today each chain is the stream's EQ ([StreamEqProcessor], #2). Still to come, in this order
- * before the EQ: loudness normalisation (#1), then voice emphasis (#5). Background-music
- * suppression in podcasts (#6) belongs on the podcast stream.
+ * Each chain is the stream's gain ([StreamGainProcessor]: the item's leveling gain, #1, and on
+ * the music the mixing factor under a podcast, #2), then its EQ ([StreamEqProcessor], #2).
+ * Still to come, between the two: voice emphasis (#5). Background-music suppression in
+ * podcasts (#6) belongs on the podcast stream.
  *
  * Processors are created per player because they hold per-stream state.
  */
@@ -24,9 +25,9 @@ fun interface AudioProcessorProvider {
         /** No processing, ExoPlayer's stock chain only. */
         val None = AudioProcessorProvider { emptyList() }
 
-        /** Each stream through its own EQ, following [mix] and the current [settings]. */
-        fun eq(mix: MixState, settings: () -> AudioSettings) = AudioProcessorProvider { stream ->
-            listOf(StreamEqProcessor(stream, mix, settings))
+        /** Each stream through its own gain, then its own EQ, following [mix] and the current [settings]. */
+        fun leveledEq(leveling: Leveling, mix: MixState, settings: () -> AudioSettings) = AudioProcessorProvider { stream ->
+            listOf(StreamGainProcessor(stream, leveling, mix, settings), StreamEqProcessor(stream, mix, settings))
         }
     }
 }

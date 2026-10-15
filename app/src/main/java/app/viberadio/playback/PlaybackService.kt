@@ -15,6 +15,7 @@ import androidx.media3.session.MediaSessionService
 import app.viberadio.R
 import app.viberadio.VibeRadioApp
 import app.viberadio.playback.audio.AudioStream
+import app.viberadio.playback.audio.LevelingWatcher
 import app.viberadio.playback.audio.ProcessingRenderersFactory
 import app.viberadio.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
@@ -39,6 +40,7 @@ class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
     private var callback: RadioSessionCallback? = null
     private var overlayPlayer: ExoPlayer? = null
+    private var levelingWatcher: LevelingWatcher? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onCreate() {
@@ -99,6 +101,12 @@ class PlaybackService : MediaSessionService() {
         callback.attach(player, overlayPlayer, container.mix)
         this.callback = callback
 
+        // Measure what's queued on either player, so each item starts at its level (#1).
+        levelingWatcher = LevelingWatcher(container.leveling).apply {
+            attach(player)
+            attach(overlayPlayer)
+        }
+
         val openApp = PendingIntent.getActivity(
             this,
             0,
@@ -115,6 +123,8 @@ class PlaybackService : MediaSessionService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
     override fun onDestroy() {
+        levelingWatcher?.detach()
+        levelingWatcher = null
         callback?.detach()
         callback = null
         overlayPlayer?.release()

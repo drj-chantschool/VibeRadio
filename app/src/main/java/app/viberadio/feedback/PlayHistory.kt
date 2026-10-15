@@ -89,6 +89,17 @@ class PlayHistory(
     }
 
     /**
+     * [track]'s content hash, hashing the file (and caching the result) if it isn't known yet.
+     * Null if the file couldn't be read.
+     */
+    suspend fun hash(track: Track): String? = withContext(ioDispatcher) {
+        mutex.withLock {
+            load()
+            cachedHash(track) ?: hashFile(track)
+        }
+    }
+
+    /**
      * Records that [track] started playing now. Hashes the file if its hash isn't cached (or the
      * file changed). Returns the hash, or null if the file couldn't be read.
      */

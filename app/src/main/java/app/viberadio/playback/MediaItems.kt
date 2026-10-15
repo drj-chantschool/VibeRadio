@@ -36,8 +36,9 @@ internal object EpisodeMediaId {
 
     fun of(episodeId: String): String = PREFIX + episodeId
 
-    fun episodeId(item: MediaItem?): String? =
-        item?.mediaId?.takeIf { it.startsWith(PREFIX) }?.removePrefix(PREFIX)
+    fun episodeId(item: MediaItem?): String? = item?.mediaId?.let(::episodeId)
+
+    fun episodeId(mediaId: String): String? = mediaId.takeIf { it.startsWith(PREFIX) }?.removePrefix(PREFIX)
 }
 
 internal fun Episode.toMediaItem(uri: String, showTitle: String?, stationId: String, stationName: String): MediaItem =
@@ -55,7 +56,16 @@ internal fun Episode.toMediaItem(uri: String, showTitle: String?, stationId: Str
         )
         .build()
 
-internal val Track.mediaId: String get() = "track:$id"
+/** Media IDs of songs: the MediaStore ID of the track. */
+internal object TrackMediaId {
+    private const val PREFIX = "track:"
+
+    fun of(trackId: Long): String = PREFIX + trackId
+
+    fun trackId(mediaId: String): Long? = mediaId.takeIf { it.startsWith(PREFIX) }?.removePrefix(PREFIX)?.toLongOrNull()
+}
+
+internal val Track.mediaId: String get() = TrackMediaId.of(id)
 
 /** [stationName] is what the notification shows as the station: the channel's name on the dial. */
 internal fun Track.toMediaItem(channel: Channel, stationName: String = channel.name): MediaItem =

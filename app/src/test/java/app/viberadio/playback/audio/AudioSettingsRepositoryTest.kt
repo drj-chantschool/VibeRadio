@@ -29,6 +29,25 @@ class AudioSettingsRepositoryTest {
         assertEquals(5_700f, defaults.musicHighHz)
         assertEquals(-9f, defaults.musicDepthDb)
         assertEquals(1_500L, defaults.rampMs)
+        assertEquals(-18f, defaults.targetLufs)
+        assertEquals(-10f, defaults.mixingFactorDb)
+    }
+
+    @Test
+    fun `target loudness and mixing factor are range-checked`() {
+        val repo = repository(FakeStore())
+        assertTrue(repo.update { it.copy(targetLufs = -23f, mixingFactorDb = -6f) })
+        assertFalse(repo.update { it.copy(targetLufs = -5f) })
+        assertFalse(repo.update { it.copy(mixingFactorDb = 3f) })
+        assertEquals(-23f, repo.settings.value.targetLufs)
+        assertEquals(-6f, repo.settings.value.mixingFactorDb)
+    }
+
+    @Test
+    fun `leveling and the mixing factor aren't EQ figures`() {
+        val d = AudioSettings.DEFAULT
+        assertTrue(d.sameEqAs(d.copy(targetLufs = -23f, mixingFactorDb = -3f)))
+        assertFalse(d.sameEqAs(d.copy(musicDepthDb = -3f)))
     }
 
     @Test

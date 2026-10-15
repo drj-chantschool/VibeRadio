@@ -86,19 +86,22 @@
     <string name="settings_bluetooth_permission">Needs the Nearby devices permission to notice connections. Tap to allow.</string>
     <string name="settings_bluetooth_permission_denied">Nearby devices permission was denied. Tap to allow it in system settings.</string>
     <string name="settings_audio">Audio</string>
-    <string name="settings_audio_summary">How a podcast sits over the music</string>
-    <string name="settings_audio_hint">While a podcast plays over music, the podcast goes through a band pass and the music through a wider, partial notch, so the voice sits in a gap. With only one playing, both are flat. Changes ramp in over the ramp time.</string>
+    <string name="settings_audio_summary">Leveling, and how a podcast sits over the music</string>
+    <string name="settings_audio_hint">Every song and episode is measured once and played at one fixed gain that brings it to the target loudness, never pushed into clipping. While a podcast plays over music, the music drops by the mixing factor, the podcast goes through a band pass and the music through a wider, partial notch, so the voice sits in a gap. With only one playing, there is no mixing factor and both are flat. Changes ramp in over the ramp time.</string>
+    <string name="settings_audio_target">Target loudness</string>
+    <string name="settings_audio_mixing">Mixing factor (music under a podcast)</string>
     <string name="settings_audio_podcast_low">Podcast band, low edge</string>
     <string name="settings_audio_podcast_high">Podcast band, high edge</string>
     <string name="settings_audio_music_low">Music notch, low edge</string>
     <string name="settings_audio_music_high">Music notch, high edge</string>
     <string name="settings_audio_music_depth">Music notch depth</string>
-    <string name="settings_audio_ramp">EQ ramp time</string>
+    <string name="settings_audio_ramp">Ramp time</string>
     <string name="settings_audio_restore">Restore defaults</string>
     <string name="settings_audio_default">Default: %1$s %2$s</string>
-    <string name="settings_audio_invalid">Out of range, or the low edge isn’t below the high edge. Hz 20–20000, depth 0–30 dB, ramp 0–10 s.</string>
+    <string name="settings_audio_invalid">Out of range, or the low edge isn’t below the high edge. Hz 20–20000, depth and mixing factor 0–30 dB, target 8–30 LUFS below full scale, ramp 0–10 s.</string>
     <string name="unit_hz">Hz</string>
     <string name="unit_db">dB</string>
+    <string name="unit_lufs">LUFS</string>
     <string name="unit_seconds">s</string>
 
     <string name="pages_description">Page %1$d of %2$d</string>

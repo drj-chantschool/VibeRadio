@@ -257,6 +257,8 @@ private fun BluetoothSettingsList(
 
 /** One adjustable figure on Settings → Audio: how it reads, shows and writes back. */
 internal enum class AudioField(@StringRes val label: Int, @StringRes val unit: Int) {
+    Target(R.string.settings_audio_target, R.string.unit_lufs),
+    Mixing(R.string.settings_audio_mixing, R.string.unit_db),
     PodcastLow(R.string.settings_audio_podcast_low, R.string.unit_hz),
     PodcastHigh(R.string.settings_audio_podcast_high, R.string.unit_hz),
     MusicLow(R.string.settings_audio_music_low, R.string.unit_hz),
@@ -267,6 +269,8 @@ internal enum class AudioField(@StringRes val label: Int, @StringRes val unit: I
 
     /** The value in the unit shown. */
     fun read(s: AudioSettings): Double = when (this) {
+        Target -> s.targetLufs.toDouble()
+        Mixing -> s.mixingFactorDb.toDouble()
         PodcastLow -> s.podcastLowHz.toDouble()
         PodcastHigh -> s.podcastHighHz.toDouble()
         MusicLow -> s.musicLowHz.toDouble()
@@ -275,8 +279,13 @@ internal enum class AudioField(@StringRes val label: Int, @StringRes val unit: I
         Ramp -> s.rampMs / 1000.0
     }
 
-    /** [s] with this figure set to [value], in the unit shown. A depth is always a cut, so its sign is ignored. */
+    /**
+     * [s] with this figure set to [value], in the unit shown. A target loudness is always below
+     * full scale, and a depth or mixing factor always a cut, so their sign is ignored.
+     */
     fun write(s: AudioSettings, value: Double): AudioSettings = when (this) {
+        Target -> s.copy(targetLufs = -abs(value).toFloat())
+        Mixing -> s.copy(mixingFactorDb = -abs(value).toFloat())
         PodcastLow -> s.copy(podcastLowHz = value.toFloat())
         PodcastHigh -> s.copy(podcastHighHz = value.toFloat())
         MusicLow -> s.copy(musicLowHz = value.toFloat())
@@ -288,14 +297,14 @@ internal enum class AudioField(@StringRes val label: Int, @StringRes val unit: I
     /** No trailing zeros; a minus sign, not a hyphen. */
     fun format(s: AudioSettings): String {
         val v = read(s)
-        val rounded = if (this == Ramp || this == MusicDepth) (v * 100).roundToLong() / 100.0 else v.roundToLong().toDouble()
+        val rounded = if (this == Ramp || this == MusicDepth || this == Target || this == Mixing) (v * 100).roundToLong() / 100.0 else v.roundToLong().toDouble()
         return BigDecimal(rounded.toString()).stripTrailingZeros().toPlainString().replace('-', '\u2212')
     }
 }
 
 /**
- * Settings → Audio: the EQ that mixes a podcast over music, figure by figure, each tappable to
- * change, and a way back to the defaults.
+ * Settings → Audio: the leveling target, then how a podcast is mixed over music (mixing factor
+ * and EQ), figure by figure, each tappable to change, and a way back to the defaults.
  */
 @Composable
 private fun AudioSettingsList(
