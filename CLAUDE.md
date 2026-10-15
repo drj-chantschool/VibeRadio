@@ -74,4 +74,10 @@ Tuning flow: knob release → `RadioViewModel.tune` → `controller.setMediaItem
 - Keep channel and queue logic in pure Kotlin (no Android types; `Track.uri` is a `String`) and cover it with JVM tests in `app/src/test`. Android-dependent code stays thin. The same goes for `podcasts` (only `JsonPodcastStore` touches Android) and `feedback` (only `FeedbackDatabase`). `learning` has no Android code.
 - Media3 unstable APIs: annotate the narrowest scope with `@OptIn(UnstableApi::class)` (or `@UnstableApi` on classes that expose them).
 - One logical change per commit. Reference the issue (`#n`) a change works toward.
-- Claude sessions: after pushing a branch, open a pull request for it against `main` without waiting to be asked (skip if one is already open for that branch).
+
+## Workflow
+
+- **Work it through without stopping to ask.** Ask the user something only when the request is vague, or inconsistent with the specs in `docs/` or the current state of the code. Otherwise make the reasonable call and say what you decided in the PR description.
+- **When development is done, open the PR.** Don't ask whether to open one; skip this if one is already open for the branch. Branch from `main`, one logical change per PR, referencing the issue (`#n`). Update the relevant `docs/` spec in the same PR when behaviour changes.
+- **Enable auto-merge right after opening it**, merge-commit method (`PUT /repos/{owner}/{repo}/pulls/{n}/ccr/auto_merge`). GitHub has no repo-wide default for this, so every PR needs it; a PR without it sits unmerged after CI passes. The PR merges itself once the `check` job passes.
+- If CI fails, fix it on the same branch; auto-merge stays armed.
