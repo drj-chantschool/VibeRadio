@@ -694,6 +694,7 @@ internal object GapStrings {
         PodcastGapRule.MusicRatio.RATIO -> R.string.gap_param_ratio
         PodcastGapRule.MusicRatio.FLOOR_SECONDS -> R.string.gap_param_floor_seconds
         PodcastGapRule.MusicRatio.TOLERANCE_PERCENT -> R.string.gap_param_tolerance_percent
+        PodcastGapRule.MusicRatio.MAX_MINUTES -> R.string.gap_param_max_minutes
         else -> throw IllegalArgumentException(key)
     }
 

@@ -37,6 +37,20 @@ class PodcastGapRuleTest {
     }
 
     @Test
+    fun `music ratio - the gap is capped at the max`() {
+        val rule = PodcastGapRule.MusicRatio(ratio = 0.5, maxMinutes = 10.0)
+        assertEquals(Gap.Music(10 * minute, 0.1), rule.gapAfter(0, 60 * minute))
+        assertEquals(Gap.Music(9 * minute, 0.1), rule.gapAfter(0, 18 * minute))
+        assertEquals(Gap.Music(10 * minute, 0.1), PodcastGapRule.MusicRatio().gapAfter(0, 3 * 60 * minute))
+    }
+
+    @Test
+    fun `music ratio - a max below the floor is refused`() {
+        assertFalse(PodcastGapRule.MusicRatio(floorSeconds = 30.0, maxMinutes = 0.25).isValid)
+        assertTrue(PodcastGapRule.MusicRatio(floorSeconds = 30.0, maxMinutes = 0.5).isValid)
+    }
+
+    @Test
     fun `every rule round-trips its parameters`() {
         for (rule in PodcastGapRule.all) {
             assertTrue(rule.isValid)

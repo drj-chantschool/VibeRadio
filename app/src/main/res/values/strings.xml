@@ -127,7 +127,7 @@
     <string name="gap_rule_tracks_by_length">Tracks by episode length</string>
     <string name="gap_rule_tracks_by_length_about">The next episode waits for the song to end, plus a few more full songs after a long episode.</string>
     <string name="gap_rule_music_ratio">Music to podcast ratio</string>
-    <string name="gap_rule_music_ratio_about">Music for a fraction of the podcast time just played back to back. Starts at a song’s end if one falls near that time, otherwise over the song.</string>
+    <string name="gap_rule_music_ratio_about">Music for a fraction of the podcast time just played back to back, up to a longest gap. Starts at a song’s end if one falls near that time, otherwise over the song.</string>
     <string name="gap_param_long_minutes">Long episode, over</string>
     <string name="gap_param_long_tracks">Extra songs after a long one</string>
     <string name="gap_param_very_long_minutes">Very long episode, over</string>
@@ -135,6 +135,7 @@
     <string name="gap_param_ratio">Music per unit of podcast time (0–1)</string>
     <string name="gap_param_floor_seconds">Shortest gap; below it, episodes run back to back</string>
     <string name="gap_param_tolerance_percent">Window for a song’s end, either side</string>
+    <string name="gap_param_max_minutes">Longest gap</string>
     <string name="settings_debug">Debug</string>
     <string name="settings_debug_summary">Diagnostics export</string>
     <string name="settings_debug_hint">Exports the app’s data (thumbs log, play history, feature vectors, channel placement, library, levels and settings) as CSV and JSON files, one dated folder per export. Song titles and artists are included.</string>

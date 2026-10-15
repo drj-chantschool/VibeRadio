@@ -117,14 +117,16 @@ sealed interface PodcastGapRule {
 
     /**
      * Music time in proportion to podcast time: after [streakMs] of podcasts back to back, about
-     * [ratio] × that of music. A wait under [floorSeconds] isn't worth it: the next episode
-     * follows straight on, and its time adds to the streak. The next episode starts at a track
-     * boundary within ±[tolerancePercent] of the wait, otherwise part-way through a song.
+     * [ratio] × that of music, at most [maxMinutes]. A wait under [floorSeconds] isn't worth it:
+     * the next episode follows straight on, and its time adds to the streak. The next episode
+     * starts at a track boundary within ±[tolerancePercent] of the wait, otherwise part-way
+     * through a song.
      */
     data class MusicRatio(
         val ratio: Double = 0.5,
         val floorSeconds: Double = 10.0,
         val tolerancePercent: Double = 10.0,
+        val maxMinutes: Double = 10.0,
     ) : PodcastGapRule {
         override val id: String get() = ID
         override val params: List<GapParam> get() = PARAMS
@@ -133,6 +135,7 @@ sealed interface PodcastGapRule {
             RATIO -> ratio
             FLOOR_SECONDS -> floorSeconds
             TOLERANCE_PERCENT -> tolerancePercent
+            MAX_MINUTES -> maxMinutes
             else -> throw IllegalArgumentException(key)
         }
 
@@ -140,11 +143,15 @@ sealed interface PodcastGapRule {
             RATIO -> copy(ratio = value)
             FLOOR_SECONDS -> copy(floorSeconds = value)
             TOLERANCE_PERCENT -> copy(tolerancePercent = value)
+            MAX_MINUTES -> copy(maxMinutes = value)
             else -> throw IllegalArgumentException(key)
         }
 
+        /** A cap under the floor would rule out every gap. */
+        override val consistent: Boolean get() = maxMinutes * 60 >= floorSeconds
+
         override fun gapAfter(contentMs: Long, streakMs: Long): Gap {
-            val musicMs = (ratio * streakMs).roundToLong()
+            val musicMs = minOf((ratio * streakMs).roundToLong(), (maxMinutes * 60_000).roundToLong())
             if (musicMs < (floorSeconds * 1000).roundToLong()) return Gap.Music(0)
             return Gap.Music(musicMs, tolerancePercent / 100)
         }
@@ -154,10 +161,12 @@ sealed interface PodcastGapRule {
             const val RATIO = "ratio"
             const val FLOOR_SECONDS = "floor_seconds"
             const val TOLERANCE_PERCENT = "tolerance_percent"
+            const val MAX_MINUTES = "max_minutes"
             val PARAMS = listOf(
                 GapParam(RATIO, GapUnit.Ratio, 0.0..1.0),
                 GapParam(FLOOR_SECONDS, GapUnit.Seconds, 0.0..600.0),
                 GapParam(TOLERANCE_PERCENT, GapUnit.Percent, 0.0..50.0),
+                GapParam(MAX_MINUTES, GapUnit.Minutes, 0.0..600.0),
             )
         }
     }
