@@ -74,3 +74,4 @@ Tuning flow: knob release → `RadioViewModel.tune` → `controller.setMediaItem
 - Keep channel and queue logic in pure Kotlin (no Android types; `Track.uri` is a `String`) and cover it with JVM tests in `app/src/test`. Android-dependent code stays thin. The same goes for `podcasts` (only `JsonPodcastStore` touches Android) and `feedback` (only `FeedbackDatabase`). `learning` has no Android code.
 - Media3 unstable APIs: annotate the narrowest scope with `@OptIn(UnstableApi::class)` (or `@UnstableApi` on classes that expose them).
 - One logical change per commit. Reference the issue (`#n`) a change works toward.
+- Claude sessions: after pushing a branch, open a pull request for it against `main` without waiting to be asked (skip if one is already open for that branch).
