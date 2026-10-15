@@ -124,7 +124,7 @@ fun SettingsScreen(
     /** Applies the change if valid; false (nothing changed) if not. */
     onAudioChange: ((AudioSettings) -> AudioSettings) -> Boolean,
     onRestoreAudio: () -> Unit,
-    /** Settings → Podcasts (developer mode): the gap rule between episodes and its parameters. */
+    /** Settings → Podcasts: the gap rule between episodes and its parameters (shown in developer mode only). */
     podcastGap: PodcastGapSettings,
     onSelectGapRule: (id: String) -> Unit,
     /** Sets one parameter of a rule if the value is accepted; false (nothing changed) if not. */
@@ -146,7 +146,7 @@ fun SettingsScreen(
     BackHandler(enabled = page != SettingsPage.Root) { page = SettingsPage.Root }
     // Turning developer mode off hides its pages.
     LaunchedEffect(debug.developerMode) {
-        if (!debug.developerMode && (page == SettingsPage.Debug || page == SettingsPage.Podcasts)) page = SettingsPage.Root
+        if (!debug.developerMode && page == SettingsPage.Debug) page = SettingsPage.Root
     }
 
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
@@ -172,13 +172,13 @@ fun SettingsScreen(
                         onClick = { page = SettingsPage.Audio },
                     )
                     Rule()
+                    SettingsLink(
+                        title = stringResource(R.string.settings_podcasts),
+                        summary = stringResource(R.string.settings_podcasts_summary),
+                        onClick = { page = SettingsPage.Podcasts },
+                    )
+                    Rule()
                     if (debug.developerMode) {
-                        SettingsLink(
-                            title = stringResource(R.string.settings_podcasts),
-                            summary = stringResource(R.string.settings_podcasts_summary),
-                            onClick = { page = SettingsPage.Podcasts },
-                        )
-                        Rule()
                         SettingsLink(
                             title = stringResource(R.string.settings_debug),
                             summary = stringResource(R.string.settings_debug_summary),
@@ -203,7 +203,7 @@ fun SettingsScreen(
                 }
                 SettingsPage.Podcasts -> {
                     SettingsHeader(stringResource(R.string.settings_podcasts), onBack = { page = SettingsPage.Root })
-                    PodcastSettingsList(podcastGap, onSelectGapRule, onGapParam, onRestoreGap)
+                    PodcastSettingsList(debug.developerMode, podcastGap, onSelectGapRule, onGapParam, onRestoreGap)
                 }
                 SettingsPage.Debug -> {
                     SettingsHeader(stringResource(R.string.settings_debug), onBack = { page = SettingsPage.Root })
@@ -685,12 +685,14 @@ internal object GapStrings {
 }
 
 /**
- * Settings → Podcasts (developer mode): which rule sets the gap between episodes on a song
- * channel, one radio row per rule, then the chosen rule's own parameters, each tappable to
- * change, and a way back to the defaults. Each rule keeps its parameters while another is chosen.
+ * Settings → Podcasts. Open to everyone; more podcast settings join it later. In developer mode
+ * it has the gap rule: which rule sets the gap between episodes on a song channel, one radio row
+ * per rule, then the chosen rule's own parameters, each tappable to change, and a way back to the
+ * defaults. Each rule keeps its parameters while another is chosen.
  */
 @Composable
 private fun PodcastSettingsList(
+    developerMode: Boolean,
     settings: PodcastGapSettings,
     onSelect: (id: String) -> Unit,
     onParam: (ruleId: String, key: String, value: Double) -> Boolean,
@@ -701,12 +703,30 @@ private fun PodcastSettingsList(
     val defaults = PodcastGapRule.all.first { it.id == active.id }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+        if (!developerMode) {
+            item {
+                Text(
+                    stringResource(R.string.settings_podcasts_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+                )
+                Rule()
+            }
+            return@LazyColumn
+        }
         item {
             Text(
-                stringResource(R.string.settings_podcasts_hint),
+                stringResource(R.string.settings_podcasts_gap),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 16.dp),
+            )
+            Text(
+                stringResource(R.string.settings_podcasts_gap_hint),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
             )
             Rule()
         }
@@ -772,7 +792,7 @@ private fun PodcastSettingsList(
         }
     }
 
-    active.params.firstOrNull { it.key == editing }?.let { param ->
+    active.params.firstOrNull { it.key == editing }?.takeIf { developerMode }?.let { param ->
         FigureDialog(
             key = active.id + "." + param.key,
             title = stringResource(GapStrings.label(param.key)),
@@ -1038,6 +1058,7 @@ private fun PodcastSettingsPreview() {
     VibeRadioTheme(darkTheme = false) {
         Surface(color = MaterialTheme.colorScheme.background) {
             PodcastSettingsList(
+                developerMode = true,
                 PodcastGapSettings.DEFAULT.select(PodcastGapRule.MusicRatio.ID),
                 onSelect = {},
                 onParam = { _, _, _ -> true },

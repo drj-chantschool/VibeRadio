@@ -28,7 +28,7 @@ sealed interface Gap {
 
 /**
  * How long the music runs between podcast episodes on a song channel (#2). One of [all], each
- * with its own parameters, chosen in Settings → Podcasts (developer mode). Pure.
+ * with its own parameters, chosen on Settings → Podcasts (in developer mode). Pure.
  */
 sealed interface PodcastGapRule {
     /** Stable; persisted. */

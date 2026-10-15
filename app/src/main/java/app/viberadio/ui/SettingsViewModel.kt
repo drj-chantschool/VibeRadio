@@ -67,7 +67,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     private val container = (application as VibeRadioApp).container
 
-    /** Settings → Podcasts (developer mode): the gap rule between episodes and each rule's figures. */
+    /** Settings → Podcasts, in developer mode: the gap rule between episodes and each rule's figures. */
     val podcastGap: StateFlow<PodcastGapSettings> = container.podcastGapSettings.settings
 
     fun selectGapRule(id: String) {

@@ -183,7 +183,7 @@ class AppContainer(context: Context) {
         ioDispatcher = Dispatchers.IO,
     )
 
-    /** Settings → Podcasts (developer mode): the rule for the gap between episodes on a song channel. */
+    /** Settings → Podcasts, in developer mode: the rule for the gap between episodes on a song channel. */
     val podcastGapSettings = PodcastGapSettingsRepository(
         store = PrefsPodcastGapStore(context),
         scope = appScope,

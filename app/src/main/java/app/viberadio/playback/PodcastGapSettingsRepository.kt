@@ -18,8 +18,8 @@ interface PodcastGapStore {
 }
 
 /**
- * Settings → Podcasts (developer mode): which [PodcastGapRule] spaces episodes on song channels,
- * and each rule's parameters. [RadioSessionCallback] reads [settings]'s value each time an
+ * The gap rule on Settings → Podcasts (shown in developer mode): which [PodcastGapRule] spaces
+ * episodes on song channels, and each rule's parameters. [RadioSessionCallback] reads [settings]'s value each time an
  * episode ends. Starts on the defaults and takes the saved ones once loaded; invalid changes are
  * ignored. The choice stays in force with developer mode off.
  */
