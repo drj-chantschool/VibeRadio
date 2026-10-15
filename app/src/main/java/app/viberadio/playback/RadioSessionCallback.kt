@@ -11,6 +11,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionError
 import androidx.media3.session.SessionResult
 import app.viberadio.channels.Channel
 import app.viberadio.channels.ChannelRepository
@@ -223,18 +224,20 @@ class RadioSessionCallback(
         val delta = when (customCommand.customAction) {
             ChannelStep.DOWN.customAction -> -1
             ChannelStep.UP.customAction -> 1
-            else -> return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+            else -> return failed(SessionError(SessionError.ERROR_NOT_SUPPORTED, "Unknown command"))
         }
-        val player = player ?: return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_INVALID_STATE))
+        val player = player ?: return failed(SessionError(SessionError.ERROR_INVALID_STATE, "No player"))
         // Only the order matters here, not the names.
         val stations = Dial.stations(songChannels(), podcasts.library.value.channelIds, ChannelNames(emptyMap()))
         val queue = Dial.step(stations, currentChannelId, delta)?.id?.let(::tune)
-            ?: return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE))
+            ?: return failed(SessionError(SessionError.ERROR_BAD_VALUE, "No other channel to tune"))
         player.setMediaItems(queue.items, 0, queue.startPositionMs)
         player.prepare()
         player.play()
         return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
     }
+
+    private fun failed(error: SessionError): ListenableFuture<SessionResult> = Futures.immediateFuture(SessionResult(error))
 
     override fun onSetMediaItems(
         mediaSession: MediaSession,
