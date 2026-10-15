@@ -19,6 +19,11 @@ data class Track(
     /** File size and modification time (epoch seconds) from MediaStore; a change means the bytes may have changed. */
     val sizeBytes: Long = 0,
     val modifiedSec: Long = 0,
+    /**
+     * The folder the file is in, `/`-separated, relative to its storage volume ("Music/Rock"; ""
+     * at the volume root). Files on a volume other than the main one start with the volume name.
+     */
+    val folder: String = "",
 )
 
 /**

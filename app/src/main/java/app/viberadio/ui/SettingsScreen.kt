@@ -55,6 +55,15 @@ import app.viberadio.R
 import androidx.annotation.StringRes
 import androidx.compose.ui.text.input.KeyboardType
 import app.viberadio.playback.audio.AudioSettings
+import app.viberadio.library.FolderExclusions
+import app.viberadio.library.FolderNode
+import app.viberadio.library.FolderState
+import app.viberadio.library.FolderTree
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.selection.triStateToggleable
+import androidx.compose.material3.TriStateCheckbox
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.state.ToggleableState
 import app.viberadio.playback.GapParam
 import app.viberadio.playback.GapUnit
 import app.viberadio.playback.PodcastGapRule
@@ -87,7 +96,12 @@ fun SettingsButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
 }
 
 /** The pages inside settings. Enum, so it survives rotation and process death as-is. */
-private enum class SettingsPage { Root, Channels, Bluetooth, Audio, Podcasts, Debug }
+private enum class SettingsPage {
+    Root, Channels, Bluetooth, Audio, Folders, Podcasts, Debug;
+
+    /** Where back goes from here. */
+    val parent: SettingsPage get() = if (this == Folders) Audio else Root
+}
 
 /** Settings → Debug as the page shows it. */
 data class DebugSettingsUi(
@@ -124,6 +138,9 @@ fun SettingsScreen(
     /** Applies the change if valid; false (nothing changed) if not. */
     onAudioChange: ((AudioSettings) -> AudioSettings) -> Boolean,
     onRestoreAudio: () -> Unit,
+    /** Settings → Audio → Library folders. */
+    libraryFolders: LibraryFoldersUi,
+    onToggleFolder: (FolderNode) -> Unit,
     /** Settings → Podcasts: the gap rule between episodes and its parameters (shown in developer mode only). */
     podcastGap: PodcastGapSettings,
     onSelectGapRule: (id: String) -> Unit,
@@ -143,7 +160,7 @@ fun SettingsScreen(
 ) {
     var page by rememberSaveable { mutableStateOf(SettingsPage.Root) }
     // Composed after MainActivity's handler, so it takes back first while a subpage is open.
-    BackHandler(enabled = page != SettingsPage.Root) { page = SettingsPage.Root }
+    BackHandler(enabled = page != SettingsPage.Root) { page = page.parent }
     // Turning developer mode off hides its pages.
     LaunchedEffect(debug.developerMode) {
         if (!debug.developerMode && page == SettingsPage.Debug) page = SettingsPage.Root
@@ -199,7 +216,11 @@ fun SettingsScreen(
                 }
                 SettingsPage.Audio -> {
                     SettingsHeader(stringResource(R.string.settings_audio), onBack = { page = SettingsPage.Root })
-                    AudioSettingsList(audio, onAudioChange, onRestoreAudio)
+                    AudioSettingsList(audio, onAudioChange, onRestoreAudio, onFolders = { page = SettingsPage.Folders })
+                }
+                SettingsPage.Folders -> {
+                    SettingsHeader(stringResource(R.string.settings_folders), onBack = { page = SettingsPage.Audio })
+                    LibraryFolderList(libraryFolders, onToggleFolder)
                 }
                 SettingsPage.Podcasts -> {
                     SettingsHeader(stringResource(R.string.settings_podcasts), onBack = { page = SettingsPage.Root })
@@ -506,10 +527,19 @@ private fun AudioSettingsList(
     audio: AudioSettings,
     onAudioChange: ((AudioSettings) -> AudioSettings) -> Boolean,
     onRestore: () -> Unit,
+    onFolders: () -> Unit,
 ) {
     var editing by rememberSaveable { mutableStateOf<AudioField?>(null) }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+        item {
+            SettingsLink(
+                title = stringResource(R.string.settings_folders),
+                summary = stringResource(R.string.settings_folders_summary),
+                onClick = onFolders,
+            )
+            Rule()
+        }
         item {
             Text(
                 stringResource(R.string.settings_audio_hint),
@@ -815,6 +845,101 @@ private fun PodcastSettingsList(
 }
 
 /** The named channels, each tappable to rename. */
+/**
+ * Settings → Audio → Library folders: the folders that hold audio, as a tree, each with a
+ * checkbox. Everything starts checked; unchecking leaves a folder and what's under it out.
+ */
+@Composable
+private fun LibraryFolderList(folders: LibraryFoldersUi, onToggle: (FolderNode) -> Unit) {
+    if (!folders.scanned || folders.tree.isEmpty()) {
+        Text(
+            stringResource(if (folders.scanned) R.string.settings_folders_none else R.string.settings_folders_not_scanned),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+        )
+        return
+    }
+    // A lone top folder (usually "Music") starts open, so the first screen isn't one row.
+    var expanded by rememberSaveable { mutableStateOf(folders.tree.singleOrNull()?.let { listOf(it.path) } ?: emptyList()) }
+    val rows = buildList {
+        fun visit(node: FolderNode, depth: Int) {
+            add(node to depth)
+            if (node.path in expanded) node.children.forEach { visit(it, depth + 1) }
+        }
+        folders.tree.forEach { visit(it, 0) }
+    }
+
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+        item {
+            Text(
+                stringResource(R.string.settings_folders_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+            )
+            Rule()
+        }
+        items(rows, key = { (node, _) -> node.path }) { (node, depth) ->
+            val open = node.path in expanded
+            FolderRow(
+                node = node,
+                depth = depth,
+                state = folders.states[node.path] ?: FolderState.In,
+                open = open,
+                onToggle = { onToggle(node) },
+                onExpand = { expanded = if (open) expanded - node.path else expanded + node.path },
+            )
+        }
+    }
+}
+
+@Composable
+private fun FolderRow(node: FolderNode, depth: Int, state: FolderState, open: Boolean, onToggle: () -> Unit, onExpand: () -> Unit) {
+    val checked = when (state) {
+        FolderState.In -> ToggleableState.On
+        FolderState.Partly -> ToggleableState.Indeterminate
+        FolderState.Out -> ToggleableState.Off
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .triStateToggleable(state = checked, role = Role.Checkbox, onClick = onToggle)
+            .padding(start = 8.dp + 20.dp * depth, end = 24.dp, top = 4.dp, bottom = 4.dp),
+    ) {
+        // The chevron opens and closes the folder; the rest of the row is its checkbox.
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(40.dp)
+                .then(if (node.children.isEmpty()) Modifier else Modifier.clickable(onClick = onExpand)),
+        ) {
+            if (node.children.isNotEmpty()) {
+                Text(
+                    if (open) "\u25BE" else "\u25B8",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.outline,
+                )
+            }
+        }
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(
+                node.name,
+                style = MaterialTheme.typography.titleMedium,
+                color = if (state == FolderState.Out) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onBackground,
+            )
+            Text(
+                pluralStringResource(R.plurals.settings_folders_tracks, node.totalTracks, node.totalTracks),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        // The row handles the toggle, so the checkbox itself is display-only.
+        TriStateCheckbox(state = checked, onClick = null)
+    }
+}
+
 @Composable
 private fun ChannelNameList(channels: List<ChannelNameUi>, onRename: (id: String, name: String) -> Unit) {
     var editing by rememberSaveable { mutableStateOf<String?>(null) }
@@ -976,6 +1101,8 @@ private fun SettingsLightPreview() {
             audio = AudioSettings.DEFAULT,
             onAudioChange = { true },
             onRestoreAudio = {},
+            libraryFolders = previewFolders,
+            onToggleFolder = {},
             podcastGap = PodcastGapSettings.DEFAULT,
             onSelectGapRule = {},
             onGapParam = { _, _, _ -> true },
@@ -1004,6 +1131,8 @@ private fun SettingsDarkPreview() {
             audio = AudioSettings.DEFAULT,
             onAudioChange = { true },
             onRestoreAudio = {},
+            libraryFolders = previewFolders,
+            onToggleFolder = {},
             podcastGap = PodcastGapSettings.DEFAULT,
             onSelectGapRule = {},
             onGapParam = { _, _, _ -> true },
@@ -1047,8 +1176,29 @@ private fun BluetoothSettingsPreview() {
 private fun AudioSettingsPreview() {
     VibeRadioTheme(darkTheme = false) {
         Surface(color = MaterialTheme.colorScheme.background) {
-            AudioSettingsList(AudioSettings.DEFAULT.copy(musicDepthDb = -12f), onAudioChange = { true }, onRestore = {})
+            AudioSettingsList(AudioSettings.DEFAULT.copy(musicDepthDb = -12f), onAudioChange = { true }, onRestore = {}, onFolders = {})
         }
+    }
+}
+
+private val previewFolders = run {
+    val counts = mapOf("Music/Albums/Rock" to 120, "Music/Albums/Jazz" to 45, "Music/Singles" to 12, "Download" to 3)
+    val tree = FolderTree.build(counts)
+    val exclusions = FolderExclusions.NONE.exclude("Download")
+    val states = HashMap<String, FolderState>()
+    fun visit(node: FolderNode) {
+        states[node.path] = FolderTree.state(node, exclusions, counts)
+        node.children.forEach(::visit)
+    }
+    tree.forEach(::visit)
+    LibraryFoldersUi(scanned = true, tree = tree, states = states)
+}
+
+@Preview(name = "Library folders", showBackground = true, heightDp = 640)
+@Composable
+private fun LibraryFoldersPreview() {
+    VibeRadioTheme(darkTheme = false) {
+        Surface(color = MaterialTheme.colorScheme.background) { LibraryFolderList(previewFolders, onToggle = {}) }
     }
 }
 

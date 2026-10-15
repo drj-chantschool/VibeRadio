@@ -96,6 +96,15 @@
     <string name="settings_audio_music_high">Music notch, high edge</string>
     <string name="settings_audio_music_depth">Music notch depth</string>
     <string name="settings_audio_ramp">Ramp time</string>
+    <string name="settings_folders">Library folders</string>
+    <string name="settings_folders_summary">Which folders the songs come from</string>
+    <string name="settings_folders_hint">Only folders with audio in them are listed. Uncheck a folder to leave it, and everything in it, out of the library. Folders added later are in unless they’re inside an unchecked one.</string>
+    <string name="settings_folders_not_scanned">Folders show up here once the library has been scanned. Open the dial and allow access to your music first.</string>
+    <string name="settings_folders_none">No audio found on this device.</string>
+    <plurals name="settings_folders_tracks">
+        <item quantity="one">%d track</item>
+        <item quantity="other">%d tracks</item>
+    </plurals>
     <string name="settings_audio_restore">Restore defaults</string>
     <string name="settings_audio_default">Default: %1$s %2$s</string>
     <string name="settings_audio_invalid">Out of range, or the low edge isn’t below the high edge. Hz 20–20000, depth and mixing factor 0–30 dB, target 8–30 LUFS below full scale, ramp 0–10 s.</string>

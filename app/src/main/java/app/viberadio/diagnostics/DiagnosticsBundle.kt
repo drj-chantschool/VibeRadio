@@ -7,6 +7,7 @@ import app.viberadio.feedback.Thumb
 import app.viberadio.learning.FeatureVector
 import app.viberadio.learning.FeatureLayout
 import app.viberadio.learning.FeatureVectors
+import app.viberadio.library.FolderExclusions
 import app.viberadio.library.Track
 import app.viberadio.playback.ChannelAiring
 import app.viberadio.playback.PodcastGapSettings
@@ -31,6 +32,8 @@ data class DiagnosticsSnapshot(
     /** Settings → Podcasts: the gap rule between episodes on song channels. */
     val podcastGap: PodcastGapSettings = PodcastGapSettings.DEFAULT,
     val resumeOnBluetooth: Boolean,
+    /** Settings → Audio → Library folders: what's left out. */
+    val libraryFolders: FolderExclusions = FolderExclusions.NONE,
     val channelNames: List<ChannelNameRow>,
     val lastChannelId: String?,
     /** False when the library couldn't be scanned (no permission), so [channels] is empty. */
@@ -133,6 +136,10 @@ object DiagnosticsBundle {
                 "is_default" to (s.podcastGap == PodcastGapSettings.DEFAULT),
             ),
             "bluetooth" to linkedMapOf("resume_on_connect" to s.resumeOnBluetooth),
+            "library_folders" to linkedMapOf(
+                "excluded" to s.libraryFolders.subtrees.sorted(),
+                "excluded_files_only" to s.libraryFolders.filesOnly.sorted(),
+            ),
             "channels" to s.channelNames.map {
                 linkedMapOf("id" to it.id, "default_name" to it.defaultName, "name" to it.name)
             },
@@ -171,9 +178,9 @@ object DiagnosticsBundle {
     )
 
     private fun library(tracks: List<Track>, hashes: Map<String, String>) = Csv.table(
-        listOf("track_id", "track_hash", "title", "artist", "album", "genre", "duration_ms", "kind", "size_bytes", "modified_sec", "uri"),
+        listOf("track_id", "track_hash", "title", "artist", "album", "genre", "duration_ms", "kind", "size_bytes", "modified_sec", "folder", "uri"),
         tracks.sortedBy { it.id }.map {
-            listOf(it.id, hashes[it.uri], it.title, it.artist, it.album, it.genre, it.durationMs, it.kind.name, it.sizeBytes, it.modifiedSec, it.uri)
+            listOf(it.id, hashes[it.uri], it.title, it.artist, it.album, it.genre, it.durationMs, it.kind.name, it.sizeBytes, it.modifiedSec, it.folder, it.uri)
         },
     )
 
@@ -205,7 +212,7 @@ object DiagnosticsBundle {
         `all-songs`, `podcasts`); display names are in settings.json. Empty cells are unknown.
 
         - summary.json: app version, export time, feature layout version, counts
-        - settings.json: audio settings, the podcast gap rule and its parameters, Bluetooth setting, channel names
+        - settings.json: audio settings, the podcast gap rule and its parameters, Bluetooth setting, folders left out of the library, channel names
         - feedback.csv: every thumbs press, oldest first (the append-only log; source of truth for learning)
         - play_history.csv: per song, its last play (wall clock and listening-clock reading)
         - channel_airings.csv: what each song channel last aired (live-radio resume)

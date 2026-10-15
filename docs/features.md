@@ -46,6 +46,7 @@ Principle: you still have control, but you shouldn't need it, and the app doesn'
   - Music notch: 700 Hz – 5.7 kHz
   - Music notch depth: −9 dB
   - Ramp time (EQ and mixing factor): 1.5 s
+- Settings → Audio → "Library folders": which folders are in the library. Shows only folders that hold audio (songs or MediaStore podcasts, as scanned) and the folders on the way to them; a folder holding nothing but one subfolder folds into it ("Music/Albums"). Each row has a checkbox (in, partly in, out) and its track count; everything is in by default, and the user unchecks what shouldn't be there. Unchecking a folder leaves out it and everything under it, including subfolders added later. Checking a subfolder of an unchecked folder puts back only that subfolder; the rest of the parent stays out. Tapping a partly-in folder puts all of it back. Left-out tracks are on no channel (The Shuffle included) and learn nothing; their feedback and history stay in the log. A change rebuilds the channels from the last scan straight away; the song playing finishes, and a queued one may still play
 
 ## Songs
 
@@ -69,13 +70,13 @@ Principle: you still have control, but you shouldn't need it, and the app doesn'
 - Bundle: one subfolder per export, named by local time (e.g. 2026-10-15_081203), so the latest is the last by name. Text formats that read without tools:
   - README.md: what each file holds
   - summary.json: app version, export time, feature layout version, counts, songs per channel, feedback date range
-  - settings.json: audio settings, the podcast gap rule (selected rule and every rule's parameters), Bluetooth setting, channel names (ID, default and current name)
+  - settings.json: audio settings, the podcast gap rule (selected rule and every rule's parameters), Bluetooth setting, folders left out of the library, channel names (ID, default and current name)
   - feedback.csv: every thumbs event (hash, thumb, time, local time, UTC offset, channel ID), log order
   - play_history.csv: per song, last played (wall clock) and listening-clock reading
   - channel_airings.csv: what each song channel last aired
   - features.csv: hash + feature vector rebuilt from the log, with named columns
   - channels.csv: current placement, one row per (channel ID, hash)
-  - library.csv: every song on a channel: hash (empty until it has played once), title, artist, album, genre, duration, content kind, URI
+  - library.csv: every song on a channel: hash (empty until it has played once), title, artist, album, genre, duration, content kind, folder, URI
   - levels.csv: measured loudness and peak per song and downloaded episode, with the gain at the current target
   - podcasts.json: the podcast library as the app stores it (shows, channel IDs, Pause music, speed, played, resume positions)
 - Personal data (titles, artists) is included in Phase A, since the folder is the user's own. Phase B (more testers) sends the same bundle to a backend instead, with personal fields hashed or stripped by default
