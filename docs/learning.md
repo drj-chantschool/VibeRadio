@@ -29,7 +29,7 @@ Listening habits are seasonal, and the learner must respect that. A song thumbed
 ## Controls (song page)
 
 - Short press thumbs up / thumbs down: feedback only. Thumbs down does not skip; the song plays to the end.
-- Button state is per play, not per song. A press is logged and lit until the track ends, then both buttons reset to neutral. The next play of the same song starts neutral regardless of the log or the feature vector; neither is ever read back to set the button. A song accumulates any number of ups and downs, including both, across plays.
+- Button state is per play, not per song. A press is lit until the track ends; meanwhile the same thumb again cancels it and the other thumb replaces it. When the track ends the thumb still lit is logged (at most one event per play) and both buttons reset to neutral. The next play of the same song starts neutral regardless of the log or the feature vector; neither is ever read back to set the button. A song accumulates any number of ups and downs, including both, across plays.
 - Long press thumbs down: context menu with "Wrong channel" (#16). The song leaves the current channel; the app makes sure it's on some other channel first. Not offered on the All songs channel, whose membership is fixed by rule; there a long press is a plain thumbs down.
 
 ## Coverage rule
