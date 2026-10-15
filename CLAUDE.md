@@ -2,6 +2,15 @@
 
 Android audio player that behaves like a radio: a few generated channels, one knob, no skip/seek/track list on the song side. Podcasts are a separate, hand-curated pipeline with their own page. See README.md for the concept and the issues for planned features.
 
+## Specs
+
+The product specs live in `docs/` and are the source of truth for behaviour. Read the relevant one before changing a feature, and update it in the same PR when a decision changes.
+
+- `docs/features.md`: product principle, channels, podcast page and scheduling, audio chain and defaults, song shuffle and resume, diagnostics export
+- `docs/learning.md`: song learning (feature vectors, channel-fit and preference models, seasonal weighting, thumbs, coverage rule)
+- `docs/similarity-plan.md`: phased plan for audio-similarity channel placement (Phase 0 logging through a learned metric)
+- `docs/look-and-feel.md`: visual direction
+
 ## Build
 
 Requires JDK 17+ (CI uses 21) and an Android SDK (`ANDROID_HOME` or `local.properties`).
