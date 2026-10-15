@@ -17,6 +17,8 @@ class PrefsAudioSettingsStore(context: Context) : AudioSettingsStore {
             musicHighHz = prefs.getFloat(KEY_MUSIC_HIGH, d.musicHighHz),
             musicDepthDb = prefs.getFloat(KEY_MUSIC_DEPTH, d.musicDepthDb),
             rampMs = prefs.getLong(KEY_RAMP, d.rampMs),
+            targetLufs = prefs.getFloat(KEY_TARGET, d.targetLufs),
+            mixingFactorDb = prefs.getFloat(KEY_MIXING, d.mixingFactorDb),
         )
     }
 
@@ -30,6 +32,8 @@ class PrefsAudioSettingsStore(context: Context) : AudioSettingsStore {
             .putFloat(KEY_MUSIC_HIGH, settings.musicHighHz)
             .putFloat(KEY_MUSIC_DEPTH, settings.musicDepthDb)
             .putLong(KEY_RAMP, settings.rampMs)
+            .putFloat(KEY_TARGET, settings.targetLufs)
+            .putFloat(KEY_MIXING, settings.mixingFactorDb)
             .commit()
     }
 
@@ -41,5 +45,7 @@ class PrefsAudioSettingsStore(context: Context) : AudioSettingsStore {
         const val KEY_MUSIC_HIGH = "music_high_hz"
         const val KEY_MUSIC_DEPTH = "music_depth_db"
         const val KEY_RAMP = "ramp_ms"
+        const val KEY_TARGET = "target_lufs"
+        const val KEY_MIXING = "mixing_factor_db"
     }
 }

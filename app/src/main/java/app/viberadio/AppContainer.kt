@@ -33,6 +33,12 @@ import app.viberadio.playback.StreamPlanner
 import app.viberadio.playback.WeightedRandomStreamPlanner
 import app.viberadio.playback.audio.AudioProcessorProvider
 import app.viberadio.playback.audio.AudioSettingsRepository
+import app.viberadio.playback.audio.FileLevelStore
+import app.viberadio.playback.audio.LevelRequest
+import app.viberadio.playback.audio.Leveling
+import app.viberadio.playback.audio.LoudnessAnalyzer
+import app.viberadio.playback.EpisodeMediaId
+import app.viberadio.playback.TrackMediaId
 import app.viberadio.playback.audio.MixState
 import app.viberadio.playback.audio.PrefsAudioSettingsStore
 import kotlinx.coroutines.Dispatchers
@@ -65,12 +71,14 @@ class AppContainer(context: Context) {
     /** The channel that played last, across restarts; Bluetooth resume tunes it when nothing is loaded. */
     val lastChannel: LastChannelStore = PrefsLastChannelStore(context)
 
+    // App-specific storage: no permission needed, removed with the app.
+    private val episodeDownloader = EpisodeDownloader(File(context.getExternalFilesDir(null) ?: context.filesDir, "episodes"))
+
     /** The podcast pipeline (#17): hand-assigned shows, one global queue. Independent of [channelRepository]. */
     val podcastRepository = PodcastRepository(
         store = JsonPodcastStore(File(context.filesDir, "podcasts.json")),
         fetcher = HttpFeedFetcher(),
-        // App-specific storage: no permission needed, removed with the app.
-        downloader = EpisodeDownloader(File(context.getExternalFilesDir(null) ?: context.filesDir, "episodes")),
+        downloader = episodeDownloader,
         scope = appScope,
         ioDispatcher = Dispatchers.IO,
     )
@@ -157,6 +165,39 @@ class AppContainer(context: Context) {
     /** Whether a podcast is playing over the music; the music's EQ follows it. */
     val mix = MixState()
 
-    /** Each stream's chain: its EQ (#2). #1, #5 and #6 add processors here. */
-    val audioProcessors: AudioProcessorProvider = AudioProcessorProvider.eq(mix) { audioSettings.settings.value }
+    private val loudnessAnalyzer = LoudnessAnalyzer(context)
+
+    /**
+     * Auto track leveling (#1): one fixed gain per song or episode, from its measured loudness.
+     * Songs are keyed on their content hash, downloaded episodes on their media ID; streamed
+     * episodes aren't measured (they play at 0 dB until downloaded).
+     */
+    val leveling = Leveling(
+        store = FileLevelStore(File(context.filesDir, "levels.tsv")),
+        keyOf = { request -> levelKey(request) },
+        measure = { request -> loudnessAnalyzer.measure(request.uri) },
+        scope = appScope,
+        ioDispatcher = Dispatchers.IO,
+    ).also { leveling ->
+        // Measure downloaded episodes ahead, so they start at their level.
+        appScope.launch {
+            podcastRepository.downloaded.collect { ids ->
+                leveling.request(ids.map { id -> LevelRequest(EpisodeMediaId.of(id), "file://${episodeDownloader.file(id).absolutePath}") })
+            }
+        }
+    }
+
+    private suspend fun levelKey(request: LevelRequest): String? {
+        TrackMediaId.trackId(request.mediaId)?.let { id ->
+            val channels = (channelRepository.state.value as? ChannelRepository.State.Ready)?.channels ?: return null
+            val track = channels.firstNotNullOfOrNull { channel -> channel.tracks.firstOrNull { it.id == id } } ?: return null
+            return playHistory.hash(track)?.let { "song:$it" }
+        }
+        if (EpisodeMediaId.episodeId(request.mediaId) != null && request.uri.startsWith("file:")) return request.mediaId
+        return null
+    }
+
+    /** Each stream's chain: its gain (leveling #1, mixing factor #2), then its EQ (#2). #5 and #6 add processors here. */
+    val audioProcessors: AudioProcessorProvider =
+        AudioProcessorProvider.leveledEq(leveling, mix) { audioSettings.settings.value }
 }

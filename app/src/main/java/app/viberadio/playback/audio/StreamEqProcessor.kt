@@ -37,12 +37,12 @@ class StreamEqProcessor(
         AudioStream.MUSIC -> if (mix.podcastOverMusic) 1f else 0f
     }
 
-    /** The EQ for the current format and settings, rebuilt when either changes; the blend carries over. */
+    /** The EQ for the current format and EQ figures, rebuilt when either changes; the blend carries over. */
     private fun eqFor(format: AudioFormat): StreamEq {
         val current = settings()
         val existing = eq
         if (existing != null && existing.sampleRate == format.sampleRate &&
-            existing.channels == format.channelCount && existing.settings == current
+            existing.channels == format.channelCount && existing.settings.sameEqAs(current)
         ) {
             return existing
         }
