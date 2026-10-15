@@ -5,6 +5,7 @@ import kotlin.math.cos
 import kotlin.math.ln
 import kotlin.math.pow
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /** The two streams that meet in the final mix. */
 enum class AudioStream { MUSIC, PODCAST }
@@ -67,78 +68,115 @@ data class BiquadCoefficients(val b0: Double, val b1: Double, val b2: Double, va
             return normalise(1 + alpha * a, -2 * c, 1 - alpha * a, 1 + alpha / a, -2 * c, 1 - alpha / a)
         }
 
+        /** RBJ low shelf, slope 1: [gainDb] below [cornerHz] (the half-gain point), flat above. */
+        fun lowShelf(cornerHz: Double, gainDb: Double, sampleRate: Int): BiquadCoefficients {
+            val w = 2 * PI * clamp(cornerHz, sampleRate) / sampleRate
+            val a = 10.0.pow(gainDb / 40)
+            val c = cos(w)
+            val beta = 2 * sqrt(a) * sin(w) / 2 * sqrt(2.0)
+            return normalise(
+                a * ((a + 1) - (a - 1) * c + beta),
+                2 * a * ((a - 1) - (a + 1) * c),
+                a * ((a + 1) - (a - 1) * c - beta),
+                (a + 1) + (a - 1) * c + beta,
+                -2 * ((a - 1) + (a + 1) * c),
+                (a + 1) + (a - 1) * c - beta,
+            )
+        }
+
+        /** RBJ high shelf, slope 1: [gainDb] above [cornerHz] (the half-gain point), flat below. */
+        fun highShelf(cornerHz: Double, gainDb: Double, sampleRate: Int): BiquadCoefficients {
+            val w = 2 * PI * clamp(cornerHz, sampleRate) / sampleRate
+            val a = 10.0.pow(gainDb / 40)
+            val c = cos(w)
+            val beta = 2 * sqrt(a) * sin(w) / 2 * sqrt(2.0)
+            return normalise(
+                a * ((a + 1) + (a - 1) * c + beta),
+                -2 * a * ((a - 1) + (a + 1) * c),
+                a * ((a + 1) + (a - 1) * c - beta),
+                (a + 1) - (a - 1) * c + beta,
+                2 * ((a - 1) - (a + 1) * c),
+                (a + 1) - (a - 1) * c - beta,
+            )
+        }
+
         private fun normalise(b0: Double, b1: Double, b2: Double, a0: Double, a1: Double, a2: Double) =
             BiquadCoefficients(b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0)
     }
 }
 
 /**
- * One stream's EQ (#2): flat, or filtered (the podcast's band pass, or the music's notch),
- * blended between the two so a change never snaps. The filters always run, so their state is
- * warm when the blend moves. Pure Kotlin over float samples; [StreamEqProcessor] feeds it PCM.
+ * One stream's EQ after its gain: the tone EQ (a [GraphicEq] on [tone], always on), then the
+ * separation EQ ([SeparationEq], #2) moving between flat and applied as the processor's target
+ * says. A [SeparationEq.Graphic] module doesn't filter on its own: its offsets go onto the tone
+ * bands. Pure Kotlin over float samples; [StreamEqProcessor] feeds it PCM.
+ *
+ * Nothing snaps: tone changes glide, and a different separation module (or new parameters)
+ * waits until the current one has ramped out, then ramps in. While the current one contributes
+ * nothing, the swap happens straight away.
  */
 class StreamEq(
     val stream: AudioStream,
     val sampleRate: Int,
     val channels: Int,
-    val settings: AudioSettings,
-    /** Where the blend starts: 0 = flat, 1 = filtered. */
+    separation: SeparationEq,
+    tone: ToneCurve,
+    rampMs: Long,
+    /** Where the separation starts: 0 = flat, 1 = applied. */
     initialMix: Float,
 ) {
-    val stages: List<BiquadCoefficients> = design(stream, settings, sampleRate)
-
-    // Transposed direct form II state, per stage and channel.
-    private val z1 = Array(stages.size) { DoubleArray(channels) }
-    private val z2 = Array(stages.size) { DoubleArray(channels) }
-
-    /** 0 = flat, 1 = filtered. */
-    var mix: Float = initialMix.coerceIn(0f, 1f)
+    /** The module running now. */
+    var separation: SeparationEq = separation
         private set
 
-    /** Blend change per frame while ramping. */
-    private val step: Float = if (settings.rampMs <= 0) 1f else (1000f / (settings.rampMs * sampleRate)).coerceAtMost(1f)
+    private var stage: SeparationStage = separation.stage(stream, sampleRate, channels, rampMs, initialMix)
 
-    /**
-     * Filters one interleaved frame in place, moving the blend one step towards [target]
-     * (0 flat, 1 filtered).
-     */
-    fun processFrame(frame: FloatArray, target: Float) {
-        mix = when {
-            mix < target -> (mix + step).coerceAtMost(target)
-            mix > target -> (mix - step).coerceAtLeast(target)
-            else -> mix
+    /** The module (or parameters) to change to once [stage] has ramped out. */
+    private var pending: SeparationEq? = null
+
+    private var toneDb = tone.bandsDb.toFloatArray()
+    private var rampMs = rampMs
+    private val targets = FloatArray(ToneBands.COUNT)
+    private val graphic = GraphicEq(sampleRate, channels, bandTargets())
+
+    /** How far the separation is applied: 0 = flat, 1 = applied. */
+    val mix: Float get() = stage.mix
+
+    /** Band gains of the tone EQ right now, separation offsets included. */
+    val bandGainsDb: FloatArray get() = graphic.gainsDb
+
+    /** Takes the current settings; cheap when nothing changed, so it can run on every buffer. */
+    fun configure(separation: SeparationEq, tone: ToneCurve, rampMs: Long) {
+        if (rampMs != this.rampMs) {
+            this.rampMs = rampMs
+            stage.rampMs = rampMs
         }
-        val m = mix
-        for (ch in 0 until channels) {
-            val dry = frame[ch].toDouble()
-            var x = dry
-            for (s in stages.indices) {
-                val k = stages[s]
-                val y = k.b0 * x + z1[s][ch]
-                z1[s][ch] = k.b1 * x - k.a1 * y + z2[s][ch]
-                z2[s][ch] = k.b2 * x - k.a2 * y
-                x = y
-            }
-            frame[ch] = (dry + (x - dry) * m).toFloat()
-        }
+        val bands = tone.bandsDb
+        if (bands.size != toneDb.size || bands.indices.any { bands[it] != toneDb[it] }) toneDb = bands.toFloatArray()
+        pending = if (separation == this.separation) null else separation
+        swapIfOut()
     }
 
-    companion object {
-        fun design(stream: AudioStream, settings: AudioSettings, sampleRate: Int): List<BiquadCoefficients> = when (stream) {
-            // Band pass: high pass at the low edge, low pass at the high edge.
-            AudioStream.PODCAST -> listOf(
-                BiquadCoefficients.highPass(settings.podcastLowHz.toDouble(), sampleRate),
-                BiquadCoefficients.lowPass(settings.podcastHighHz.toDouble(), sampleRate),
-            )
-            // A partial cut, not full removal: a wide peaking filter at negative gain.
-            AudioStream.MUSIC -> listOf(
-                BiquadCoefficients.peaking(
-                    centreHz = settings.musicCentreHz.toDouble(),
-                    gainDb = settings.musicDepthDb.toDouble(),
-                    octaves = ln(settings.musicHighHz.toDouble() / settings.musicLowHz) / ln(2.0),
-                    sampleRate = sampleRate,
-                ),
-            )
-        }
+    /** Filters one interleaved frame in place, moving the separation one step towards [target] (0 flat, 1 applied). */
+    fun processFrame(frame: FloatArray, target: Float) {
+        if (graphic.readsTargets) bandTargets()
+        graphic.processFrame(frame, targets)
+        stage.processFrame(frame, if (pending != null) 0f else target)
+        if (pending != null) swapIfOut()
+    }
+
+    private fun swapIfOut() {
+        val next = pending ?: return
+        if (stage.mix > 0f) return
+        separation = next
+        stage = next.stage(stream, sampleRate, channels, rampMs, initialMix = 0f)
+        pending = null
+    }
+
+    /** Tone curve plus the separation's band offsets at its current mix. */
+    private fun bandTargets(): FloatArray {
+        val offsets = stage.bandOffsetsDb()
+        for (b in 0 until ToneBands.COUNT) targets[b] = toneDb[b] + (offsets?.get(b) ?: 0f)
+        return targets
     }
 }

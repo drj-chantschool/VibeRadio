@@ -55,6 +55,13 @@ import app.viberadio.R
 import androidx.annotation.StringRes
 import androidx.compose.ui.text.input.KeyboardType
 import app.viberadio.playback.audio.AudioSettings
+import app.viberadio.playback.audio.AudioStream
+import app.viberadio.playback.audio.EqParam
+import app.viberadio.playback.audio.EqUnit
+import app.viberadio.playback.audio.SeparationEq
+import app.viberadio.playback.audio.SeparationSettings
+import app.viberadio.playback.audio.ToneBands
+import app.viberadio.playback.audio.ToneCurve
 import app.viberadio.library.FolderExclusions
 import app.viberadio.library.FolderNode
 import app.viberadio.library.FolderState
@@ -97,10 +104,10 @@ fun SettingsButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
 
 /** The pages inside settings. Enum, so it survives rotation and process death as-is. */
 private enum class SettingsPage {
-    Root, Channels, Bluetooth, Audio, Folders, Podcasts, Debug;
+    Root, Channels, Bluetooth, Audio, Folders, Equalizer, Separation, Podcasts, Debug;
 
     /** Where back goes from here. */
-    val parent: SettingsPage get() = if (this == Folders) Audio else Root
+    val parent: SettingsPage get() = if (this == Folders || this == Equalizer || this == Separation) Audio else Root
 }
 
 /** Settings → Debug as the page shows it. */
@@ -138,6 +145,14 @@ fun SettingsScreen(
     /** Applies the change if valid; false (nothing changed) if not. */
     onAudioChange: ((AudioSettings) -> AudioSettings) -> Boolean,
     onRestoreAudio: () -> Unit,
+    /** Settings → Audio → Equalizer: both tone curves flat. (Bands change through [onAudioChange].) */
+    onRestoreTone: () -> Unit,
+    /** Settings → Audio → Separation EQ (developer mode only): the module and its parameters. */
+    separation: SeparationSettings,
+    onSelectSeparation: (id: String) -> Unit,
+    /** Sets one parameter of a module if the value is accepted; false (nothing changed) if not. */
+    onSeparationParam: (moduleId: String, key: String, value: Double) -> Boolean,
+    onRestoreSeparation: () -> Unit,
     /** Settings → Audio → Library folders. */
     libraryFolders: LibraryFoldersUi,
     onToggleFolder: (FolderNode) -> Unit,
@@ -164,6 +179,7 @@ fun SettingsScreen(
     // Turning developer mode off hides its pages.
     LaunchedEffect(debug.developerMode) {
         if (!debug.developerMode && page == SettingsPage.Debug) page = SettingsPage.Root
+        if (!debug.developerMode && page == SettingsPage.Separation) page = SettingsPage.Audio
     }
 
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
@@ -216,7 +232,23 @@ fun SettingsScreen(
                 }
                 SettingsPage.Audio -> {
                     SettingsHeader(stringResource(R.string.settings_audio), onBack = { page = SettingsPage.Root })
-                    AudioSettingsList(audio, onAudioChange, onRestoreAudio, onFolders = { page = SettingsPage.Folders })
+                    AudioSettingsList(
+                        audio,
+                        onAudioChange,
+                        onRestoreAudio,
+                        developerMode = debug.developerMode,
+                        onFolders = { page = SettingsPage.Folders },
+                        onEqualizer = { page = SettingsPage.Equalizer },
+                        onSeparation = { page = SettingsPage.Separation },
+                    )
+                }
+                SettingsPage.Equalizer -> {
+                    SettingsHeader(stringResource(R.string.settings_equalizer), onBack = { page = SettingsPage.Audio })
+                    ToneSettingsList(audio, onAudioChange, onRestoreTone)
+                }
+                SettingsPage.Separation -> {
+                    SettingsHeader(stringResource(R.string.settings_separation), onBack = { page = SettingsPage.Audio })
+                    SeparationSettingsList(separation, onSelectSeparation, onSeparationParam, onRestoreSeparation)
                 }
                 SettingsPage.Folders -> {
                     SettingsHeader(stringResource(R.string.settings_folders), onBack = { page = SettingsPage.Audio })
@@ -475,11 +507,6 @@ private fun exportStatus(debug: DebugSettingsUi): String {
 internal enum class AudioField(@StringRes val label: Int, @StringRes val unit: Int) {
     Target(R.string.settings_audio_target, R.string.unit_lufs),
     Mixing(R.string.settings_audio_mixing, R.string.unit_db),
-    PodcastLow(R.string.settings_audio_podcast_low, R.string.unit_hz),
-    PodcastHigh(R.string.settings_audio_podcast_high, R.string.unit_hz),
-    MusicLow(R.string.settings_audio_music_low, R.string.unit_hz),
-    MusicHigh(R.string.settings_audio_music_high, R.string.unit_hz),
-    MusicDepth(R.string.settings_audio_music_depth, R.string.unit_db),
     Ramp(R.string.settings_audio_ramp, R.string.unit_seconds),
     ;
 
@@ -487,47 +514,41 @@ internal enum class AudioField(@StringRes val label: Int, @StringRes val unit: I
     fun read(s: AudioSettings): Double = when (this) {
         Target -> s.targetLufs.toDouble()
         Mixing -> s.mixingFactorDb.toDouble()
-        PodcastLow -> s.podcastLowHz.toDouble()
-        PodcastHigh -> s.podcastHighHz.toDouble()
-        MusicLow -> s.musicLowHz.toDouble()
-        MusicHigh -> s.musicHighHz.toDouble()
-        MusicDepth -> s.musicDepthDb.toDouble()
         Ramp -> s.rampMs / 1000.0
     }
 
     /**
      * [s] with this figure set to [value], in the unit shown. A target loudness is always below
-     * full scale, and a depth or mixing factor always a cut, so their sign is ignored.
+     * full scale, and a mixing factor always a cut, so their sign is ignored.
      */
     fun write(s: AudioSettings, value: Double): AudioSettings = when (this) {
         Target -> s.copy(targetLufs = -abs(value).toFloat())
         Mixing -> s.copy(mixingFactorDb = -abs(value).toFloat())
-        PodcastLow -> s.copy(podcastLowHz = value.toFloat())
-        PodcastHigh -> s.copy(podcastHighHz = value.toFloat())
-        MusicLow -> s.copy(musicLowHz = value.toFloat())
-        MusicHigh -> s.copy(musicHighHz = value.toFloat())
-        MusicDepth -> s.copy(musicDepthDb = -abs(value).toFloat())
         Ramp -> s.copy(rampMs = (value * 1000).roundToLong())
     }
 
     /** No trailing zeros; a minus sign, not a hyphen. */
     fun format(s: AudioSettings): String {
         val v = read(s)
-        val rounded = if (this == Ramp || this == MusicDepth || this == Target || this == Mixing) (v * 100).roundToLong() / 100.0 else v.roundToLong().toDouble()
+        val rounded = (v * 100).roundToLong() / 100.0
         return BigDecimal(rounded.toString()).stripTrailingZeros().toPlainString().replace('-', '\u2212')
     }
 }
 
 /**
- * Settings → Audio: the leveling target, then how a podcast is mixed over music (mixing factor
- * and EQ), figure by figure, each tappable to change, and a way back to the defaults.
+ * Settings → Audio: links to the library folders, the equalizer and (developer mode) the
+ * separation EQ, then the leveling target, mixing factor and ramp time, each tappable to change,
+ * and a way back to their defaults.
  */
 @Composable
 private fun AudioSettingsList(
     audio: AudioSettings,
     onAudioChange: ((AudioSettings) -> AudioSettings) -> Boolean,
     onRestore: () -> Unit,
+    developerMode: Boolean,
     onFolders: () -> Unit,
+    onEqualizer: () -> Unit,
+    onSeparation: () -> Unit,
 ) {
     var editing by rememberSaveable { mutableStateOf<AudioField?>(null) }
 
@@ -539,6 +560,20 @@ private fun AudioSettingsList(
                 onClick = onFolders,
             )
             Rule()
+            SettingsLink(
+                title = stringResource(R.string.settings_equalizer),
+                summary = stringResource(R.string.settings_equalizer_summary),
+                onClick = onEqualizer,
+            )
+            Rule()
+            if (developerMode) {
+                SettingsLink(
+                    title = stringResource(R.string.settings_separation),
+                    summary = stringResource(R.string.settings_separation_summary),
+                    onClick = onSeparation,
+                )
+                Rule()
+            }
         }
         item {
             Text(
@@ -578,7 +613,7 @@ private fun AudioSettingsList(
         item {
             TextButton(
                 onClick = onRestore,
-                enabled = audio != AudioSettings.DEFAULT,
+                enabled = audio.figuresRestored() != audio,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             ) { Text(stringResource(R.string.settings_audio_restore)) }
         }
@@ -594,7 +629,7 @@ private fun AudioSettingsList(
     }
 }
 
-/** Edit one figure. Out-of-range values, or a low edge not below its high edge, are refused. */
+/** Edit one figure. Out-of-range values are refused. */
 @Composable
 private fun AudioFieldDialog(field: AudioField, current: AudioSettings, onSave: (Double) -> Boolean, onDismiss: () -> Unit) {
     FigureDialog(
@@ -667,6 +702,262 @@ private fun FigureDialog(
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         },
     )
+}
+
+/** Labels and number formats for the tone EQ and the separation modules; the modules themselves are pure. */
+internal object EqStrings {
+    /** "31 Hz", "1 kHz". */
+    @Composable
+    fun band(i: Int): String {
+        val hz = ToneBands.HZ[i]
+        return if (hz < 1_000) {
+            stringResource(R.string.eq_band_hz, plain(hz, 0))
+        } else {
+            stringResource(R.string.eq_band_khz, plain(hz / 1_000, 1))
+        }
+    }
+
+    @StringRes
+    fun stream(stream: AudioStream): Int = when (stream) {
+        AudioStream.MUSIC -> R.string.eq_stream_music
+        AudioStream.PODCAST -> R.string.eq_stream_podcast
+    }
+
+    @StringRes
+    fun title(moduleId: String): Int = when (moduleId) {
+        SeparationEq.BandPassNotch.ID -> R.string.separation_band_pass_notch
+        SeparationEq.Graphic.ID -> R.string.separation_graphic
+        else -> throw IllegalArgumentException(moduleId)
+    }
+
+    @StringRes
+    fun about(moduleId: String): Int = when (moduleId) {
+        SeparationEq.BandPassNotch.ID -> R.string.separation_band_pass_notch_about
+        SeparationEq.Graphic.ID -> R.string.separation_graphic_about
+        else -> throw IllegalArgumentException(moduleId)
+    }
+
+    @Composable
+    fun label(key: String): String = when (key) {
+        SeparationEq.BandPassNotch.PODCAST_LOW -> stringResource(R.string.settings_audio_podcast_low)
+        SeparationEq.BandPassNotch.PODCAST_HIGH -> stringResource(R.string.settings_audio_podcast_high)
+        SeparationEq.BandPassNotch.MUSIC_LOW -> stringResource(R.string.settings_audio_music_low)
+        SeparationEq.BandPassNotch.MUSIC_HIGH -> stringResource(R.string.settings_audio_music_high)
+        SeparationEq.BandPassNotch.MUSIC_DEPTH -> stringResource(R.string.settings_audio_music_depth)
+        else -> {
+            val (onStream, index) = SeparationEq.Graphic.parse(key)
+            stringResource(R.string.separation_graphic_band, stringResource(stream(onStream)), band(index))
+        }
+    }
+
+    @StringRes
+    fun unit(unit: EqUnit): Int = when (unit) {
+        EqUnit.Hz -> R.string.unit_hz
+        EqUnit.Db -> R.string.unit_db
+    }
+
+    /** Hz as whole numbers; dB to two decimals, with a plus on boosts. No trailing zeros; a minus sign, not a hyphen. */
+    fun format(unit: EqUnit, value: Double): String = when (unit) {
+        EqUnit.Hz -> plain(value, 0)
+        EqUnit.Db -> db(value)
+    }
+
+    fun db(value: Double): String {
+        val text = plain(value, 2)
+        return if (value > 0 && text != "0") "+$text" else text
+    }
+
+    private fun plain(value: Double, scale: Int): String =
+        BigDecimal(value.toString()).setScale(scale, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
+            .replace('-', '−')
+            .let { if (it == "−0") "0" else it }
+}
+
+/**
+ * Settings → Audio → Equalizer: each stream's tone EQ, ten bands, each tappable to change
+ * (±12 dB), and a way back to flat. Always in effect, whatever plays; the separation EQ, while
+ * both streams play, comes on top.
+ */
+@Composable
+private fun ToneSettingsList(
+    audio: AudioSettings,
+    onAudioChange: ((AudioSettings) -> AudioSettings) -> Boolean,
+    onRestore: () -> Unit,
+) {
+    // "MUSIC:3", so it survives rotation as a plain string.
+    var editing by rememberSaveable { mutableStateOf<String?>(null) }
+
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+        item {
+            Text(
+                stringResource(R.string.settings_equalizer_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+            )
+            Rule()
+        }
+        for (stream in AudioStream.entries) {
+            val curve = audio.tone(stream)
+            item(key = "tone:" + stream.name) {
+                Text(
+                    stringResource(EqStrings.stream(stream)),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 8.dp),
+                )
+                Rule()
+            }
+            items(ToneBands.COUNT, key = { "tone:" + stream.name + ":" + it }) { band ->
+                val db = curve.bandsDb[band]
+                FigureRow(
+                    label = EqStrings.band(band),
+                    value = EqStrings.db(db.toDouble()) + " " + stringResource(R.string.unit_db),
+                    isDefault = db == 0f,
+                    onClick = { editing = stream.name + ":" + band },
+                )
+                Rule()
+            }
+        }
+        item {
+            TextButton(
+                onClick = onRestore,
+                enabled = !audio.musicTone.isFlat || !audio.podcastTone.isFlat,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            ) { Text(stringResource(R.string.settings_audio_restore)) }
+        }
+    }
+
+    editing?.split(':')?.let { (name, index) ->
+        val stream = AudioStream.valueOf(name)
+        val band = index.toInt()
+        FigureDialog(
+            key = "tone:$name:$band",
+            title = stringResource(EqStrings.stream(stream)) + ", " + EqStrings.band(band),
+            unit = stringResource(R.string.unit_db),
+            current = EqStrings.db(audio.tone(stream).bandsDb[band].toDouble()).removePrefix("+"),
+            default = "0",
+            invalidText = stringResource(R.string.settings_equalizer_invalid),
+            onSave = { value -> onAudioChange { it.withTone(stream, it.tone(stream).with(band, value.toFloat())) } },
+            onDismiss = { editing = null },
+        )
+    }
+}
+
+/** A tappable row: a label, and its value on the right (quieter while it's the default). */
+@Composable
+private fun FigureRow(label: String, value: String, isDefault: Boolean, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 14.dp),
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.weight(1f).padding(end = 16.dp),
+        )
+        Text(
+            value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (isDefault) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onBackground,
+        )
+    }
+}
+
+/**
+ * Settings → Audio → Separation EQ (developer mode only): which module pulls a podcast and the
+ * music apart while both play, one radio row per module, then the chosen module's own
+ * parameters, each tappable to change, and a way back to the defaults. Each module keeps its
+ * parameters while another is chosen.
+ */
+@Composable
+private fun SeparationSettingsList(
+    settings: SeparationSettings,
+    onSelect: (id: String) -> Unit,
+    onParam: (moduleId: String, key: String, value: Double) -> Boolean,
+    onRestore: () -> Unit,
+) {
+    var editing by rememberSaveable { mutableStateOf<String?>(null) }
+    val active = settings.active
+    val defaults = SeparationEq.all.first { it.id == active.id }
+
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+        item {
+            Text(
+                stringResource(R.string.settings_separation_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+            )
+            Rule()
+        }
+        items(settings.modules, key = { "module:" + it.id }) { module ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectable(selected = module.id == settings.selected, role = Role.RadioButton, onClick = { onSelect(module.id) })
+                    .padding(horizontal = 24.dp, vertical = 14.dp),
+            ) {
+                Column(Modifier.weight(1f).padding(end = 16.dp)) {
+                    Text(stringResource(EqStrings.title(module.id)), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground)
+                    Text(stringResource(EqStrings.about(module.id)), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                // The row handles the choice, so the button itself is display-only.
+                RadioButton(selected = module.id == settings.selected, onClick = null)
+            }
+            Rule()
+        }
+        item {
+            Text(
+                stringResource(R.string.settings_podcasts_params, stringResource(EqStrings.title(active.id))),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 8.dp),
+            )
+            Rule()
+        }
+        items(active.params, key = { active.id + "." + it.key }) { param ->
+            FigureRow(
+                label = EqStrings.label(param.key),
+                value = EqStrings.format(param.unit, active[param.key]) + " " + stringResource(EqStrings.unit(param.unit)),
+                isDefault = active[param.key] == defaults[param.key],
+                onClick = { editing = param.key },
+            )
+            Rule()
+        }
+        item {
+            TextButton(
+                onClick = onRestore,
+                enabled = settings.modules != SeparationEq.all,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            ) { Text(stringResource(R.string.settings_audio_restore)) }
+        }
+    }
+
+    active.params.firstOrNull { it.key == editing }?.let { param: EqParam ->
+        FigureDialog(
+            key = active.id + "." + param.key,
+            title = EqStrings.label(param.key),
+            unit = stringResource(EqStrings.unit(param.unit)),
+            current = EqStrings.format(param.unit, active[param.key]).removePrefix("+"),
+            default = EqStrings.format(param.unit, defaults[param.key]),
+            invalidText = stringResource(
+                if (param.unit == EqUnit.Hz) R.string.settings_separation_invalid_hz else R.string.settings_podcasts_invalid,
+                EqStrings.format(param.unit, param.range.start),
+                EqStrings.format(param.unit, param.range.endInclusive),
+            ),
+            onSave = { value ->
+                // A notch depth is always a cut, so its sign is ignored.
+                onParam(active.id, param.key, if (param.key == SeparationEq.BandPassNotch.MUSIC_DEPTH) -abs(value) else value)
+            },
+            onDismiss = { editing = null },
+        )
+    }
 }
 
 /** Labels for the podcast gap rules and their parameters; the rules themselves are pure. */
@@ -1102,6 +1393,11 @@ private fun SettingsLightPreview() {
             audio = AudioSettings.DEFAULT,
             onAudioChange = { true },
             onRestoreAudio = {},
+            onRestoreTone = {},
+            separation = SeparationSettings.DEFAULT,
+            onSelectSeparation = {},
+            onSeparationParam = { _, _, _ -> true },
+            onRestoreSeparation = {},
             libraryFolders = previewFolders,
             onToggleFolder = {},
             podcastGap = PodcastGapSettings.DEFAULT,
@@ -1132,6 +1428,11 @@ private fun SettingsDarkPreview() {
             audio = AudioSettings.DEFAULT,
             onAudioChange = { true },
             onRestoreAudio = {},
+            onRestoreTone = {},
+            separation = SeparationSettings.DEFAULT,
+            onSelectSeparation = {},
+            onSeparationParam = { _, _, _ -> true },
+            onRestoreSeparation = {},
             libraryFolders = previewFolders,
             onToggleFolder = {},
             podcastGap = PodcastGapSettings.DEFAULT,
@@ -1177,7 +1478,44 @@ private fun BluetoothSettingsPreview() {
 private fun AudioSettingsPreview() {
     VibeRadioTheme(darkTheme = false) {
         Surface(color = MaterialTheme.colorScheme.background) {
-            AudioSettingsList(AudioSettings.DEFAULT.copy(musicDepthDb = -12f), onAudioChange = { true }, onRestore = {}, onFolders = {})
+            AudioSettingsList(
+                AudioSettings.DEFAULT.copy(mixingFactorDb = -12f),
+                onAudioChange = { true },
+                onRestore = {},
+                developerMode = true,
+                onFolders = {},
+                onEqualizer = {},
+                onSeparation = {},
+            )
+        }
+    }
+}
+
+@Preview(name = "Equalizer", showBackground = true, heightDp = 640)
+@Composable
+private fun ToneSettingsPreview() {
+    VibeRadioTheme(darkTheme = false) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            ToneSettingsList(
+                AudioSettings.DEFAULT.copy(musicTone = ToneCurve.FLAT.with(0, 3f).with(9, -2.5f)),
+                onAudioChange = { true },
+                onRestore = {},
+            )
+        }
+    }
+}
+
+@Preview(name = "Separation EQ", showBackground = true, heightDp = 640)
+@Composable
+private fun SeparationSettingsPreview() {
+    VibeRadioTheme(darkTheme = false) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            SeparationSettingsList(
+                SeparationSettings.DEFAULT.select(SeparationEq.Graphic.ID),
+                onSelect = {},
+                onParam = { _, _, _ -> true },
+                onRestore = {},
+            )
         }
     }
 }

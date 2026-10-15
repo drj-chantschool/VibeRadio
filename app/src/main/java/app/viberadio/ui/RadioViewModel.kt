@@ -88,11 +88,15 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
     private val feedback: FeedbackRecorder = (application as VibeRadioApp).container.feedback
     private val learner = (application as VibeRadioApp).container.learner
     private val appScope = (application as VibeRadioApp).container.appScope
+    private val container = (application as VibeRadioApp).container
 
     private data class Permission(val granted: Boolean, val denied: Boolean)
 
-    /** The thumb lit for the current play, with the song and channel it will be logged against. */
-    private data class Press(val trackUri: String, val channelId: String, val thumb: Thumb)
+    /**
+     * The thumb lit for the current play, with the song and channel it will be logged against and
+     * the separation module in effect when it was pressed.
+     */
+    private data class Press(val trackUri: String, val channelId: String, val thumb: Thumb, val separationEq: String?)
 
     private data class Playback(
         val channelId: String? = null,
@@ -247,7 +251,7 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
             val uri = current.trackUri ?: return@update current
             val channelId = current.channelId ?: return@update current
             val lit = PlayThumbs.press(current.press?.thumb, thumb)
-            current.copy(press = lit?.let { Press(uri, channelId, it) })
+            current.copy(press = lit?.let { Press(uri, channelId, it, container.separationInEffect()) })
         }
     }
 
@@ -257,7 +261,7 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
      */
     private fun log(press: Press) {
         appScope.launch {
-            val event = feedback.record(press.trackUri, press.channelId, press.thumb) ?: return@launch
+            val event = feedback.record(press.trackUri, press.channelId, press.thumb, press.separationEq) ?: return@launch
             // Placement follows the new feedback; the queue already playing is left alone.
             learner.add(event)
             repository.replace()

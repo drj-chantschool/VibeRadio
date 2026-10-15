@@ -91,6 +91,12 @@ class FeedbackRecorderTest {
     }
 
     @Test
+    fun `records the separation module in effect`() = runBlocking {
+        assertEquals("graphic", recorder.record("content://media/1", "breeze", Thumb.UP, separationEq = "graphic")!!.separationEq)
+        assertNull(recorder.record("content://media/1", "breeze", Thumb.UP)!!.separationEq)
+    }
+
+    @Test
     fun `a moved file keeps its identity`() = runBlocking {
         val before = recorder.record("content://media/1", "all-songs", Thumb.UP)!!
         files["content://media/99"] = files.remove("content://media/1")!!

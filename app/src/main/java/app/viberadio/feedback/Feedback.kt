@@ -20,4 +20,9 @@ data class FeedbackEvent(
     val utcOffsetMinutes: Int,
     /** The channel the song was playing on. */
     val channelId: String,
+    /**
+     * The separation EQ module in effect at the press (#2): its ID while a podcast played over
+     * the music, null otherwise or for presses from before it was recorded.
+     */
+    val separationEq: String? = null,
 )

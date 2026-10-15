@@ -12,6 +12,7 @@ import app.viberadio.dial.ChannelNamesRepository
 import app.viberadio.playback.PodcastGapSettings
 import app.viberadio.playback.audio.AudioSettings
 import app.viberadio.playback.audio.AudioSettingsRepository
+import app.viberadio.playback.audio.SeparationSettings
 import android.content.Intent
 import android.net.Uri
 import android.os.SystemClock
@@ -75,13 +76,16 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     private val audio: AudioSettingsRepository = (application as VibeRadioApp).container.audioSettings
 
-    /** Settings → Audio: the EQ figures and ramp time. */
+    /** Settings → Audio: the leveling target, mixing factor, ramp time and (Equalizer) both tone curves. */
     val audioSettings: StateFlow<AudioSettings> = audio.settings
 
     /** Applies [change] if the result is valid; false if it isn't (nothing changes). */
     fun updateAudio(change: (AudioSettings) -> AudioSettings): Boolean = audio.update(change)
 
     fun restoreAudioDefaults() = audio.restoreDefaults()
+
+    /** Settings → Audio → Equalizer: both tone curves flat. */
+    fun restoreTone() = audio.restoreTone()
 
     private val container = (application as VibeRadioApp).container
 
@@ -124,6 +128,21 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun restoreGapDefaults() {
         container.podcastGapSettings.restoreDefaults()
+    }
+
+    /** Settings → Audio → Separation EQ, in developer mode: the module and each module's figures. */
+    val separation: StateFlow<SeparationSettings> = container.separationSettings.settings
+
+    fun selectSeparation(id: String) {
+        container.separationSettings.select(id)
+    }
+
+    /** Sets one figure of module [moduleId] if accepted; false (nothing changes) if not. */
+    fun setSeparationParam(moduleId: String, key: String, value: Double): Boolean =
+        container.separationSettings.set(moduleId, key, value)
+
+    fun restoreSeparationDefaults() {
+        container.separationSettings.restoreDefaults()
     }
 
     /** The version line at the foot of settings, which developer mode is unlocked from. */

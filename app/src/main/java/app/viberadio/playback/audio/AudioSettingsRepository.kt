@@ -56,7 +56,13 @@ class AudioSettingsRepository(
         return true
     }
 
+    /** Target, mixing factor and ramp back to their defaults; the tone curves stay. */
     fun restoreDefaults() {
-        update { AudioSettings.DEFAULT }
+        update { it.figuresRestored() }
+    }
+
+    /** Settings → Audio → Equalizer: both tone curves flat again. */
+    fun restoreTone() {
+        update { it.toneRestored() }
     }
 }
