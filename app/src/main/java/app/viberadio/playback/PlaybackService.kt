@@ -98,6 +98,7 @@ class PlaybackService : MediaSessionService() {
             stationName = { id -> container.channelNames.names.value.of(id) },
             onChannelTuned = container.lastChannel::write,
             gapRule = { container.podcastGapSettings.settings.value.active },
+            podcastLog = container.podcastLog::add,
             // App scope, not the service's: a play still gets recorded if the service stops meanwhile.
             onSongStarted = { channelId, track, startedAtMs ->
                 container.appScope.launch {

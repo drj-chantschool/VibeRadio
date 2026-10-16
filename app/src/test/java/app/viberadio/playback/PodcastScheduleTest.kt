@@ -133,6 +133,19 @@ class PodcastScheduleTest {
         assertTrue(schedule.startMidSong(11 * minute, null))
     }
 
+    @Test
+    fun `describe gives the wait relative to now`() {
+        val schedule = played(ratio(), 20 * minute)
+        assertEquals(
+            "wait=music open_in_ms=480000 nominal_in_ms=540000 close_in_ms=600000 episode_active=false streak_ms=1200000",
+            schedule.describe(21 * minute),
+        )
+        schedule.reset(0)
+        assertEquals("wait=music open_in_ms=0 nominal_in_ms=600000 close_in_ms=600000 episode_active=false streak_ms=0", schedule.describe(0))
+        assertEquals("wait=boundary episode_active=false streak_ms=0", PodcastSchedule().describe(0))
+        assertEquals("wait=tracks left=3 episode_active=false streak_ms=2700000", played(PodcastSchedule(), 45 * minute).describe(0))
+    }
+
     // Music to podcast ratio.
 
     private fun ratio(ratio: Double = 0.5, floorSeconds: Double = 10.0, tolerancePercent: Double = 10.0) =

@@ -7,8 +7,12 @@ import app.viberadio.feedback.PlayRecord
 import app.viberadio.feedback.Thumb
 import app.viberadio.learning.FeatureLayout
 import app.viberadio.playback.ChannelAiring
+import app.viberadio.playback.PodcastEvent
 import app.viberadio.playback.audio.AudioSettings
 import app.viberadio.playback.audio.TrackLevel
+import app.viberadio.podcasts.Episode
+import app.viberadio.podcasts.Podcast
+import app.viberadio.podcasts.PodcastLibrary
 import app.viberadio.track
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -19,6 +23,18 @@ class DiagnosticsBundleTest {
 
     private val a = track("Rock").copy(title = "Hello, \"World\"", artist = "Band")
     private val b = track("Jazz")
+
+    private val show = Podcast("https://feed", "Show", setOf("podcasts", "breeze"), lastRefreshedMs = 0, pauseMusic = true)
+    private val podcasts = PodcastLibrary(
+        podcasts = listOf(show),
+        episodes = listOf(
+            Episode("e1", show.feedUrl, "First", 1_000, "https://e1.mp3", 60_000),
+            Episode("e2", show.feedUrl, "Second", 2_000, "https://e2.mp3", null),
+            Episode("e0", show.feedUrl, "Old", 500, "https://e0.mp3", null),
+        ),
+        played = setOf("e0"),
+        positions = mapOf("e2" to 5_000L),
+    )
 
     private fun snapshot(
         feedback: List<FeedbackEvent> = listOf(
@@ -47,6 +63,12 @@ class DiagnosticsBundleTest {
         airings = listOf(ChannelAiring("breeze", "hashA", 180_000, 3_000)),
         levels = mapOf("song:hashA" to TrackLevel(-14f, 0.5f), "song:silent" to TrackLevel(Float.NEGATIVE_INFINITY, 0f)),
         podcastsJson = podcastsJson,
+        podcasts = podcasts,
+        downloadedEpisodes = setOf("e1"),
+        podcastEvents = listOf(
+            PodcastEvent(3_000, 40, "breeze", "start", "e2", "mode=overlay trigger=mid_song"),
+            PodcastEvent(4_000, 50, "breeze", "wait", null, "cause=tune rule=music_ratio wait=boundary"),
+        ),
     )
 
     private fun files(s: DiagnosticsSnapshot = snapshot()) = DiagnosticsBundle.build(s).associateBy { it.name }
@@ -62,6 +84,7 @@ class DiagnosticsBundleTest {
             setOf(
                 "README.md", "summary.json", "settings.json", "feedback.csv", "play_history.csv", "channel_airings.csv",
                 "features.csv", "channels.csv", "library.csv", "levels.csv", "podcasts.json",
+                "podcast_shows.csv", "podcast_queues.csv", "podcast_events.csv",
             ),
             files().keys,
         )
@@ -155,6 +178,33 @@ class DiagnosticsBundleTest {
         assertTrue(settings.contains("\"rule\": \"tracks_by_length\""))
         assertTrue(settings.contains("\"long_minutes\": 15.0"))
         assertTrue(settings.contains("\"ratio\": 0.5"))
+    }
+
+    @Test
+    fun `podcast shows list channels, settings and episode counts`() {
+        val lines = files().getValue("podcast_shows.csv").text.trim().lines()
+        assertEquals("feed_url,title,channels,pause_music,speed,priority,episodes,unplayed,downloaded,last_refreshed_utc", lines[0])
+        assertEquals("https://feed,Show,breeze podcasts,true,1.0,0,3,2,1,", lines[1])
+    }
+
+    @Test
+    fun `podcast queues list each channel's next episodes in queue order`() {
+        val lines = files().getValue("podcast_queues.csv").text.trim().lines()
+        assertEquals("channel_id,position,episode_id,show,title,published_utc,duration_ms,resume_ms,downloaded,pause_music", lines[0])
+        // The started episode first, then the oldest; the played one not at all.
+        assertEquals("breeze,0,e2,Show,Second,1970-01-01T00:00:02Z,,5000,false,true", lines[1])
+        assertEquals("breeze,1,e1,Show,First,1970-01-01T00:00:01Z,60000,,true,true", lines[2])
+        assertEquals("podcasts,0,e2,Show,Second,1970-01-01T00:00:02Z,,5000,false,true", lines[3])
+        assertEquals(5, lines.size)
+    }
+
+    @Test
+    fun `podcast events name the episode and show local time`() {
+        val lines = files().getValue("podcast_events.csv").text.trim().lines()
+        assertEquals("at_ms,at_local,on_air_ms,channel_id,event,episode_id,show,episode_title,detail", lines[0])
+        assertEquals("3000,1969-12-31T19:00:03-05:00,40,breeze,start,e2,Show,Second,mode=overlay trigger=mid_song", lines[1])
+        assertEquals("4000,1969-12-31T19:00:04-05:00,50,breeze,wait,,,,cause=tune rule=music_ratio wait=boundary", lines[2])
+        assertTrue(files().getValue("summary.json").text.contains("\"podcast_events\": 2"))
     }
 
     @Test

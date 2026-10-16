@@ -141,6 +141,16 @@ class PodcastSchedule(private val rule: () -> PodcastGapRule = { PodcastGapRule.
         return Wait.Music(openAt = nowMs, nominalAt = nowMs + longest, closeAt = nowMs + longest)
     }
 
+    /** The state at [nowMs], for the podcast log: `key=value` pairs, times relative to now. */
+    fun describe(nowMs: Long): String {
+        val waiting = when (val w = wait) {
+            Wait.Boundary -> "wait=boundary"
+            is Wait.Tracks -> "wait=tracks left=${w.left}"
+            is Wait.Music -> "wait=music open_in_ms=${w.openAt - nowMs} nominal_in_ms=${w.nominalAt - nowMs} close_in_ms=${w.closeAt - nowMs}"
+        }
+        return "$waiting episode_active=$episodeActive streak_ms=$streakMs"
+    }
+
     companion object {
         /** An episode starting this soon after one that asked for no gap continues its streak. */
         const val BACK_TO_BACK_MS = 2_000L
