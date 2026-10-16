@@ -8,7 +8,7 @@ import kotlin.math.roundToLong
  *
  * - One episode at a time.
  * - Tuning ([retune]) keeps a music gap still owed from the last episode ([Gap.Music]), on any
- *   channel and across restarts ([saved], [restore]). With nothing owed, the tracks rule waits
+ *   channel and across restarts ([owed], [restore]). With nothing owed, the tracks rule waits
  *   for the next track boundary; a rule with music gaps ([PodcastGapRule.longestGapMs]) starts
  *   the next episode straight away, even part-way through a song just joined.
  * - After an episode that failed to play: the next track boundary, or with music gaps,
@@ -17,8 +17,8 @@ import kotlin.math.roundToLong
  *   a number of track boundaries ([Gap.Tracks]), or a stretch of music ([Gap.Music]), after
  *   which an episode may start part-way through a song.
  *
- * Times are on a clock that runs only while the channel is playing ([OnAirClock]), so a pause
- * doesn't count as music. Applies to every podcast, whether it plays over the music or (a music
+ * Times are wall-clock, so a gap runs out in real time, paused or not. The streak is podcast
+ * time actually played, which the caller measures. Applies to every podcast, whether it plays over the music or (a music
  * podcast) by itself; a music podcast still waits for a track boundary.
  */
 class PodcastSchedule(private val rule: () -> PodcastGapRule = { PodcastGapRule.DEFAULT }) {
@@ -48,8 +48,6 @@ class PodcastSchedule(private val rule: () -> PodcastGapRule = { PodcastGapRule.
     var streakMs: Long = 0
         private set
 
-    private var episodeStartedAt = 0L
-
     /** The episode now playing continues the streak. */
     private var continuesStreak = false
 
@@ -58,13 +56,14 @@ class PodcastSchedule(private val rule: () -> PodcastGapRule = { PodcastGapRule.
 
     /**
      * A channel was tuned at [nowMs]. With [podcastPlaying] (an episode was playing when the knob
-     * moved) the podcast carries on straight away and its time so far stays in the streak.
-     * Otherwise a music gap still owed carries over; with none, the wait starts fresh.
+     * moved, for [playedMs] so far) the podcast carries on straight away and its time so far
+     * stays in the streak. Otherwise a music gap still owed carries over; with none, the wait
+     * starts fresh.
      */
-    fun retune(nowMs: Long, podcastPlaying: Boolean) {
+    fun retune(nowMs: Long, podcastPlaying: Boolean, playedMs: Long = 0) {
         if (podcastPlaying) {
             if (episodeActive) {
-                streakMs = (if (continuesStreak) streakMs else 0) + (nowMs - episodeStartedAt).coerceAtLeast(0)
+                streakMs = (if (continuesStreak) streakMs else 0) + playedMs
                 noGapSince = nowMs
             } else {
                 streakMs = 0
@@ -90,20 +89,12 @@ class PodcastSchedule(private val rule: () -> PodcastGapRule = { PodcastGapRule.
         return nowMs >= w.openAt
     }
 
-    /** A music gap still owed at [nowMs], relative to it, for keeping across a restart. */
-    data class Saved(val openInMs: Long, val nominalInMs: Long, val closeInMs: Long)
+    /** The music gap still owed, to keep across a restart; null if none, or an episode is playing. */
+    val owed: Wait.Music? get() = (wait as? Wait.Music)?.takeIf { !episodeActive }
 
-    /** The music gap owed at [nowMs], or null if there's none (or an episode is playing). */
-    fun saved(nowMs: Long): Saved? {
-        if (episodeActive) return null
-        val w = wait as? Wait.Music ?: return null
-        return Saved(w.openAt - nowMs, w.nominalAt - nowMs, w.closeAt - nowMs)
-    }
-
-    /** Picks up a gap [saved] before a restart, at [nowMs] on the new clock. */
-    fun restore(saved: Saved, nowMs: Long) {
-        if (episodeActive) return
-        wait = Wait.Music(nowMs + saved.openInMs, nowMs + saved.nominalInMs, nowMs + saved.closeInMs)
+    /** Picks up a gap [owed] before a restart. */
+    fun restore(owed: Wait.Music) {
+        if (!episodeActive) wait = owed
     }
 
     /**
@@ -148,16 +139,18 @@ class PodcastSchedule(private val rule: () -> PodcastGapRule = { PodcastGapRule.
 
     fun episodeStarted(nowMs: Long) {
         episodeActive = true
-        episodeStartedAt = nowMs
         val since = noGapSince
         continuesStreak = since != null && nowMs - since <= BACK_TO_BACK_MS
         noGapSince = null
     }
 
-    /** The episode that was playing ended at [nowMs] after [contentMs] of content (0 if unknown). */
-    fun episodeEnded(contentMs: Long, nowMs: Long) {
+    /**
+     * The episode that was playing ended at [nowMs] after [contentMs] of content (0 if unknown),
+     * having played for [playedMs].
+     */
+    fun episodeEnded(contentMs: Long, playedMs: Long, nowMs: Long) {
         episodeActive = false
-        streakMs = (if (continuesStreak) streakMs else 0) + (nowMs - episodeStartedAt).coerceAtLeast(0)
+        streakMs = (if (continuesStreak) streakMs else 0) + playedMs
         wait = when (val gap = rule().gapAfter(contentMs, streakMs)) {
             is Gap.Tracks -> Wait.Tracks(gap.count)
             is Gap.Music -> {
