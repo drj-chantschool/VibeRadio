@@ -48,7 +48,7 @@ Principle: you still have control, but you shouldn't need it, and the app doesn'
   - Target loudness: −18 LUFS
   - Mixing factor (music under a podcast): −10 dB
   - Ramp time (separation and mixing factor): 1.5 s
-- Settings → Audio → Equalizer: the tone curve for each stream (Music, Podcasts), band by band, each edited in a dialog (±12 dB; invalid values refused), with "Restore defaults" (both flat). Available to everyone but tucked a level down, in line with the product principle
+- Settings → Audio → Equalizer: the tone curve for each stream (Music, Podcasts) as a graphic EQ: ten vertical sliders, low to high, scrolling sideways when the screen is too narrow. Drag a slider (tenths of a dB, a haptic tick at 0 dB; the change is heard as you drag), double-tap it back to 0, or tap its figure to type a value in a dialog (±12 dB; invalid values refused). Monochrome like the rest of the app: ink fill from 0 dB to the thumb, no colour per band, with "Restore defaults" (both flat). Available to everyone but tucked a level down, in line with the product principle
 - Settings → Audio → Separation EQ (developer mode only), same layout as the gap rule: the modules (one selected), then the selected module's parameters, each edited in a dialog with its range (invalid values refused), and "Restore defaults" (every module's parameters; the selection stays). Each module keeps its own parameters while another is selected, and the choice stays in force with developer mode off. Band pass and notch defaults:
   - Podcast band pass: 1 kHz – 4 kHz
   - Music notch: 700 Hz – 5.7 kHz

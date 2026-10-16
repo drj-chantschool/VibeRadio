@@ -114,7 +114,7 @@
     </plurals>
     <string name="settings_equalizer">Equalizer</string>
     <string name="settings_equalizer_summary">Tone for the music and for podcasts</string>
-    <string name="settings_equalizer_hint">A ten-band tone control for each stream, always on and flat by default. Boosts are taken back off the overall level, so nothing clips. Music covers everything on the music player, episodes on The Voice and music podcasts included; Podcasts covers shows played over music.</string>
+    <string name="settings_equalizer_hint">A ten-band tone control for each stream, always on and flat by default. Drag a band up or down, double-tap it for flat, or tap its figure to type one. Boosts are taken back off the overall level, so nothing clips. Music covers everything on the music player, episodes on The Voice and music podcasts included; Podcasts covers shows played over music.</string>
     <string name="settings_equalizer_invalid">Out of range: −12 to +12 dB.</string>
     <string name="settings_separation">Separation EQ</string>
     <string name="settings_separation_summary">How a podcast and the music are pulled apart (developer mode)</string>
