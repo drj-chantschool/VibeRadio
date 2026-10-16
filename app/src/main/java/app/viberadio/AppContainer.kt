@@ -21,6 +21,8 @@ import app.viberadio.playback.LastChannelStore
 import app.viberadio.playback.LiveRadio
 import app.viberadio.playback.FilePodcastEventStore
 import app.viberadio.playback.PodcastEventLog
+import app.viberadio.playback.PodcastWaitStore
+import app.viberadio.playback.PrefsPodcastWaitStore
 import app.viberadio.playback.PodcastGapSettingsRepository
 import app.viberadio.playback.PrefsLastChannelStore
 import app.viberadio.playback.PrefsPodcastGapStore
@@ -110,6 +112,9 @@ class AppContainer(context: Context) {
         scope = appScope,
         ioDispatcher = Dispatchers.IO,
     )
+
+    /** A music gap between podcast episodes still owed, kept across restarts of the player. */
+    val podcastWaitStore: PodcastWaitStore = PrefsPodcastWaitStore(context)
 
     /** What the podcast scheduling on song channels decided, for diagnostics. */
     val podcastLog = PodcastEventLog(
