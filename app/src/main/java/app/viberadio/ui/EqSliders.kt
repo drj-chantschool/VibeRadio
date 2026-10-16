@@ -35,7 +35,6 @@ import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.viberadio.playback.audio.ToneBands
-import app.viberadio.playback.audio.ToneCurve
 import kotlin.math.roundToInt
 
 /** Slider geometry for the graphic EQ: pure, so it's tested on the JVM. */
@@ -62,13 +61,15 @@ internal object EqSliderMath {
 }
 
 /**
- * One stream's tone curve as a row of vertical sliders, one per band, scrolling sideways when
- * the screen is too narrow for all ten. Drag a band up or down (tenths of a dB, a tick at
- * 0 dB), double-tap it back to flat, or tap its figure to type a value ([onEdit]).
+ * Ten bands in dB (a stream's tone curve, or a stream's separation offsets) as a row of
+ * vertical sliders, one per band, scrolling sideways when the screen is too narrow for all ten.
+ * Drag a band up or down (tenths of a dB, a tick at 0 dB), double-tap it back to 0, or tap its
+ * figure to type a value ([onEdit]).
  */
 @Composable
 internal fun GraphicEqSliders(
-    curve: ToneCurve,
+    bandsDb: List<Float>,
+    range: ClosedFloatingPointRange<Float>,
     onBand: (band: Int, db: Float) -> Unit,
     onEdit: (band: Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -81,7 +82,8 @@ internal fun GraphicEqSliders(
             for (band in 0 until ToneBands.COUNT) {
                 BandSlider(
                     band = band,
-                    db = curve.bandsDb[band],
+                    db = bandsDb[band],
+                    range = range,
                     onChange = { onBand(band, it) },
                     onEdit = { onEdit(band) },
                 )
@@ -91,8 +93,7 @@ internal fun GraphicEqSliders(
 }
 
 @Composable
-private fun BandSlider(band: Int, db: Float, onChange: (Float) -> Unit, onEdit: () -> Unit) {
-    val range = ToneCurve.RANGE
+private fun BandSlider(band: Int, db: Float, range: ClosedFloatingPointRange<Float>, onChange: (Float) -> Unit, onEdit: () -> Unit) {
     val current by rememberUpdatedState(db)
     val change by rememberUpdatedState(onChange)
     val haptics = LocalHapticFeedback.current
