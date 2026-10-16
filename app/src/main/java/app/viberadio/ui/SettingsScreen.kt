@@ -774,8 +774,8 @@ internal object EqStrings {
 }
 
 /**
- * Settings → Audio → Equalizer: each stream's tone EQ, ten bands, each tappable to change
- * (±12 dB), and a way back to flat. Always in effect, whatever plays; the separation EQ, while
+ * Settings → Audio → Equalizer: each stream's tone EQ as ten vertical sliders (±12 dB; drag,
+ * double-tap for flat, or tap the figure to type one), and a way back to flat. Always in effect, whatever plays; the separation EQ, while
  * both streams play, comes on top.
  */
 @Composable
@@ -808,13 +808,12 @@ private fun ToneSettingsList(
                 )
                 Rule()
             }
-            items(ToneBands.COUNT, key = { "tone:" + stream.name + ":" + it }) { band ->
-                val db = curve.bandsDb[band]
-                FigureRow(
-                    label = EqStrings.band(band),
-                    value = EqStrings.db(db.toDouble()) + " " + stringResource(R.string.unit_db),
-                    isDefault = db == 0f,
-                    onClick = { editing = stream.name + ":" + band },
+            item(key = "tone:" + stream.name + ":bands") {
+                GraphicEqSliders(
+                    curve = curve,
+                    onBand = { band, db -> onAudioChange { it.withTone(stream, it.tone(stream).with(band, db)) } },
+                    onEdit = { band -> editing = stream.name + ":" + band },
+                    modifier = Modifier.padding(vertical = 16.dp),
                 )
                 Rule()
             }
