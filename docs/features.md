@@ -24,7 +24,7 @@ Principle: you still have control, but you shouldn't need it, and the app doesn'
 
 ## Podcast scheduling on a channel (applies to all podcasts)
 
-- Fresh on a channel (tuned in, or after an episode that failed to play), an episode only starts at a music track boundary: it waits until the current music track ends
+- Fresh on a channel (tuned in, or after an episode that failed to play), an episode only starts at a music track boundary: it waits until the current music track ends. Under the ratio rule the wait is capped at the max gap: if no boundary comes by then (a very long track, e.g. a two-hour mix joined part-way), the episode starts part-way through the song. Music podcasts still wait for the boundary
 - Changing channels while a podcast is playing never starts a gap or a wait: the podcast carries on straight away on the new channel (the next episode up for it, usually the same one, from where it was), even when the new channel joins a song part-way (live-radio resume). A music podcast due on the new channel plays in place of the joined song
 - Music podcast: when the current music track ends and the next episode up is from a music podcast, the music queue does not continue; the episode plays by itself. When the episode ends, the music queue resumes
 - Gap between episodes: after an episode ends, music continues for as long as the gap rule says. The rule is one of a list, each with its own parameters, chosen in Settings → Podcasts (that setting shows in developer mode only; the choice stays in force when developer mode is turned off). Default: tracks by episode length

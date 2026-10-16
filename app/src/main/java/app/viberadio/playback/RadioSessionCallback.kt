@@ -271,7 +271,7 @@ class RadioSessionCallback(
         // Still on the old item here, so this keeps the place in an episode being tuned away from.
         savePosition()
         overlay?.stop()
-        schedule.reset()
+        schedule.reset(onAir.now())
         tuneBoundary = queue.boundary
         currentChannelId = queue.channelId
         onChannelTuned(queue.channelId)
@@ -402,7 +402,7 @@ class RadioSessionCallback(
     }
 
     private fun onOverlayFailed() {
-        schedule.episodeFailed()
+        schedule.episodeFailed(onAir.now())
         handler.post(::topUpSongQueue)
     }
 
@@ -438,7 +438,8 @@ class RadioSessionCallback(
         if (currentEpisodeId != null && player.duration != C.TIME_UNSET) currentEpisodeDurationMs = player.duration
         if (playbackState != Player.STATE_ENDED) return
         // The last item in the queue doesn't get an AUTO transition; it just ends.
-        currentEpisodeId?.let { podcasts.setPlayed(it, true) }
+        val endedEpisode = currentEpisodeId
+        endedEpisode?.let { podcasts.setPlayed(it, true) }
         val channelId = currentChannelId ?: return
         val songChannel = repository.channel(channelId)
         val next = if (songChannel != null) {
@@ -448,11 +449,17 @@ class RadioSessionCallback(
         } ?: return
         joiningMediaId = null
         stopFade()
+        var boundary = next.boundary
         if (next.channelId != currentChannelId) {
             overlay?.stop()
-            schedule.reset()
+            schedule.reset(onAir.now())
+        } else if (endedEpisode != null && songChannel != null) {
+            // A music podcast that was last in the queue: no transition will report its end, and
+            // the music that follows is its gap, not a fresh start.
+            schedule.episodeEnded(currentEpisodeDurationMs, onAir.now())
+            boundary = false
         }
-        tuneBoundary = next.boundary
+        tuneBoundary = boundary
         currentChannelId = next.channelId
         onChannelTuned(next.channelId)
         player.setMediaItems(next.items, 0, next.startPositionMs)

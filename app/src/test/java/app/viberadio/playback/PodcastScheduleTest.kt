@@ -79,10 +79,10 @@ class PodcastScheduleTest {
     @Test
     fun `reset clears the wait and the active episode`() {
         val schedule = played(PodcastSchedule(), 45 * minute)
-        schedule.reset()
+        schedule.reset(0)
         assertTrue(schedule.dueAtBoundary(null))
         schedule.episodeStarted(0)
-        schedule.reset()
+        schedule.reset(0)
         assertTrue(schedule.songBoundary(0))
     }
 
@@ -90,9 +90,47 @@ class PodcastScheduleTest {
     fun `a failed episode is retried at the next boundary, not straight away`() {
         val schedule = PodcastSchedule { PodcastGapRule.MusicRatio() }
         schedule.episodeStarted(0)
-        schedule.episodeFailed()
+        schedule.episodeFailed(0)
         assertFalse(schedule.startMidSong(1 * second, null))
         assertTrue(schedule.songBoundary(2 * second))
+    }
+
+    @Test
+    fun `tracks rule - fresh waits only for a boundary, however long the song`() {
+        val schedule = PodcastSchedule { PodcastGapRule.TracksByLength() }
+        schedule.reset(0)
+        assertFalse(schedule.startMidSong(3 * 60 * minute, songEndsAtMs = 4 * 60 * minute))
+        assertTrue(schedule.songBoundary(4 * 60 * minute))
+    }
+
+    @Test
+    fun `ratio - fresh starts part-way through a long song after the max gap`() {
+        // Tuned in to a two-hour track joined part-way: no boundary for an hour and a half.
+        val schedule = PodcastSchedule { PodcastGapRule.MusicRatio(maxMinutes = 10.0) }
+        val tuned = 5 * minute
+        schedule.reset(tuned)
+        val songEnds = tuned + 90 * minute
+        assertTrue(schedule.dueAtBoundary(tuned + 1 * minute))
+        assertFalse(schedule.startMidSong(tuned + 10 * minute - 1, songEnds))
+        assertTrue(schedule.startMidSong(tuned + 10 * minute, songEnds))
+    }
+
+    @Test
+    fun `ratio - fresh still takes the next boundary when one comes first`() {
+        val schedule = PodcastSchedule { PodcastGapRule.MusicRatio(maxMinutes = 10.0) }
+        schedule.reset(0)
+        assertTrue(schedule.songBoundary(2 * minute))
+        // A song ending by the max gap is waited for, not cut.
+        assertFalse(schedule.startMidSong(10 * minute, songEndsAtMs = 10 * minute))
+    }
+
+    @Test
+    fun `ratio - a failed episode is retried part-way through a long song after the max gap`() {
+        val schedule = PodcastSchedule { PodcastGapRule.MusicRatio(maxMinutes = 10.0) }
+        schedule.episodeStarted(0)
+        schedule.episodeFailed(1 * minute)
+        assertFalse(schedule.startMidSong(10 * minute, null))
+        assertTrue(schedule.startMidSong(11 * minute, null))
     }
 
     // Music to podcast ratio.
