@@ -59,7 +59,8 @@ import kotlinx.coroutines.launch
  * the next song's place in this player's queue and plays by itself, so it always waits for a
  * track boundary; the music resumes after it. Any other show plays over the music on the
  * overlay player ([PodcastOverlay]), which follows this player's play/pause. Tuning in fresh
- * counts as a boundary; joining a song part-way doesn't. The schedule's times are on [onAir],
+ * counts as a boundary; joining a song part-way doesn't, unless a podcast was playing when the
+ * knob moved (the podcast carries on straight away). The schedule's times are on [onAir],
  * which runs only while this player plays.
  */
 @OptIn(UnstableApi::class)
@@ -150,7 +151,10 @@ class RadioSessionCallback(
         val startPositionMs: Long = C.TIME_UNSET,
         /** The first item is a song joined part-way (live-radio resume). */
         val joined: Boolean = false,
-        /** The first item starts at a track boundary on a song channel, so an episode may start with it. */
+        /**
+         * An episode may start with the first item on a song channel: it starts at a track
+         * boundary, or a podcast was playing when the knob moved (it carries on without a wait).
+         */
         val boundary: Boolean = false,
     )
 
@@ -262,7 +266,8 @@ class RadioSessionCallback(
      * channel. Call before the player gets the new items.
      */
     private fun tune(channelId: String): Queue? {
-        val queue = tuneIn(channelId) ?: return null
+        val podcastPlaying = overlay?.isActive == true || currentEpisodeId != null
+        val queue = tuneIn(channelId, podcastPlaying) ?: return null
         // Still on the old item here, so this keeps the place in an episode being tuned away from.
         savePosition()
         overlay?.stop()
@@ -459,17 +464,24 @@ class RadioSessionCallback(
      * The queue for tuning in to [channelId]: song channels join their last song if it's still on
      * air. Otherwise it's a fresh start, a track boundary: a music podcast due on the channel
      * plays first, by itself.
+     *
+     * With [podcastPlaying] (an episode was playing when the knob moved) the podcast carries on
+     * straight away instead of waiting for the joined song to end: a music podcast due on the
+     * channel plays first in place of the join, and any other show starts over the joined song.
      */
-    private fun tuneIn(channelId: String): Queue? {
+    private fun tuneIn(channelId: String, podcastPlaying: Boolean = false): Queue? {
         repository.channel(channelId)?.let { channel ->
-            val tuneIn = liveRadio.tuneIn(channel, planner.upcoming(channel, 1 + LOOKAHEAD))
-            val songs = tuneIn.tracks.map { songItem(channel, it) }
-            if (tuneIn.resumeAtMs != null) {
-                return Queue(channel.id, songs, startPositionMs = tuneIn.resumeAtMs, joined = true)
-            }
+            val planned = planner.upcoming(channel, 1 + LOOKAHEAD)
+            val tuneIn = liveRadio.tuneIn(channel, planned)
             val library = podcasts.library.value
-            val solo = library.queue(channel.id).firstOrNull()?.takeIf { library.pausesMusic(it.id) }
-            if (solo != null && overlay != null) {
+            val solo = library.queue(channel.id).firstOrNull()
+                ?.takeIf { library.pausesMusic(it.id) && overlay != null }
+            if (tuneIn.resumeAtMs != null && !(podcastPlaying && solo != null)) {
+                val songs = tuneIn.tracks.map { songItem(channel, it) }
+                return Queue(channel.id, songs, startPositionMs = tuneIn.resumeAtMs, joined = true, boundary = podcastPlaying)
+            }
+            val songs = planned.map { songItem(channel, it) }
+            if (solo != null) {
                 return Queue(
                     channelId = channel.id,
                     items = listOf(episodeItem(library, solo.id, channel.id)) + songs.take(LOOKAHEAD),
