@@ -20,7 +20,7 @@ class PodcastScheduleTest {
 
     private fun played(schedule: PodcastSchedule, contentMs: Long, from: Long = 0, to: Long = contentMs) = schedule.apply {
         episodeStarted(from)
-        episodeEnded(contentMs, to)
+        episodeEnded(contentMs, playedMs = to - from, nowMs = to)
     }
 
     // Tracks by episode length (the default rule).
@@ -91,13 +91,13 @@ class PodcastScheduleTest {
     fun `a tune while an episode plays carries it on straight away`() {
         val schedule = PodcastSchedule { PodcastGapRule.MusicRatio() }
         schedule.episodeStarted(0)
-        schedule.retune(10 * minute, podcastPlaying = true)
+        schedule.retune(10 * minute, podcastPlaying = true, playedMs = 10 * minute)
         assertFalse(schedule.episodeActive)
         assertTrue(schedule.dueOnRetune(10 * minute, podcastPlaying = true))
         assertTrue(schedule.songBoundary(10 * minute))
         // Its ten minutes so far stay in the streak.
         schedule.episodeStarted(10 * minute + 500)
-        schedule.episodeEnded(0, 20 * minute)
+        schedule.episodeEnded(0, playedMs = 10 * minute - 500, nowMs = 20 * minute)
         assertEquals(20 * minute - 500, schedule.streakMs)
     }
 
@@ -140,25 +140,33 @@ class PodcastScheduleTest {
     }
 
     @Test
-    fun `ratio - the gap owed survives a restart`() {
-        val schedule = played(ratio(), 20 * minute)
-        val saved = schedule.saved(24 * minute)!!
-        assertEquals(PodcastSchedule.Saved(5 * minute, 6 * minute, 7 * minute), saved)
-        // A new service: its clock starts at 0.
+    fun `ratio - the gap owed survives a restart, in real time`() {
+        val owed = played(ratio(), 20 * minute).owed!!
+        assertEquals(PodcastSchedule.Wait.Music(29 * minute, 30 * minute, 31 * minute), owed)
         val restarted = ratio()
-        restarted.restore(saved, 0)
-        restarted.retune(0, podcastPlaying = false)
-        assertFalse(restarted.startMidSong(6 * minute - 1, null))
-        assertTrue(restarted.startMidSong(6 * minute, null))
+        restarted.restore(owed)
+        restarted.retune(25 * minute, podcastPlaying = false)
+        assertFalse(restarted.startMidSong(30 * minute - 1, null))
+        assertTrue(restarted.startMidSong(30 * minute, null))
     }
 
     @Test
-    fun `nothing is saved without a music gap or while an episode plays`() {
-        assertNull(PodcastSchedule().saved(0))
-        assertNull(played(PodcastSchedule(), 45 * minute).saved(0))
+    fun `ratio - the streak is podcast time played, not time passed`() {
+        // Paused 40 min during a 20 min episode: the gap is still 10 min, from the end.
+        val schedule = ratio()
+        schedule.episodeStarted(0)
+        schedule.episodeEnded(20 * minute, playedMs = 20 * minute, nowMs = 60 * minute)
+        assertEquals(20 * minute, schedule.streakMs)
+        assertEquals(PodcastSchedule.Wait.Music(69 * minute, 70 * minute, 71 * minute), schedule.wait)
+    }
+
+    @Test
+    fun `nothing is owed without a music gap or while an episode plays`() {
+        assertNull(PodcastSchedule().owed)
+        assertNull(played(PodcastSchedule(), 45 * minute).owed)
         val playing = ratio()
         playing.episodeStarted(0)
-        assertNull(playing.saved(0))
+        assertNull(playing.owed)
     }
 
     @Test
@@ -238,14 +246,14 @@ class PodcastScheduleTest {
         for (n in 1..3) {
             schedule.episodeStarted(now)
             now += 60 * second
-            schedule.episodeEnded(60 * second, now)
+            schedule.episodeEnded(60 * second, 60 * second, now)
             assertEquals(n * 60 * second, schedule.streakMs)
             assertTrue(schedule.startMidSong(now, songEndsAtMs = now + 2 * minute))
             assertTrue(schedule.songBoundary(now))
         }
         schedule.episodeStarted(now)
         now += 60 * second
-        schedule.episodeEnded(60 * second, now)
+        schedule.episodeEnded(60 * second, 60 * second, now)
         assertEquals(240 * second, schedule.streakMs)
         assertFalse(schedule.startMidSong(now, null))
         assertTrue(schedule.startMidSong(now + 12 * second, null))
@@ -255,7 +263,7 @@ class PodcastScheduleTest {
     fun `ratio - music in between starts a new streak`() {
         val schedule = played(ratio(), 20 * minute)
         schedule.episodeStarted(30 * minute)
-        schedule.episodeEnded(4 * minute, 34 * minute)
+        schedule.episodeEnded(4 * minute, 4 * minute, 34 * minute)
         assertEquals(4 * minute, schedule.streakMs)
     }
 
@@ -264,7 +272,7 @@ class PodcastScheduleTest {
         val schedule = played(ratio(ratio = 0.1), contentMs = 60 * second)
         // A music podcast was next: it waited for the song to end, 2 min later.
         schedule.episodeStarted(3 * minute)
-        schedule.episodeEnded(60 * second, 4 * minute)
+        schedule.episodeEnded(60 * second, 60 * second, 4 * minute)
         assertEquals(60 * second, schedule.streakMs)
     }
 
