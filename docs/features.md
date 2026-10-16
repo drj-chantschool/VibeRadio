@@ -17,6 +17,7 @@ Principle: you still have control, but you shouldn't need it, and the app doesn'
 
 - Under each podcast: a checkbox per channel selecting which channels the podcast can play on (more control than songs, since podcasts are curated, long-form and limited)
 - Under each podcast: a "Pause music" slider toggle. On means the music pauses while this podcast's episodes play. Podcasts with it on are called "music podcasts", though a user may turn it on for any reason. A music podcast can be assigned to any channel, including music channels
+- Per-podcast priority, an integer (default 0, −99 to 99), set on the podcast page with a stepper. Episodes are queued by their show's priority first, lowest first, then by the usual order (an episode already started first, then oldest first). Shows on the same priority interleave by date. It orders the one app-wide queue, so it also decides what's downloaded
 - Per-podcast playback speed, set on the podcast page alongside channel assignment. Defaults to 1x, remembered per podcast, applies to every episode of that podcast on every channel. Pitch is preserved. Affects only the podcast pipeline; song playback speed is never changed
 - Detect if a podcast episode has its own music track or is itself music (not just intro/outro). A podcast detected as itself music defaults to "Pause music" on so the music stream doesn't stomp on it. If the podcast has background music, the user decides per podcast whether to turn on "Pause music" or suppress the podcast background music
 - One podcast queue for the whole app: an episode played on one channel won't play again on another channel the podcast is also assigned to
@@ -84,6 +85,6 @@ Principle: you still have control, but you shouldn't need it, and the app doesn'
   - channels.csv: current placement, one row per (channel ID, hash)
   - library.csv: every song on a channel: hash (empty until it has played once), title, artist, album, genre, duration, content kind, folder, URI
   - levels.csv: measured loudness and peak per song and downloaded episode, with the gain at the current target
-  - podcasts.json: the podcast library as the app stores it (shows, channel IDs, Pause music, speed, played, resume positions)
+  - podcasts.json: the podcast library as the app stores it (shows, channel IDs, Pause music, speed, priority, played, resume positions)
 - Personal data (titles, artists) is included in Phase A, since the folder is the user's own. Phase B (more testers) sends the same bundle to a backend instead, with personal fields hashed or stripped by default
 - Logs from the Similarity plan's Phase 0 (Wrong channel events, play log, tune log) join the bundle as new CSVs when they exist

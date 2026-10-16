@@ -234,6 +234,7 @@ class MainActivity : ComponentActivity() {
             onTogglePlayed = viewModel::togglePlayed,
             onMarkOlderPlayed = viewModel::markOlderPlayed,
             onSetSpeed = viewModel::setSpeed,
+            onSetPriority = viewModel::setPriority,
             onRemove = viewModel::remove,
         )
     }

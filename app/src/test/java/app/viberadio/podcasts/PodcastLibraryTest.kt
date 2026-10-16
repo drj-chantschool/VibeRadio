@@ -53,6 +53,26 @@ class PodcastLibraryTest {
     }
 
     @Test
+    fun `a lower priority show plays all its episodes first`() {
+        val lib = library.withPriority(showB, -1)
+        assertEquals(listOf("B 4", "B 5", "A 1", "A 2", "A 3"), lib.queue(PodcastChannels.PODCASTS_ID).map { it.title })
+        assertEquals(listOf("B 4", "B 5"), lib.upNext(2).map { it.title })
+    }
+
+    @Test
+    fun `priority comes before a started episode`() {
+        val lib = library.withPriority(showA, 1).withPosition(id(showA, 3), 60_000)
+        assertEquals(listOf("B 4", "B 5", "A 3", "A 1", "A 2"), lib.queue(PodcastChannels.PODCASTS_ID).map { it.title })
+    }
+
+    @Test
+    fun `priority is clamped to its range`() {
+        assertEquals(PodcastPriority.MAX, library.withPriority(showA, 1_000).podcast(showA)!!.priority)
+        assertEquals(PodcastPriority.MIN, library.withPriority(showA, -1_000).podcast(showA)!!.priority)
+        assertEquals(PodcastPriority.DEFAULT, library.podcast(showB)!!.priority)
+    }
+
+    @Test
     fun `finishing an episode clears its position`() {
         val lib = library.withPosition(id(showB, 5), 60_000).withPlayed(id(showB, 5), true)
         assertTrue(lib.positions.isEmpty())

@@ -50,6 +50,11 @@
     <string name="podcasts_speed">Speed</string>
     <string name="podcasts_speed_slower">Slower</string>
     <string name="podcasts_speed_faster">Faster</string>
+    <string name="podcasts_priority">Priority</string>
+    <string name="podcasts_priority_about">Lower plays first. Shows on the same priority play oldest first.</string>
+    <string name="podcasts_priority_lower">Lower priority number</string>
+    <string name="podcasts_priority_higher">Higher priority number</string>
+    <string name="podcasts_priority_summary">Priority %1$d</string>
     <string name="podcasts_mark_hint">Tap an episode to mark it played. Long-press to mark it and everything older. Played episodes are never downloaded.</string>
     <string name="podcasts_remove_show">Remove show</string>
     <string name="podcasts_remove_title">Remove %1$s?</string>
@@ -136,7 +141,7 @@
     <string name="developer_mode_already_on">Developer mode is already on.</string>
     <string name="settings_podcasts">Podcasts</string>
     <string name="settings_podcasts_summary">How podcasts play on the channels</string>
-    <string name="settings_podcasts_empty">Nothing to set here yet. Each show’s channels, speed and Pause music are on the podcast page.</string>
+    <string name="settings_podcasts_empty">Nothing to set here yet. Each show’s channels, speed, priority and Pause music are on the podcast page.</string>
     <string name="settings_podcasts_gap">Gap between episodes (developer mode)</string>
     <string name="settings_podcasts_gap_hint">How long the music runs between podcast episodes on a music channel. Pick a rule, then set its figures; each rule keeps its own. Music podcasts (Pause music on) always wait for the song to end.</string>
     <string name="settings_podcasts_params">%1$s: figures</string>

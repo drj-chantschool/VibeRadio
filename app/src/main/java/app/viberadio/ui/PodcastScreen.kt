@@ -49,6 +49,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.annotation.StringRes
 import androidx.compose.ui.unit.dp
 import app.viberadio.R
+import app.viberadio.podcasts.PodcastPriority
 import app.viberadio.podcasts.PodcastSpeeds
 import app.viberadio.ui.theme.VibeRadioTheme
 import java.time.Instant
@@ -72,6 +73,7 @@ fun PodcastScreen(
     onTogglePlayed: (EpisodeUi) -> Unit,
     onMarkOlderPlayed: (EpisodeUi) -> Unit,
     onSetSpeed: (feedUrl: String, speed: Float) -> Unit,
+    onSetPriority: (feedUrl: String, priority: Int) -> Unit,
     onRemove: (feedUrl: String) -> Unit,
 ) {
     var expanded by rememberSaveable(stateSaver = ExpandedSaver) { mutableStateOf(setOf<String>()) }
@@ -120,6 +122,9 @@ fun PodcastScreen(
                         }
                         item(key = "speed:" + show.feedUrl) {
                             SpeedRow(show.speed) { onSetSpeed(show.feedUrl, it) }
+                        }
+                        item(key = "priority:" + show.feedUrl) {
+                            PriorityRow(show.priority) { onSetPriority(show.feedUrl, it) }
                         }
                         item(key = "hint:" + show.feedUrl) { Faint(stringResource(R.string.podcasts_mark_hint)) }
                         items(show.episodes, key = { "ep:" + it.id }) { episode ->
@@ -252,6 +257,7 @@ private fun ShowRow(show: ShowUi, open: Boolean, onToggleOpen: () -> Unit) {
                 listOfNotNull(
                     stringResource(R.string.podcasts_unplayed, show.unplayed),
                     formatSpeed(show.speed).takeIf { show.speed != PodcastSpeeds.DEFAULT },
+                    stringResource(R.string.podcasts_priority_summary, show.priority).takeIf { show.priority != PodcastPriority.DEFAULT },
                     stringResource(R.string.podcasts_pause_music).takeIf { show.pauseMusic },
                 ).joinToString(" · "),
                 style = MaterialTheme.typography.bodyMedium,
@@ -366,6 +372,47 @@ private fun SpeedRow(speed: Float, onSetSpeed: (Float) -> Unit) {
     }
 }
 
+/**
+ * Per-show queue priority: lower plays first, before the usual started-then-oldest order.
+ * A stepper like speed, so it stays a set-once choice.
+ */
+@Composable
+private fun PriorityRow(priority: Int, onSetPriority: (Int) -> Unit) {
+    val lower = stringResource(R.string.podcasts_priority_lower)
+    val higher = stringResource(R.string.podcasts_priority_higher)
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Column(Modifier.weight(1f).padding(end = 16.dp)) {
+            Text(
+                stringResource(R.string.podcasts_priority),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            Text(
+                stringResource(R.string.podcasts_priority_about),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.outline,
+            )
+        }
+        TextButton(
+            onClick = { onSetPriority(priority - 1) },
+            enabled = priority > PodcastPriority.MIN,
+            modifier = Modifier.semantics { contentDescription = lower },
+        ) { Text("\u2212") }
+        Text(
+            priority.toString(),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.width(48.dp),
+        )
+        TextButton(
+            onClick = { onSetPriority(priority + 1) },
+            enabled = priority < PodcastPriority.MAX,
+            modifier = Modifier.semantics { contentDescription = higher },
+        ) { Text("+") }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun EpisodeRow(episode: EpisodeUi, onTogglePlayed: (EpisodeUi) -> Unit, onMarkOlderPlayed: (EpisodeUi) -> Unit) {
@@ -440,19 +487,19 @@ private val previewState = PodcastUiState(
     loaded = true,
     upNext = previewEpisodes.take(2),
     shows = listOf(
-        ShowUi("a", "Slow Radio", previewChannels("breeze", "podcasts"), pauseMusic = false, unplayed = 2, speed = 1.0f, episodes = previewEpisodes),
-        ShowUi("b", "Field Notes", previewChannels(), pauseMusic = true, unplayed = 14, speed = 1.5f, episodes = emptyList()),
+        ShowUi("a", "Slow Radio", previewChannels("breeze", "podcasts"), pauseMusic = false, unplayed = 2, speed = 1.0f, priority = 0, episodes = previewEpisodes),
+        ShowUi("b", "Field Notes", previewChannels(), pauseMusic = true, unplayed = 14, speed = 1.5f, priority = 1, episodes = emptyList()),
     ),
 )
 
 @Preview(name = "Light", showBackground = true)
 @Composable
 private fun PodcastScreenLightPreview() {
-    VibeRadioTheme(darkTheme = false) { PodcastScreen(previewState, {}, {}, { _, _, _ -> }, { _, _ -> }, {}, {}, { _, _ -> }, {}) }
+    VibeRadioTheme(darkTheme = false) { PodcastScreen(previewState, {}, {}, { _, _, _ -> }, { _, _ -> }, {}, {}, { _, _ -> }, { _, _ -> }, {}) }
 }
 
 @Preview(name = "Dark", showBackground = true)
 @Composable
 private fun PodcastScreenDarkPreview() {
-    VibeRadioTheme(darkTheme = true) { PodcastScreen(previewState, {}, {}, { _, _, _ -> }, { _, _ -> }, {}, {}, { _, _ -> }, {}) }
+    VibeRadioTheme(darkTheme = true) { PodcastScreen(previewState, {}, {}, { _, _, _ -> }, { _, _ -> }, {}, {}, { _, _ -> }, { _, _ -> }, {}) }
 }

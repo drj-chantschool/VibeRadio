@@ -7,8 +7,10 @@ package app.viberadio.podcasts
  *
  * Queue policy (#19): one queue for the whole app. A channel plays the unplayed episodes of
  * the shows assigned to it, an episode already started first (so tuning away and back
- * resumes it), then oldest first, so a back catalogue plays in order. Marking older
- * episodes played is how the user skips a back catalogue they don't want.
+ * resumes it), then oldest first, so a back catalogue plays in order. Each show's priority
+ * comes before all of that: a show on a lower priority plays all its unplayed episodes before
+ * a show on a higher one. Marking older episodes played is how the user skips a back
+ * catalogue they don't want.
  */
 data class PodcastLibrary(
     val podcasts: List<Podcast> = emptyList(),
@@ -45,10 +47,14 @@ data class PodcastLibrary(
         return ordered(episodes.filter { it.feedUrl in shows && it.id !in played }).take(limit)
     }
 
-    private fun ordered(unplayed: List<Episode>): List<Episode> =
-        unplayed.sortedWith(
-            compareByDescending<Episode> { (positions[it.id] ?: 0L) > 0L }.thenBy { it.publishedMs },
+    private fun ordered(unplayed: List<Episode>): List<Episode> {
+        val priorities = podcasts.associate { it.feedUrl to it.priority }
+        return unplayed.sortedWith(
+            compareBy<Episode> { priorities[it.feedUrl] ?: PodcastPriority.DEFAULT }
+                .thenByDescending { (positions[it.id] ?: 0L) > 0L }
+                .thenBy { it.publishedMs },
         )
+    }
 
     /**
      * Adds a new show from [feed], or merges a refresh into an existing one. Existing episodes
@@ -100,6 +106,10 @@ data class PodcastLibrary(
 
     fun withSpeed(feedUrl: String, speed: Float): PodcastLibrary = copy(
         podcasts = podcasts.map { if (it.feedUrl != feedUrl) it else it.copy(speed = PodcastSpeeds.snap(speed)) },
+    )
+
+    fun withPriority(feedUrl: String, priority: Int): PodcastLibrary = copy(
+        podcasts = podcasts.map { if (it.feedUrl != feedUrl) it else it.copy(priority = PodcastPriority.clamp(priority)) },
     )
 
     fun withPauseMusic(feedUrl: String, pause: Boolean): PodcastLibrary = copy(
