@@ -60,9 +60,9 @@ sealed interface PodcastGapRule {
 
     /**
      * The most music this rule ever puts between episodes, or null if it only counts track
-     * boundaries. A fresh wait (tuned in part-way through a song, or after an episode failed)
-     * starts the next episode part-way through a song once this much music has played without a
-     * boundary, so one very long track can't hold podcasts off for its whole length.
+     * boundaries. A rule with music gaps also starts an episode part-way through a song when
+     * tuning in with no gap owed, and retries a failed episode part-way through a song once
+     * this much music has played without a boundary.
      */
     val longestGapMs: Long? get() = null
 

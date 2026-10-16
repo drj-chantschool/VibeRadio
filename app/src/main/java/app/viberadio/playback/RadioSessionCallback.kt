@@ -82,6 +82,8 @@ class RadioSessionCallback(
     private val gapRule: () -> PodcastGapRule = { PodcastGapRule.DEFAULT },
     /** Podcast scheduling decisions, for diagnostics ([PodcastEventLog]). */
     private val podcastLog: (PodcastEvent) -> Unit = {},
+    /** Keeps a music gap still owed across restarts of the service. */
+    private val waitStore: PodcastWaitStore? = null,
     private val clock: () -> Long = System::currentTimeMillis,
 ) : MediaSession.Callback, Player.Listener {
 
@@ -123,6 +125,7 @@ class RadioSessionCallback(
         override fun run() {
             savePosition()
             overlay?.savePosition()
+            saveWait()
             listening?.checkpoint()
             handler.postDelayed(this, POSITION_SAVE_INTERVAL_MS)
         }
@@ -182,6 +185,10 @@ class RadioSessionCallback(
             )
         }
         log(PodcastEvent.Kind.SERVICE_START, detail = "rule=${gapRule().id} overlay=${overlay != null}")
+        waitStore?.read()?.let {
+            schedule.restore(it, onAir.now())
+            logWait("restored")
+        }
         scope.launch {
             podcasts.library.collect {
                 syncPodcastQueue(it)
@@ -197,6 +204,7 @@ class RadioSessionCallback(
     fun detach() {
         log(PodcastEvent.Kind.SERVICE_STOP, currentEpisodeId ?: overlay?.episodeId)
         savePosition()
+        saveWait()
         overlay?.stop()
         overlay?.release()
         overlay = null
@@ -275,12 +283,13 @@ class RadioSessionCallback(
      */
     private fun tune(channelId: String): Queue? {
         val podcastPlaying = overlay?.isActive == true || currentEpisodeId != null
-        val queue = tuneIn(channelId, podcastPlaying) ?: return null
+        val now = onAir.now()
+        val queue = tuneIn(channelId, podcastPlaying, podcastDue = schedule.dueOnRetune(now, podcastPlaying)) ?: return null
         // Still on the old item here, so this keeps the place in an episode being tuned away from.
         savePosition()
         overlay?.episodeId?.let { log(PodcastEvent.Kind.STOP, it, "mode=overlay cause=tune") }
         overlay?.stop()
-        schedule.reset(onAir.now())
+        schedule.retune(now, podcastPlaying)
         tuneBoundary = queue.boundary
         currentChannelId = queue.channelId
         onChannelTuned(queue.channelId)
@@ -367,7 +376,8 @@ class RadioSessionCallback(
                 if (hasShows(channelId)) log(PodcastEvent.Kind.BOUNDARY, detail = "due=$due ${schedule.describe(now)}")
                 if (due) startOverlay(channelId, trigger = "boundary")
             }
-            boundary -> startOverlay(channelId, trigger = "tune")
+            // A gap still owed from before the tune is waited out.
+            boundary -> if (schedule.songBoundary(now)) startOverlay(channelId, trigger = "tune")
         }
     }
 
@@ -468,10 +478,15 @@ class RadioSessionCallback(
         podcastLog(PodcastEvent(clock(), onAir.now(), currentChannelId, kind.id, episodeId, detail))
     }
 
-    /** The schedule's new wait, after [cause]. */
+    /** The schedule's new wait, after [cause]. Also saved, so a restart keeps a gap still owed. */
     private fun logWait(cause: String) {
         nothingStartedReason = null
         log(PodcastEvent.Kind.WAIT, detail = "cause=$cause rule=${gapRule().id} ${schedule.describe(onAir.now())}")
+        saveWait()
+    }
+
+    private fun saveWait() {
+        waitStore?.write(schedule.saved(onAir.now()))
     }
 
     /** The overlay plays exactly when this player would be heard (not paused, not lost focus). */
@@ -498,6 +513,7 @@ class RadioSessionCallback(
         } else {
             onAir.stop()
             savePosition()
+            saveWait()
         }
     }
 
@@ -521,7 +537,7 @@ class RadioSessionCallback(
         var boundary = next.boundary
         if (next.channelId != currentChannelId) {
             overlay?.stop()
-            schedule.reset(onAir.now())
+            schedule.retune(onAir.now(), podcastPlaying = false)
             currentChannelId = next.channelId
             logWait("fallback")
         } else if (endedEpisode != null && songChannel != null) {
@@ -542,20 +558,20 @@ class RadioSessionCallback(
 
     /**
      * The queue for tuning in to [channelId]: song channels join their last song if it's still on
-     * air. Otherwise it's a fresh start, a track boundary: a music podcast due on the channel
-     * plays first, by itself.
+     * air. Otherwise it starts at a track boundary: a music podcast due on the channel
+     * ([podcastDue]: no music gap still owed) plays first, by itself.
      *
      * With [podcastPlaying] (an episode was playing when the knob moved) the podcast carries on
      * straight away instead of waiting for the joined song to end: a music podcast due on the
      * channel plays first in place of the join, and any other show starts over the joined song.
      */
-    private fun tuneIn(channelId: String, podcastPlaying: Boolean = false): Queue? {
+    private fun tuneIn(channelId: String, podcastPlaying: Boolean, podcastDue: Boolean): Queue? {
         repository.channel(channelId)?.let { channel ->
             val planned = planner.upcoming(channel, 1 + LOOKAHEAD)
             val tuneIn = liveRadio.tuneIn(channel, planned)
             val library = podcasts.library.value
             val solo = library.queue(channel.id).firstOrNull()
-                ?.takeIf { library.pausesMusic(it.id) && overlay != null }
+                ?.takeIf { podcastDue && library.pausesMusic(it.id) && overlay != null }
             if (tuneIn.resumeAtMs != null && !(podcastPlaying && solo != null)) {
                 val songs = tuneIn.tracks.map { songItem(channel, it) }
                 return Queue(channel.id, songs, startPositionMs = tuneIn.resumeAtMs, joined = true, boundary = podcastPlaying)

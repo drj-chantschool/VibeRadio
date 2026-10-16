@@ -2,6 +2,7 @@ package app.viberadio.playback
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -77,13 +78,27 @@ class PodcastScheduleTest {
     }
 
     @Test
-    fun `reset clears the wait and the active episode`() {
+    fun `tracks rule - a tune starts fresh at the next boundary`() {
         val schedule = played(PodcastSchedule(), 45 * minute)
-        schedule.reset(0)
+        schedule.retune(0, podcastPlaying = false)
         assertTrue(schedule.dueAtBoundary(null))
+        assertTrue(schedule.dueOnRetune(0, podcastPlaying = false))
+        assertFalse(schedule.startMidSong(3 * 60 * minute, songEndsAtMs = 4 * 60 * minute))
+        assertTrue(schedule.songBoundary(4 * 60 * minute))
+    }
+
+    @Test
+    fun `a tune while an episode plays carries it on straight away`() {
+        val schedule = PodcastSchedule { PodcastGapRule.MusicRatio() }
         schedule.episodeStarted(0)
-        schedule.reset(0)
-        assertTrue(schedule.songBoundary(0))
+        schedule.retune(10 * minute, podcastPlaying = true)
+        assertFalse(schedule.episodeActive)
+        assertTrue(schedule.dueOnRetune(10 * minute, podcastPlaying = true))
+        assertTrue(schedule.songBoundary(10 * minute))
+        // Its ten minutes so far stay in the streak.
+        schedule.episodeStarted(10 * minute + 500)
+        schedule.episodeEnded(0, 20 * minute)
+        assertEquals(20 * minute - 500, schedule.streakMs)
     }
 
     @Test
@@ -96,32 +111,54 @@ class PodcastScheduleTest {
     }
 
     @Test
-    fun `tracks rule - fresh waits only for a boundary, however long the song`() {
-        val schedule = PodcastSchedule { PodcastGapRule.TracksByLength() }
-        schedule.reset(0)
-        assertFalse(schedule.startMidSong(3 * 60 * minute, songEndsAtMs = 4 * 60 * minute))
-        assertTrue(schedule.songBoundary(4 * 60 * minute))
+    fun `ratio - a tune with nothing owed starts straight away, even mid-song`() {
+        val schedule = PodcastSchedule { PodcastGapRule.MusicRatio() }
+        schedule.retune(5 * minute, podcastPlaying = false)
+        assertTrue(schedule.dueOnRetune(5 * minute, podcastPlaying = false))
+        assertTrue(schedule.startMidSong(5 * minute, songEndsAtMs = 95 * minute))
+        assertTrue(schedule.songBoundary(5 * minute))
     }
 
     @Test
-    fun `ratio - fresh starts part-way through a long song after the max gap`() {
-        // Tuned in to a two-hour track joined part-way: no boundary for an hour and a half.
-        val schedule = PodcastSchedule { PodcastGapRule.MusicRatio(maxMinutes = 10.0) }
-        val tuned = 5 * minute
-        schedule.reset(tuned)
-        val songEnds = tuned + 90 * minute
-        assertTrue(schedule.dueAtBoundary(tuned + 1 * minute))
-        assertFalse(schedule.startMidSong(tuned + 10 * minute - 1, songEnds))
-        assertTrue(schedule.startMidSong(tuned + 10 * minute, songEnds))
+    fun `ratio - a gap still owed carries across a tune`() {
+        // 20 min of podcasts at 0.5: 10 min of music owed, of which 3 have played.
+        val schedule = played(ratio(), 20 * minute)
+        schedule.retune(23 * minute, podcastPlaying = false)
+        assertFalse(schedule.dueOnRetune(23 * minute, podcastPlaying = false))
+        assertFalse(schedule.songBoundary(23 * minute))
+        assertFalse(schedule.startMidSong(29 * minute, null))
+        assertTrue(schedule.startMidSong(30 * minute, null))
+        assertEquals(20 * minute, schedule.streakMs)
     }
 
     @Test
-    fun `ratio - fresh still takes the next boundary when one comes first`() {
-        val schedule = PodcastSchedule { PodcastGapRule.MusicRatio(maxMinutes = 10.0) }
-        schedule.reset(0)
-        assertTrue(schedule.songBoundary(2 * minute))
-        // A song ending by the max gap is waited for, not cut.
-        assertFalse(schedule.startMidSong(10 * minute, songEndsAtMs = 10 * minute))
+    fun `ratio - a gap already over by the tune starts straight away`() {
+        val schedule = played(ratio(), 20 * minute)
+        schedule.retune(45 * minute, podcastPlaying = false)
+        assertTrue(schedule.dueOnRetune(45 * minute, podcastPlaying = false))
+        assertTrue(schedule.startMidSong(45 * minute, null))
+    }
+
+    @Test
+    fun `ratio - the gap owed survives a restart`() {
+        val schedule = played(ratio(), 20 * minute)
+        val saved = schedule.saved(24 * minute)!!
+        assertEquals(PodcastSchedule.Saved(5 * minute, 6 * minute, 7 * minute), saved)
+        // A new service: its clock starts at 0.
+        val restarted = ratio()
+        restarted.restore(saved, 0)
+        restarted.retune(0, podcastPlaying = false)
+        assertFalse(restarted.startMidSong(6 * minute - 1, null))
+        assertTrue(restarted.startMidSong(6 * minute, null))
+    }
+
+    @Test
+    fun `nothing is saved without a music gap or while an episode plays`() {
+        assertNull(PodcastSchedule().saved(0))
+        assertNull(played(PodcastSchedule(), 45 * minute).saved(0))
+        val playing = ratio()
+        playing.episodeStarted(0)
+        assertNull(playing.saved(0))
     }
 
     @Test
@@ -129,8 +166,11 @@ class PodcastScheduleTest {
         val schedule = PodcastSchedule { PodcastGapRule.MusicRatio(maxMinutes = 10.0) }
         schedule.episodeStarted(0)
         schedule.episodeFailed(1 * minute)
+        assertTrue(schedule.songBoundary(2 * minute))
         assertFalse(schedule.startMidSong(10 * minute, null))
         assertTrue(schedule.startMidSong(11 * minute, null))
+        // A song ending by the max gap is waited for, not cut.
+        assertFalse(schedule.startMidSong(11 * minute, songEndsAtMs = 11 * minute))
     }
 
     @Test
@@ -140,8 +180,7 @@ class PodcastScheduleTest {
             "wait=music open_in_ms=480000 nominal_in_ms=540000 close_in_ms=600000 episode_active=false streak_ms=1200000",
             schedule.describe(21 * minute),
         )
-        schedule.reset(0)
-        assertEquals("wait=music open_in_ms=0 nominal_in_ms=600000 close_in_ms=600000 episode_active=false streak_ms=0", schedule.describe(0))
+        assertEquals("wait=music open_in_ms=0 nominal_in_ms=0 close_in_ms=0 episode_active=false streak_ms=0", ratio().apply { retune(0, false) }.describe(0))
         assertEquals("wait=boundary episode_active=false streak_ms=0", PodcastSchedule().describe(0))
         assertEquals("wait=tracks left=3 episode_active=false streak_ms=2700000", played(PodcastSchedule(), 45 * minute).describe(0))
     }
