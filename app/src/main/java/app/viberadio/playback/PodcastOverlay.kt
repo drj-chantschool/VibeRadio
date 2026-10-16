@@ -28,7 +28,7 @@ class PodcastOverlay(
     /** The episode played to the end, after [durationMs] of content (0 if unknown). */
     private val onEnded: (episodeId: String, durationMs: Long) -> Unit,
     /** The episode couldn't play; it isn't marked played. */
-    private val onFailed: (episodeId: String) -> Unit,
+    private val onFailed: (episodeId: String, error: PlaybackException) -> Unit,
 ) : Player.Listener {
 
     /** The episode on the overlay player, or null when it's idle. */
@@ -96,7 +96,7 @@ class PodcastOverlay(
     override fun onPlayerError(error: PlaybackException) {
         val id = episodeId ?: return
         clear()
-        onFailed(id)
+        onFailed(id, error)
     }
 
     private fun clear() {

@@ -19,6 +19,8 @@ import app.viberadio.library.MediaStoreLibraryScanner
 import app.viberadio.library.PrefsLibraryFolderStore
 import app.viberadio.playback.LastChannelStore
 import app.viberadio.playback.LiveRadio
+import app.viberadio.playback.FilePodcastEventStore
+import app.viberadio.playback.PodcastEventLog
 import app.viberadio.playback.PodcastGapSettingsRepository
 import app.viberadio.playback.PrefsLastChannelStore
 import app.viberadio.playback.PrefsPodcastGapStore
@@ -105,6 +107,13 @@ class AppContainer(context: Context) {
         store = JsonPodcastStore(podcastsFile),
         fetcher = HttpFeedFetcher(),
         downloader = episodeDownloader,
+        scope = appScope,
+        ioDispatcher = Dispatchers.IO,
+    )
+
+    /** What the podcast scheduling on song channels decided, for diagnostics. */
+    val podcastLog = PodcastEventLog(
+        store = FilePodcastEventStore(File(context.filesDir, "podcast_events.tsv")),
         scope = appScope,
         ioDispatcher = Dispatchers.IO,
     )
@@ -293,6 +302,9 @@ class AppContainer(context: Context) {
             channelRepository.state.first { it is ChannelRepository.State.Ready || it == ChannelRepository.State.NotScanned }
         } as? ChannelRepository.State.Ready
         val names = channelNames.names.value
+        // A fresh process reads the podcast library from disk first.
+        withTimeoutOrNull(SCAN_WAIT_MS) { podcastRepository.loaded.first { it } }
+        val podcasts = podcastRepository.library.value
         val now = System.currentTimeMillis()
         return withContext(Dispatchers.IO) {
             val tracks = channels?.channels.orEmpty().flatMap { it.tracks }.distinctBy { it.uri }
@@ -320,6 +332,9 @@ class AppContainer(context: Context) {
                 airings = runCatching { feedbackDatabase.channelAirings.readAll() }.getOrDefault(emptyList()),
                 levels = runCatching { FileLevelStore(levelsFile).readAll() }.getOrDefault(emptyMap()),
                 podcastsJson = runCatching { AtomicFile(podcastsFile).readFully().decodeToString() }.getOrNull(),
+                podcasts = podcasts,
+                downloadedEpisodes = podcastRepository.downloaded.value,
+                podcastEvents = runCatching { podcastLog.readAll() }.getOrDefault(emptyList()),
             )
         }
     }

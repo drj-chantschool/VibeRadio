@@ -10,11 +10,13 @@ import app.viberadio.learning.FeatureVectors
 import app.viberadio.library.FolderExclusions
 import app.viberadio.library.Track
 import app.viberadio.playback.ChannelAiring
+import app.viberadio.playback.PodcastEvent
 import app.viberadio.playback.PodcastGapSettings
 import app.viberadio.playback.audio.AudioSettings
 import app.viberadio.playback.audio.SeparationSettings
 import app.viberadio.playback.audio.ToneBands
 import app.viberadio.playback.audio.TrackLevel
+import app.viberadio.podcasts.PodcastLibrary
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -54,6 +56,12 @@ data class DiagnosticsSnapshot(
     val levels: Map<String, TrackLevel>,
     /** The podcast library's own JSON file, copied as-is; null if there is none yet. */
     val podcastsJson: String?,
+    /** The podcast library as loaded, for the readable podcast tables. */
+    val podcasts: PodcastLibrary = PodcastLibrary(),
+    /** IDs of the episodes on the device. */
+    val downloadedEpisodes: Set<String> = emptySet(),
+    /** The podcast scheduling log ([PodcastEvent]), oldest first. */
+    val podcastEvents: List<PodcastEvent> = emptyList(),
 )
 
 /** One file in a bundle. */
@@ -83,6 +91,9 @@ object DiagnosticsBundle {
             BundleFile("channels.csv", MIME_CSV, channels(s.channels, s.trackHashes)),
             BundleFile("library.csv", MIME_CSV, library(library, s.trackHashes)),
             BundleFile("levels.csv", MIME_CSV, levels(s.levels, s.audio.targetLufs)),
+            BundleFile("podcast_shows.csv", MIME_CSV, podcastShows(s.podcasts, s.downloadedEpisodes)),
+            BundleFile("podcast_queues.csv", MIME_CSV, podcastQueues(s.podcasts, s.downloadedEpisodes)),
+            BundleFile("podcast_events.csv", MIME_CSV, podcastEvents(s.podcastEvents, s.podcasts, s.utcOffsetMinutes)),
         )
         s.podcastsJson?.let { files += BundleFile("podcasts.json", MIME_JSON, it) }
         return files
@@ -110,6 +121,11 @@ object DiagnosticsBundle {
                     "library_songs_hashed" to library.count { it.uri in s.trackHashes },
                     "channel_airings" to s.airings.size,
                     "levels" to s.levels.size,
+                    "podcast_shows" to s.podcasts.podcasts.size,
+                    "podcast_episodes" to s.podcasts.episodes.size,
+                    "podcast_episodes_played" to s.podcasts.played.size,
+                    "podcast_episodes_downloaded" to s.downloadedEpisodes.size,
+                    "podcast_events" to s.podcastEvents.size,
                 ),
                 "songs_per_channel" to s.channels.associate { it.id to it.tracks.size },
                 "feedback_range" to if (times.isEmpty()) {
@@ -200,6 +216,64 @@ object DiagnosticsBundle {
         },
     )
 
+    private fun podcastShows(library: PodcastLibrary, downloaded: Set<String>) = Csv.table(
+        listOf("feed_url", "title", "channels", "pause_music", "speed", "priority", "episodes", "unplayed", "downloaded", "last_refreshed_utc"),
+        library.podcasts.map { show ->
+            val episodes = library.episodes.filter { it.feedUrl == show.feedUrl }
+            listOf(
+                show.feedUrl,
+                show.title,
+                show.channels.sorted().joinToString(" "),
+                show.pauseMusic,
+                show.speed,
+                show.priority,
+                episodes.size,
+                episodes.count { !library.isPlayed(it.id) },
+                episodes.count { it.id in downloaded },
+                if (show.lastRefreshedMs > 0) iso(show.lastRefreshedMs) else null,
+            )
+        },
+    )
+
+    /** What each channel with a show on it plays next, as the app would queue it right now. */
+    private fun podcastQueues(library: PodcastLibrary, downloaded: Set<String>) = Csv.table(
+        listOf("channel_id", "position", "episode_id", "show", "title", "published_utc", "duration_ms", "resume_ms", "downloaded", "pause_music"),
+        library.channelIds.sorted().flatMap { channelId ->
+            library.queue(channelId).take(QUEUE_ROWS).mapIndexed { i, e ->
+                listOf(
+                    channelId,
+                    i,
+                    e.id,
+                    library.podcast(e.feedUrl)?.title,
+                    e.title,
+                    if (e.publishedMs > 0) iso(e.publishedMs) else null,
+                    e.durationMs,
+                    library.positions[e.id],
+                    e.id in downloaded,
+                    library.pausesMusic(e.id),
+                )
+            }
+        },
+    )
+
+    private fun podcastEvents(events: List<PodcastEvent>, library: PodcastLibrary, utcOffsetMinutes: Int) = Csv.table(
+        listOf("at_ms", "at_local", "on_air_ms", "channel_id", "event", "episode_id", "show", "episode_title", "detail"),
+        events.map { e ->
+            val episode = e.episodeId?.let(library::episode)
+            listOf(
+                e.atMs,
+                local(e.atMs, utcOffsetMinutes),
+                e.onAirMs,
+                e.channelId,
+                e.kind,
+                e.episodeId,
+                episode?.let { library.podcast(it.feedUrl)?.title },
+                episode?.title,
+                e.detail,
+            )
+        },
+    )
+
     private fun offset(minutes: Int): ZoneOffset = ZoneOffset.ofTotalSeconds(minutes.coerceIn(-18 * 60, 18 * 60) * 60)
 
     private fun local(ms: Long, utcOffsetMinutes: Int): String =
@@ -208,6 +282,9 @@ object DiagnosticsBundle {
     private fun iso(ms: Long): String = DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(ms))
 
     private val FOLDER_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd_HHmmss")
+
+    /** Episodes listed per channel in podcast_queues.csv. */
+    private const val QUEUE_ROWS = 10
 
     const val MIME_CSV = "text/csv"
     const val MIME_JSON = "application/json"
@@ -230,6 +307,9 @@ object DiagnosticsBundle {
         - library.csv: every song on a channel; track_hash is empty until the song has played once
         - levels.csv: measured loudness per song (`song:<hash>`) and downloaded episode, with the gain at the current target
         - podcasts.json: the podcast library as the app stores it (shows, channels, speed, Pause music, played, positions)
+        - podcast_shows.csv: per show, its channels, Pause music, speed, priority, and episode counts (all, unplayed, on the device)
+        - podcast_queues.csv: per channel with a show on it, the next 10 episodes as the app would queue them now
+        - podcast_events.csv: the podcast scheduling log on song channels, oldest first (newest 5,000 to 10,000 kept): tunes, the wait after each tune or episode (`detail`, times relative to the event), each song boundary and whether an episode was due, episode starts (`mode=overlay` over the music or `solo` for a music podcast), ends and failures, and why a due episode didn't start. `on_air_ms` is the clock the schedule runs on; it restarts with the service (`service_start`). `at_local` uses the export's UTC offset
     """.trimIndent() + "\n"
 }
 

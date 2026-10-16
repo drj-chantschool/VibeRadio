@@ -7,7 +7,9 @@ import kotlin.math.roundToLong
  * song boundaries and episode starts and ends, and asks whether an episode is due.
  *
  * - One episode at a time.
- * - Fresh (tuned in, or after an episode that failed to play): the next track boundary.
+ * - Fresh (tuned in, or after an episode that failed to play): the next track boundary. If the
+ *   rule has a longest gap ([PodcastGapRule.longestGapMs]), part-way through a song once that
+ *   much music has played with no boundary (a joined two-hour track doesn't hold podcasts off).
  * - After an episode ends, the music carries on for as long as [rule] says ([PodcastGapRule]):
  *   a number of track boundaries ([Gap.Tracks]), or a stretch of music ([Gap.Music]), after
  *   which an episode may start part-way through a song.
@@ -51,9 +53,9 @@ class PodcastSchedule(private val rule: () -> PodcastGapRule = { PodcastGapRule.
     /** When the last episode ended, if it asked for no gap (so the next one can join its streak). */
     private var noGapSince: Long? = null
 
-    /** Fresh state, e.g. on tuning to a channel. */
-    fun reset() {
-        wait = Wait.Boundary
+    /** Fresh state at [nowMs], e.g. on tuning to a channel. */
+    fun reset(nowMs: Long) {
+        wait = freshWait(nowMs)
         episodeActive = false
         streakMs = 0
         continuesStreak = false
@@ -122,12 +124,31 @@ class PodcastSchedule(private val rule: () -> PodcastGapRule = { PodcastGapRule.
         noGapSince = nowMs.takeIf { (wait as? Wait.Music)?.nominalAt == nowMs }
     }
 
-    /** The episode couldn't play. It's tried again at the next track boundary, not straight away. */
-    fun episodeFailed() {
+    /**
+     * The episode couldn't play, at [nowMs]. It's tried again as when fresh: at the next track
+     * boundary, not straight away.
+     */
+    fun episodeFailed(nowMs: Long) {
         episodeActive = false
-        wait = Wait.Boundary
+        wait = freshWait(nowMs)
         continuesStreak = false
         noGapSince = null
+    }
+
+    /** The next track boundary, or part-way through a song after the rule's longest gap. */
+    private fun freshWait(nowMs: Long): Wait {
+        val longest = rule().longestGapMs ?: return Wait.Boundary
+        return Wait.Music(openAt = nowMs, nominalAt = nowMs + longest, closeAt = nowMs + longest)
+    }
+
+    /** The state at [nowMs], for the podcast log: `key=value` pairs, times relative to now. */
+    fun describe(nowMs: Long): String {
+        val waiting = when (val w = wait) {
+            Wait.Boundary -> "wait=boundary"
+            is Wait.Tracks -> "wait=tracks left=${w.left}"
+            is Wait.Music -> "wait=music open_in_ms=${w.openAt - nowMs} nominal_in_ms=${w.nominalAt - nowMs} close_in_ms=${w.closeAt - nowMs}"
+        }
+        return "$waiting episode_active=$episodeActive streak_ms=$streakMs"
     }
 
     companion object {

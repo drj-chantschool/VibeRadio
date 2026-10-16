@@ -24,7 +24,7 @@ Principle: you still have control, but you shouldn't need it, and the app doesn'
 
 ## Podcast scheduling on a channel (applies to all podcasts)
 
-- Fresh on a channel (tuned in, or after an episode that failed to play), an episode only starts at a music track boundary: it waits until the current music track ends
+- Fresh on a channel (tuned in, or after an episode that failed to play), an episode only starts at a music track boundary: it waits until the current music track ends. Under the ratio rule the wait is capped at the max gap: if no boundary comes by then (a very long track, e.g. a two-hour mix joined part-way), the episode starts part-way through the song. Music podcasts still wait for the boundary
 - Changing channels while a podcast is playing never starts a gap or a wait: the podcast carries on straight away on the new channel (the next episode up for it, usually the same one, from where it was), even when the new channel joins a song part-way (live-radio resume). A music podcast due on the new channel plays in place of the joined song
 - Music podcast: when the current music track ends and the next episode up is from a music podcast, the music queue does not continue; the episode plays by itself. When the episode ends, the music queue resumes
 - Gap between episodes: after an episode ends, music continues for as long as the gap rule says. The rule is one of a list, each with its own parameters, chosen in Settings → Podcasts (that setting shows in developer mode only; the choice stays in force when developer mode is turned off). Default: tracks by episode length
@@ -87,5 +87,8 @@ Principle: you still have control, but you shouldn't need it, and the app doesn'
   - library.csv: every song on a channel: hash (empty until it has played once), title, artist, album, genre, duration, content kind, folder, URI
   - levels.csv: measured loudness and peak per song and downloaded episode, with the gain at the current target
   - podcasts.json: the podcast library as the app stores it (shows, channel IDs, Pause music, speed, priority, played, resume positions)
+  - podcast_shows.csv: per show, its channels, Pause music, speed, priority and episode counts (all, unplayed, on the device), so the podcast state reads without parsing podcasts.json (which can run to megabytes)
+  - podcast_queues.csv: per channel with a show on it, the next 10 episodes as the app would queue them at export (resume position, on the device or streamed, Pause music)
+  - podcast_events.csv: the podcast scheduling log on song channels (newest 5,000–10,000 events, kept across restarts in `podcast_events.tsv`): service start and stop, tunes, the wait after each tune, episode end or failure (with the rule and the back-to-back streak), each song boundary on a channel with shows and whether an episode was due, episode starts (over the music or solo, what triggered it, resume point, streamed or not), ends, failures with the player's error, a music podcast queued in place of the next song, and why a due episode didn't start (nothing queued, or a music podcast waiting for a boundary). Times are wall clock plus the on-air clock the schedule runs on
 - Personal data (titles, artists) is included in Phase A, since the folder is the user's own. Phase B (more testers) sends the same bundle to a backend instead, with personal fields hashed or stripped by default
 - Logs from the Similarity plan's Phase 0 (Wrong channel events, play log, tune log) join the bundle as new CSVs when they exist

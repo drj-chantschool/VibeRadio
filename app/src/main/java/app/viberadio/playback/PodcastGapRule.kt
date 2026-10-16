@@ -59,6 +59,14 @@ sealed interface PodcastGapRule {
     fun gapAfter(contentMs: Long, streakMs: Long): Gap
 
     /**
+     * The most music this rule ever puts between episodes, or null if it only counts track
+     * boundaries. A fresh wait (tuned in part-way through a song, or after an episode failed)
+     * starts the next episode part-way through a song once this much music has played without a
+     * boundary, so one very long track can't hold podcasts off for its whole length.
+     */
+    val longestGapMs: Long? get() = null
+
+    /**
      * The original rule: the next episode waits for the current track to end, plus
      * [longTracks] more full tracks after an episode over [longMinutes], [veryLongTracks] after
      * one over [veryLongMinutes].
@@ -155,6 +163,8 @@ sealed interface PodcastGapRule {
             if (musicMs < (floorSeconds * 1000).roundToLong()) return Gap.Music(0)
             return Gap.Music(musicMs, tolerancePercent / 100)
         }
+
+        override val longestGapMs: Long get() = (maxMinutes * 60_000).roundToLong()
 
         companion object {
             const val ID = "music_ratio"

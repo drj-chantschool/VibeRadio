@@ -45,6 +45,12 @@ class PodcastGapRuleTest {
     }
 
     @Test
+    fun `longest gap - the ratio rule's max, none for the tracks rule`() {
+        assertEquals(10 * minute, PodcastGapRule.MusicRatio(maxMinutes = 10.0).longestGapMs)
+        assertNull(PodcastGapRule.TracksByLength().longestGapMs)
+    }
+
+    @Test
     fun `music ratio - a max below the floor is refused`() {
         assertFalse(PodcastGapRule.MusicRatio(floorSeconds = 30.0, maxMinutes = 0.25).isValid)
         assertTrue(PodcastGapRule.MusicRatio(floorSeconds = 30.0, maxMinutes = 0.5).isValid)
