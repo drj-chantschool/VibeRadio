@@ -810,7 +810,8 @@ private fun ToneSettingsList(
             }
             item(key = "tone:" + stream.name + ":bands") {
                 GraphicEqSliders(
-                    curve = curve,
+                    bandsDb = curve.bandsDb,
+                    range = ToneCurve.RANGE,
                     onBand = { band, db -> onAudioChange { it.withTone(stream, it.tone(stream).with(band, db)) } },
                     onEdit = { band -> editing = stream.name + ":" + band },
                     modifier = Modifier.padding(vertical = 16.dp),
@@ -870,8 +871,8 @@ private fun FigureRow(label: String, value: String, isDefault: Boolean, onClick:
 /**
  * Settings → Audio → Separation EQ (developer mode only): which module pulls a podcast and the
  * music apart while both play, one radio row per module, then the chosen module's own
- * parameters, each tappable to change, and a way back to the defaults. Each module keeps its
- * parameters while another is chosen.
+ * parameters, each tappable to change (the graphic module's as sliders, like the tone EQ), and
+ * a way back to the defaults. Each module keeps its parameters while another is chosen.
  */
 @Composable
 private fun SeparationSettingsList(
@@ -920,7 +921,29 @@ private fun SeparationSettingsList(
             )
             Rule()
         }
-        items(active.params, key = { active.id + "." + it.key }) { param ->
+        if (active is SeparationEq.Graphic) {
+            // Per-stream offsets as sliders, like the tone EQ; a figure still opens the dialog.
+            val range = SeparationEq.Graphic.RANGE.let { it.start.toFloat()..it.endInclusive.toFloat() }
+            for (stream in AudioStream.entries) {
+                item(key = active.id + ":" + stream.name) {
+                    Text(
+                        stringResource(EqStrings.stream(stream)),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 8.dp),
+                    )
+                    Rule()
+                    GraphicEqSliders(
+                        bandsDb = active.offsets(stream).map { it.toFloat() },
+                        range = range,
+                        onBand = { band, db -> onParam(active.id, SeparationEq.Graphic.key(stream, band), db.toBigDecimal().toDouble()) },
+                        onEdit = { band -> editing = SeparationEq.Graphic.key(stream, band) },
+                        modifier = Modifier.padding(vertical = 16.dp),
+                    )
+                    Rule()
+                }
+            }
+        } else items(active.params, key = { active.id + "." + it.key }) { param ->
             FigureRow(
                 label = EqStrings.label(param.key),
                 value = EqStrings.format(param.unit, active[param.key]) + " " + stringResource(EqStrings.unit(param.unit)),
