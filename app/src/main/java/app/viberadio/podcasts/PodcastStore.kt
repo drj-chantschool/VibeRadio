@@ -52,6 +52,7 @@ class JsonPodcastStore(file: File) : PodcastStore {
                     put("lastRefreshedMs", p.lastRefreshedMs)
                     put("speed", p.speed.toDouble())
                     put("pauseMusic", p.pauseMusic)
+                    put("priority", p.priority)
                 })
             }
         })
@@ -82,6 +83,8 @@ class JsonPodcastStore(file: File) : PodcastStore {
                 speed = PodcastSpeeds.snap(p.optDouble("speed", PodcastSpeeds.DEFAULT.toDouble()).toFloat()),
                 // Absent in files written before "Pause music".
                 pauseMusic = p.optBoolean("pauseMusic", false),
+                // Absent in files written before per-show priority.
+                priority = PodcastPriority.clamp(p.optInt("priority", PodcastPriority.DEFAULT)),
             )
         }
         val episodes = json.getJSONArray("episodes").objects().map { e ->

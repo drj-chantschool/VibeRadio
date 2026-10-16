@@ -12,6 +12,7 @@ import app.viberadio.podcasts.FeedParseException
 import app.viberadio.podcasts.PodcastLibrary
 import app.viberadio.podcasts.PodcastRepository
 import app.viberadio.podcasts.PodcastRepository.SubscribeResult
+import app.viberadio.podcasts.PodcastPriority
 import app.viberadio.podcasts.PodcastSpeeds
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -39,6 +40,8 @@ data class ShowUi(
     val unplayed: Int,
     /** Playback speed for all of this show's episodes, one of [PodcastSpeeds.STEPS]. */
     val speed: Float,
+    /** Queue priority, lower plays first; within [PodcastPriority.MIN]..[PodcastPriority.MAX]. */
+    val priority: Int,
     /** Newest first. */
     val episodes: List<EpisodeUi>,
 )
@@ -65,7 +68,7 @@ data class AddFeed(
 
 /**
  * The podcast page (#20): add feeds, choose which channels each show plays on and whether it
- * pauses the music, set each show's playback speed, and mark episodes played (singly, or a whole back catalogue) before they
+ * pauses the music, set each show's playback speed and queue priority, and mark episodes played (singly, or a whole back catalogue) before they
  * are ever downloaded.
  */
 class PodcastViewModel(application: Application) : AndroidViewModel(application) {
@@ -90,6 +93,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                         pauseMusic = show.pauseMusic,
                         unplayed = episodes.count { !it.played },
                         speed = show.speed,
+                        priority = show.priority,
                         episodes = episodes,
                     )
                 },
@@ -124,6 +128,8 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     fun setPauseMusic(feedUrl: String, on: Boolean) = podcasts.setPauseMusic(feedUrl, on)
 
     fun setSpeed(feedUrl: String, speed: Float) = podcasts.setSpeed(feedUrl, speed)
+
+    fun setPriority(feedUrl: String, priority: Int) = podcasts.setPriority(feedUrl, priority)
 
     fun togglePlayed(episode: EpisodeUi) = podcasts.setPlayed(episode.id, !episode.played)
 

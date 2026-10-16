@@ -95,6 +95,10 @@ class PodcastRepository(
     fun setSpeed(feedUrl: String, speed: Float) =
         mutate(syncDownloads = false) { it.withSpeed(feedUrl, speed) }
 
+    /** Reorders the queue, so downloads follow the new up next. */
+    fun setPriority(feedUrl: String, priority: Int) =
+        mutate { it.withPriority(feedUrl, priority) }
+
     /** Doesn't change what's queued, so downloads are left alone. */
     fun setPauseMusic(feedUrl: String, pause: Boolean) =
         mutate(syncDownloads = false) { it.withPauseMusic(feedUrl, pause) }

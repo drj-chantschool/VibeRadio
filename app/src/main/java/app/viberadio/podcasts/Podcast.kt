@@ -28,6 +28,12 @@ data class Podcast(
      * Off: on a song channel, episodes play over the music.
      */
     val pauseMusic: Boolean = false,
+    /**
+     * Queue priority: lower plays first. Episodes are ordered by their show's priority, then by
+     * the usual rule (started first, then oldest). Shows on the same priority interleave by date.
+     * Always within [PodcastPriority.MIN]..[PodcastPriority.MAX].
+     */
+    val priority: Int = PodcastPriority.DEFAULT,
 )
 
 /** One episode from a feed. Played state and resume position live on [PodcastLibrary], not here. */
@@ -69,6 +75,15 @@ object PodcastSpeeds {
 
     /** The next step down, staying on the bottom step once there. */
     fun slower(speed: Float): Float = STEPS.lastOrNull { it < snap(speed) } ?: STEPS.first()
+}
+
+/** The range a show's [Podcast.priority] can be set to. Lower plays first. */
+object PodcastPriority {
+    const val DEFAULT = 0
+    const val MIN = -99
+    const val MAX = 99
+
+    fun clamp(priority: Int): Int = priority.coerceIn(MIN, MAX)
 }
 
 object EpisodeIds {
