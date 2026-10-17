@@ -6,6 +6,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -47,7 +48,9 @@ class PodcastRepository(
         }
         scope.launch(ioDispatcher) {
             for (request in downloadRequests) {
-                runCatching { downloader.sync(_library.value.upNext(keepDownloaded)) }
+                // Folder shows are already on the device, so they take none of the download slots.
+                val next = _library.value.upNext(Int.MAX_VALUE).asSequence().filterNot { LocalFeeds.isLocal(it.feedUrl) }
+                runCatching { downloader.sync(next.take(keepDownloaded).toList()) }
             }
         }
     }
@@ -76,7 +79,8 @@ class PodcastRepository(
     suspend fun refresh(maxAgeMs: Long = 0) {
         if (!refreshLock.tryLock()) return
         try {
-            val due = _library.value.podcasts.filter { clock() - it.lastRefreshedMs >= maxAgeMs }
+            // Folder shows follow the library scan instead (syncLocalFeeds).
+            val due = _library.value.podcasts.filter { !LocalFeeds.isLocal(it.feedUrl) && clock() - it.lastRefreshedMs >= maxAgeMs }
             for (podcast in due) {
                 val feed = runCatching { withContext(ioDispatcher) { fetcher.fetch(podcast.feedUrl) } }.getOrNull() ?: continue
                 mutate { if (it.podcast(podcast.feedUrl) == null) it else it.withFeed(podcast.feedUrl, feed, clock()) }
@@ -84,6 +88,15 @@ class PodcastRepository(
         } finally {
             refreshLock.unlock()
         }
+    }
+
+    /**
+     * Brings the folder shows in line with the latest library scan ([PodcastLibrary.withLocalFeeds]).
+     * Waits for the saved library first, so a scan finishing early can't replace it.
+     */
+    suspend fun syncLocalFeeds(feeds: Map<String, Feed>) {
+        loaded.first { it }
+        mutate { it.withLocalFeeds(feeds, clock()) }
     }
 
     fun unsubscribe(feedUrl: String) = mutate { it.withoutPodcast(feedUrl) }
@@ -111,7 +124,7 @@ class PodcastRepository(
     fun savePosition(episodeId: String, positionMs: Long) =
         mutate(syncDownloads = false) { it.withPosition(episodeId, positionMs) }
 
-    /** The local copy if it's on the device, otherwise the feed's URL (streamed). */
+    /** The local copy if it's on the device, otherwise the feed's URL (streamed; for a folder show, the file itself). */
     fun playableUri(episode: Episode): String {
         val file = downloader.file(episode.id)
         return if (episode.id in downloader.downloaded.value && file.exists()) "file://${file.absolutePath}" else episode.audioUrl

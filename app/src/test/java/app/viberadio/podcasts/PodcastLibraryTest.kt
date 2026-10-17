@@ -170,4 +170,53 @@ class PodcastLibraryTest {
     fun `unknown episodes play at normal speed`() {
         assertEquals(PodcastSpeeds.DEFAULT, library.withSpeed(showA, 2.0f).speedOf("nope"))
     }
+
+    private val folder = LocalFeeds.url("Podcasts")
+
+    private fun files(vararg days: Int) =
+        Feed("Podcasts", days.map { FeedItem(guid = "g$it", title = "F $it", publishedMs = it * DAY, audioUrl = "content://media/$it", durationMs = 60_000) })
+
+    @Test
+    fun `a folder with audio becomes a show on the podcasts channel`() {
+        val lib = library.withLocalFeeds(mapOf(folder to files(1, 2)), nowMs = 200)
+        assertEquals("Podcasts", lib.podcast(folder)!!.title)
+        assertEquals(PodcastChannels.DEFAULT, lib.podcast(folder)!!.channels)
+        assertEquals(listOf("F 1", "F 2"), lib.episodesOf(folder).map { it.title }.reversed())
+    }
+
+    @Test
+    fun `an empty folder adds no show`() {
+        assertEquals(library, library.withLocalFeeds(mapOf(folder to files()), nowMs = 200))
+    }
+
+    @Test
+    fun `a folder show follows the files, keeping its settings and played state`() {
+        val lib = library.withLocalFeeds(mapOf(folder to files(1, 2)), nowMs = 200)
+            .withPriority(folder, 3)
+            .withPlayed(EpisodeIds.of(folder, "g1"), true)
+        val rescanned = lib.withLocalFeeds(mapOf(folder to files(2, 3)), nowMs = 300)
+        assertEquals(listOf("F 3", "F 2"), rescanned.episodesOf(folder).map { it.title })
+        assertEquals(3, rescanned.podcast(folder)!!.priority)
+        // Emptied (an SD card taken out): the show stays, with nothing to play.
+        val emptied = rescanned.withLocalFeeds(mapOf(folder to files()), nowMs = 400)
+        assertTrue(emptied.episodesOf(folder).isEmpty())
+        assertEquals(3, emptied.podcast(folder)!!.priority)
+        // The file comes back still played.
+        assertTrue(emptied.withLocalFeeds(mapOf(folder to files(1)), nowMs = 500).isPlayed(EpisodeIds.of(folder, "g1")))
+    }
+
+    @Test
+    fun `the same files again change nothing`() {
+        val lib = library.withLocalFeeds(mapOf(folder to files(1, 2)), nowMs = 200)
+        assertEquals(lib, lib.withLocalFeeds(mapOf(folder to files(1, 2)), nowMs = 300))
+    }
+
+    @Test
+    fun `a folder no longer chosen loses its show, web feeds untouched`() {
+        val lib = library.withLocalFeeds(mapOf(folder to files(1)), nowMs = 200)
+        assertEquals(library, lib.withLocalFeeds(emptyMap(), nowMs = 300))
+        val other = LocalFeeds.url("Audio/Talks")
+        val moved = lib.withLocalFeeds(mapOf(other to files(4).copy(title = "Talks")), nowMs = 300)
+        assertEquals(listOf(showA, showB, other), moved.podcasts.map { it.feedUrl })
+    }
 }

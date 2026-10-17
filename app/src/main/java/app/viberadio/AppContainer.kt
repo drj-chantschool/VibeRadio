@@ -16,7 +16,11 @@ import app.viberadio.learning.Learner
 import app.viberadio.learning.LearningModels
 import app.viberadio.library.LibraryFolderSettings
 import app.viberadio.library.MediaStoreLibraryScanner
+import app.viberadio.library.PodcastFolder
+import app.viberadio.library.PodcastFolderSettings
 import app.viberadio.library.PrefsLibraryFolderStore
+import app.viberadio.library.PrefsPodcastFolderStore
+import app.viberadio.library.Track
 import app.viberadio.playback.LastChannelStore
 import app.viberadio.playback.LiveRadio
 import app.viberadio.playback.FilePodcastEventStore
@@ -27,6 +31,9 @@ import app.viberadio.playback.PodcastGapSettingsRepository
 import app.viberadio.playback.PrefsLastChannelStore
 import app.viberadio.playback.PrefsPodcastGapStore
 import app.viberadio.podcasts.EpisodeDownloader
+import app.viberadio.podcasts.Feed
+import app.viberadio.podcasts.FeedItem
+import app.viberadio.podcasts.LocalFeeds
 import app.viberadio.podcasts.HttpFeedFetcher
 import app.viberadio.podcasts.JsonPodcastStore
 import app.viberadio.podcasts.PodcastRepository
@@ -61,7 +68,10 @@ import app.viberadio.library.AudioPermission
 import android.util.AtomicFile
 import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -179,6 +189,13 @@ class AppContainer(context: Context) {
         ioDispatcher = Dispatchers.IO,
     )
 
+    /** Settings → Podcasts → Podcast folder: a folder whose files are a podcast show, not songs. */
+    val podcastFolder = PodcastFolderSettings(
+        store = PrefsPodcastFolderStore(context),
+        scope = appScope,
+        ioDispatcher = Dispatchers.IO,
+    )
+
     val channelRepository = ChannelRepository(
         scanner = MediaStoreLibraryScanner(context.contentResolver),
         generator = ChannelGenerator(
@@ -193,10 +210,35 @@ class AppContainer(context: Context) {
         ),
         ioDispatcher = Dispatchers.IO,
         place = learner::place,
-        filter = { tracks -> libraryFolders.awaitExclusions().filter(tracks) },
+        filter = { tracks -> libraryFolders.awaitExclusions().filter(podcastFolder.awaitFolder().songs(tracks)) },
     ).also { repository ->
         // A folder put back or left out rebuilds the channels from the last scan; the playing queue is left alone.
         appScope.launch { libraryFolders.exclusions.drop(1).collect { repository.regenerate() } }
+        appScope.launch { podcastFolder.folder.drop(1).collect { repository.regenerate() } }
+        // The podcast folder's files become its show on the podcast page, after every scan and folder change.
+        appScope.launch {
+            combine(repository.scanned.filterNotNull(), podcastFolder.folder) { tracks, folder -> tracks to folder }
+                .collectLatest { (tracks, _) ->
+                    // The saved choice, not the default it starts on, so a show isn't made only to be removed.
+                    val folder = podcastFolder.awaitFolder()
+                    podcastRepository.syncLocalFeeds(withContext(Dispatchers.Default) { localFeeds(tracks, folder) })
+                }
+        }
+    }
+
+    /** The podcast folder as a feed, for the podcast pipeline, which never sees a [Track]. */
+    private fun localFeeds(tracks: List<Track>, folder: PodcastFolder): Map<String, Feed> {
+        val path = folder.path ?: return emptyMap()
+        val items = folder.episodes(tracks).map { track ->
+            FeedItem(
+                guid = PodcastFolder.episodeKey(track),
+                title = track.title,
+                publishedMs = track.modifiedSec * 1000,
+                audioUrl = track.uri,
+                durationMs = track.durationMs,
+            )
+        }
+        return mapOf(LocalFeeds.url(path) to Feed(title = folder.title.orEmpty(), items = items))
     }
 
     /** #2 and #4 replace this. */
@@ -264,7 +306,10 @@ class AppContainer(context: Context) {
             val track = channels.firstNotNullOfOrNull { channel -> channel.tracks.firstOrNull { it.id == id } } ?: return null
             return playHistory.hash(track)?.let { "song:$it" }
         }
-        if (EpisodeMediaId.episodeId(request.mediaId) != null && request.uri.startsWith("file:")) return request.mediaId
+        // Downloaded episodes and the podcast folder's files; streamed ones aren't measured.
+        if (EpisodeMediaId.episodeId(request.mediaId) != null && (request.uri.startsWith("file:") || request.uri.startsWith("content:"))) {
+            return request.mediaId
+        }
         return null
     }
 
@@ -324,6 +369,7 @@ class AppContainer(context: Context) {
                 podcastGap = podcastGapSettings.settings.value,
                 resumeOnBluetooth = bluetoothSettings.awaitResumeOnConnect(),
                 libraryFolders = libraryFolders.awaitExclusions(),
+                podcastFolder = podcastFolder.awaitFolder().path,
                 channelNames = ChannelLineup.ids.map { id ->
                     ChannelNameRow(id = id, defaultName = names.defaults[id].orEmpty(), name = names.of(id).orEmpty())
                 },

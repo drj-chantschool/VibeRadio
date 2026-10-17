@@ -66,6 +66,9 @@ import app.viberadio.library.FolderExclusions
 import app.viberadio.library.FolderNode
 import app.viberadio.library.FolderState
 import app.viberadio.library.FolderTree
+import app.viberadio.library.PodcastFolder
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.selection.triStateToggleable
 import androidx.compose.material3.TriStateCheckbox
@@ -156,6 +159,10 @@ fun SettingsScreen(
     /** Settings → Audio → Library folders. */
     libraryFolders: LibraryFoldersUi,
     onToggleFolder: (FolderNode) -> Unit,
+    /** Settings → Podcasts → Podcast folder: played as a show, left out of the songs. */
+    podcastFolder: PodcastFolderUi,
+    /** A folder path, or null for no podcast folder. */
+    onPodcastFolder: (String?) -> Unit,
     /** Settings → Podcasts: the gap rule between episodes and its parameters (shown in developer mode only). */
     podcastGap: PodcastGapSettings,
     onSelectGapRule: (id: String) -> Unit,
@@ -256,7 +263,7 @@ fun SettingsScreen(
                 }
                 SettingsPage.Podcasts -> {
                     SettingsHeader(stringResource(R.string.settings_podcasts), onBack = { page = SettingsPage.Root })
-                    PodcastSettingsList(debug.developerMode, podcastGap, onSelectGapRule, onGapParam, onRestoreGap)
+                    PodcastSettingsList(debug.developerMode, podcastFolder, onPodcastFolder, podcastGap, onSelectGapRule, onGapParam, onRestoreGap)
                 }
                 SettingsPage.Debug -> {
                     SettingsHeader(stringResource(R.string.settings_debug), onBack = { page = SettingsPage.Root })
@@ -1029,24 +1036,42 @@ internal object GapStrings {
 }
 
 /**
- * Settings → Podcasts. Open to everyone; more podcast settings join it later. In developer mode
- * it has the gap rule: which rule sets the gap between episodes on a song channel, one radio row
+ * Settings → Podcasts. Open to everyone: the podcast folder, a folder of audio files played as a
+ * show and kept off the song channels. In developer mode it also has the gap rule: which rule sets the gap between episodes on a song channel, one radio row
  * per rule, then the chosen rule's own parameters, each tappable to change, and a way back to the
  * defaults. Each rule keeps its parameters while another is chosen.
  */
 @Composable
 private fun PodcastSettingsList(
     developerMode: Boolean,
+    folder: PodcastFolderUi,
+    onFolder: (String?) -> Unit,
     settings: PodcastGapSettings,
     onSelect: (id: String) -> Unit,
     onParam: (ruleId: String, key: String, value: Double) -> Boolean,
     onRestore: () -> Unit,
 ) {
     var editing by rememberSaveable { mutableStateOf<String?>(null) }
+    var choosingFolder by rememberSaveable { mutableStateOf(false) }
     val active = settings.active
     val defaults = PodcastGapRule.all.first { it.id == active.id }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+        item {
+            FigureRow(
+                label = stringResource(R.string.settings_podcast_folder),
+                value = folder.selected ?: stringResource(R.string.settings_podcast_folder_none),
+                isDefault = folder.selected == PodcastFolder.DEFAULT_PATH,
+                onClick = { choosingFolder = true },
+            )
+            Text(
+                stringResource(R.string.settings_podcast_folder_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 16.dp),
+            )
+            Rule()
+        }
         if (!developerMode) {
             item {
                 Text(
@@ -1136,6 +1161,17 @@ private fun PodcastSettingsList(
         }
     }
 
+    if (choosingFolder) {
+        PodcastFolderDialog(
+            folder = folder,
+            onChoose = { path ->
+                onFolder(path)
+                choosingFolder = false
+            },
+            onDismiss = { choosingFolder = false },
+        )
+    }
+
     active.params.firstOrNull { it.key == editing }?.takeIf { developerMode }?.let { param ->
         FigureDialog(
             key = active.id + "." + param.key,
@@ -1156,6 +1192,41 @@ private fun PodcastSettingsList(
             onDismiss = { editing = null },
         )
     }
+}
+
+/** Settings → Podcasts → Podcast folder: no folder, or one of the folders the scan found, one radio row each. */
+@Composable
+private fun PodcastFolderDialog(folder: PodcastFolderUi, onChoose: (String?) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.settings_podcast_folder)) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                (listOf<String?>(null) + folder.choices).forEach { path ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .selectable(selected = path == folder.selected, role = Role.RadioButton, onClick = { onChoose(path) })
+                            .padding(vertical = 10.dp),
+                    ) {
+                        // The row handles the choice, so the button itself is display-only.
+                        RadioButton(selected = path == folder.selected, onClick = null)
+                        Text(
+                            path ?: stringResource(R.string.settings_podcast_folder_none),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            modifier = Modifier.padding(start = 16.dp),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
 }
 
 /** The named channels, each tappable to rename. */
@@ -1422,6 +1493,8 @@ private fun SettingsLightPreview() {
             onRestoreSeparation = {},
             libraryFolders = previewFolders,
             onToggleFolder = {},
+            podcastFolder = PodcastFolderUi.EMPTY,
+            onPodcastFolder = {},
             podcastGap = PodcastGapSettings.DEFAULT,
             onSelectGapRule = {},
             onGapParam = { _, _, _ -> true },
@@ -1457,6 +1530,8 @@ private fun SettingsDarkPreview() {
             onRestoreSeparation = {},
             libraryFolders = previewFolders,
             onToggleFolder = {},
+            podcastFolder = PodcastFolderUi.EMPTY,
+            onPodcastFolder = {},
             podcastGap = PodcastGapSettings.DEFAULT,
             onSelectGapRule = {},
             onGapParam = { _, _, _ -> true },
@@ -1570,7 +1645,9 @@ private fun PodcastSettingsPreview() {
         Surface(color = MaterialTheme.colorScheme.background) {
             PodcastSettingsList(
                 developerMode = true,
-                PodcastGapSettings.DEFAULT.select(PodcastGapRule.MusicRatio.ID),
+                folder = PodcastFolderUi.EMPTY,
+                onFolder = {},
+                settings = PodcastGapSettings.DEFAULT.select(PodcastGapRule.MusicRatio.ID),
                 onSelect = {},
                 onParam = { _, _, _ -> true },
                 onRestore = {},

@@ -40,6 +40,8 @@ data class DiagnosticsSnapshot(
     val resumeOnBluetooth: Boolean,
     /** Settings → Audio → Library folders: what's left out. */
     val libraryFolders: FolderExclusions = FolderExclusions.NONE,
+    /** Settings → Podcasts → Podcast folder: the folder played as a show, not songs; null for none. */
+    val podcastFolder: String? = null,
     val channelNames: List<ChannelNameRow>,
     val lastChannelId: String?,
     /** False when the library couldn't be scanned (no permission), so [channels] is empty. */
@@ -162,6 +164,7 @@ object DiagnosticsBundle {
             "library_folders" to linkedMapOf(
                 "excluded" to s.libraryFolders.subtrees.sorted(),
                 "excluded_files_only" to s.libraryFolders.filesOnly.sorted(),
+                "podcast_folder" to s.podcastFolder,
             ),
             "channels" to s.channelNames.map {
                 linkedMapOf("id" to it.id, "default_name" to it.defaultName, "name" to it.name)
@@ -298,7 +301,7 @@ object DiagnosticsBundle {
         `all-songs`, `podcasts`); display names are in settings.json. Empty cells are unknown.
 
         - summary.json: app version, export time, feature layout version, counts
-        - settings.json: audio settings (both tone curves), the separation EQ module and every module's parameters, the podcast gap rule and its parameters, Bluetooth setting, folders left out of the library, channel names
+        - settings.json: audio settings (both tone curves), the separation EQ module and every module's parameters, the podcast gap rule and its parameters, Bluetooth setting, folders left out of the library and the podcast folder, channel names
         - feedback.csv: every thumbs press, oldest first (the append-only log; source of truth for learning); `separation_eq` is the separation module in effect at the press, empty when no podcast played over the music
         - play_history.csv: per song, its last play (wall clock and listening-clock reading)
         - channel_airings.csv: what each song channel last aired (live-radio resume)

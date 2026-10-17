@@ -88,6 +88,32 @@ data class PodcastLibrary(
         )
     }
 
+    /**
+     * Brings the folder shows ([LocalFeeds]) in line with what's on the device: [feeds] by feed
+     * URL, each the folder's files as last scanned. A show is added the first time its folder has
+     * any audio; after that its episodes are exactly the folder's files (none while it's empty, the
+     * show and its settings kept). Folder shows not in [feeds] are removed. Played state and
+     * resume points are kept by episode ID, so a file that comes back (an SD card put back in)
+     * stays played.
+     */
+    fun withLocalFeeds(feeds: Map<String, Feed>, nowMs: Long): PodcastLibrary {
+        var library = podcasts.filter { LocalFeeds.isLocal(it.feedUrl) && it.feedUrl !in feeds }
+            .fold(this) { lib, gone -> lib.withoutPodcast(gone.feedUrl) }
+        for ((feedUrl, feed) in feeds) {
+            require(LocalFeeds.isLocal(feedUrl)) { "not a folder show: $feedUrl" }
+            if (library.podcast(feedUrl) == null && feed.items.isEmpty()) continue
+            val fresh = library.withFeed(feedUrl, feed, nowMs)
+            val freshIds = feed.items.mapTo(HashSet()) { EpisodeIds.of(feedUrl, it.guid) }
+            // Unlike a web feed, a file that's gone is gone: drop the episodes withFeed kept.
+            val synced = fresh.copy(episodes = fresh.episodes.filter { it.feedUrl != feedUrl || it.id in freshIds })
+            // A rescan that found the same files changes nothing, so nothing is saved.
+            val unchanged = library.podcast(feedUrl)?.title == feed.title &&
+                library.episodes.filter { it.feedUrl == feedUrl } == synced.episodes.filter { it.feedUrl == feedUrl }
+            if (!unchanged) library = synced
+        }
+        return library
+    }
+
     fun withoutPodcast(feedUrl: String): PodcastLibrary {
         val gone = episodes.filter { it.feedUrl == feedUrl }.mapTo(HashSet()) { it.id }
         return copy(

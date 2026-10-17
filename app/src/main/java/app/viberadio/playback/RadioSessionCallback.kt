@@ -425,7 +425,8 @@ class RadioSessionCallback(
         episodeStarted(clock())
         nothingStartedReason = null
         val item = episodeItem(library, episode.id, channelId)
-        val streamed = item.localConfiguration?.uri?.scheme != "file"
+        // A folder show's episodes are files too (content://), even though nothing downloaded them.
+        val streamed = item.localConfiguration?.uri?.scheme !in setOf<String?>("file", "content")
         val playWhenReady = shouldPlay(player)
         overlay.start(
             item = item,
