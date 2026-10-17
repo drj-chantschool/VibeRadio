@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.flowOn
 import app.viberadio.library.FolderNode
 import app.viberadio.library.FolderState
 import app.viberadio.library.FolderTree
+import app.viberadio.library.PodcastFolder
 import kotlinx.coroutines.flow.stateIn
 
 /** One named channel on the Channels settings page. */
@@ -54,6 +55,18 @@ data class LibraryFoldersUi(
 ) {
     companion object {
         val EMPTY = LibraryFoldersUi(scanned = false, tree = emptyList(), states = emptyMap())
+    }
+}
+
+/** Settings → Podcasts → Podcast folder as the page shows it. */
+data class PodcastFolderUi(
+    /** The folder played as a show; null for none. */
+    val selected: String?,
+    /** Folders to choose from: every folder holding audio and those above it, plus the default and the current choice. */
+    val choices: List<String>,
+) {
+    companion object {
+        val EMPTY = PodcastFolderUi(selected = PodcastFolder.DEFAULT_PATH, choices = listOf(PodcastFolder.DEFAULT_PATH))
     }
 }
 
@@ -89,11 +102,29 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     private val container = (application as VibeRadioApp).container
 
-    /** Folder → tracks directly in it, from the last scan before anything is left out. */
-    private val folderCounts = container.channelRepository.scanned
-        .map { tracks -> tracks?.let(FolderTree::counts) }
+    /**
+     * Folder → tracks directly in it, from the last scan before anything is left out. The podcast
+     * folder isn't listed: its files are a show, not songs.
+     */
+    private val folderCounts = combine(container.channelRepository.scanned, container.podcastFolder.folder) { tracks, podcastFolder ->
+        tracks?.let { FolderTree.counts(podcastFolder.songs(it)) }
+    }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** Every folder in the last scan, podcast folder included, for choosing the podcast folder. */
+    private val scannedFolders = container.channelRepository.scanned
+        .map { tracks -> tracks?.let { FolderTree.known(FolderTree.counts(it)) - "" }.orEmpty() }
+        .flowOn(Dispatchers.Default)
+
+    /** Settings → Podcasts → Podcast folder. */
+    val podcastFolder: StateFlow<PodcastFolderUi> = combine(scannedFolders, container.podcastFolder.folder) { folders, chosen ->
+        val choices = (folders + PodcastFolder.DEFAULT_PATH + listOfNotNull(chosen.path)).sortedBy { it.lowercase() }
+        PodcastFolderUi(selected = chosen.path, choices = choices)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PodcastFolderUi.EMPTY)
+
+    /** [path] is played as a podcast show and leaves the song channels; null for no podcast folder. */
+    fun setPodcastFolder(path: String?) = container.podcastFolder.set(path)
 
     /** Settings → Audio → Library folders: the folders that hold audio, each in, partly in or out. */
     val libraryFolders: StateFlow<LibraryFoldersUi> = combine(folderCounts, container.libraryFolders.exclusions) { counts, exclusions ->

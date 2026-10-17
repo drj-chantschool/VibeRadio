@@ -89,4 +89,21 @@ class PodcastRepositoryTest {
         assertEquals(repo.library.value, reloaded.library.value)
         assertTrue(reloaded.loaded.value)
     }
+
+    @Test
+    fun `folder shows are neither fetched nor downloaded`() = runBlocking {
+        val fetched = mutableListOf<String>()
+        val repo = repository(FeedFetcher { url -> fetched += url; feed })
+        val folder = LocalFeeds.url("Podcasts")
+        repo.syncLocalFeeds(mapOf(folder to Feed("Podcasts", listOf(FeedItem("f1", "File", 1L, "content://media/1", null)))))
+        repo.subscribe(feedUrl)
+        fetched.clear()
+        repo.refresh()
+        assertEquals(listOf(feedUrl), fetched)
+        // The folder's file is first in the queue but takes no download slot.
+        assertEquals("File", repo.library.value.upNext(1).single().title)
+        assertEquals(listOf("https://show.example/1.mp3", "https://show.example/2.mp3"), downloadedUrls)
+        val file = repo.library.value.episodesOf(folder).single()
+        assertEquals("content://media/1", repo.playableUri(file))
+    }
 }

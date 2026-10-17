@@ -9,6 +9,7 @@ import app.viberadio.VibeRadioApp
 import app.viberadio.dial.ChannelLineup
 import app.viberadio.dial.ChannelNamesRepository
 import app.viberadio.podcasts.FeedParseException
+import app.viberadio.podcasts.LocalFeeds
 import app.viberadio.podcasts.PodcastLibrary
 import app.viberadio.podcasts.PodcastRepository
 import app.viberadio.podcasts.PodcastRepository.SubscribeResult
@@ -33,6 +34,8 @@ data class PodcastUiState(
 data class ShowUi(
     val feedUrl: String,
     val title: String,
+    /** A folder on the device (Settings → Podcasts → Podcast folder) rather than a feed: it can't be removed here. */
+    val local: Boolean,
     /** Every named channel, checked where the show plays on it (#18). */
     val channels: List<ChannelChoiceUi>,
     /** "Pause music": the show's episodes play by themselves, with the music paused (#2). */
@@ -87,6 +90,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                     ShowUi(
                         feedUrl = show.feedUrl,
                         title = show.title,
+                        local = LocalFeeds.isLocal(show.feedUrl),
                         channels = ChannelLineup.ids.map { id ->
                             ChannelChoiceUi(id, channelNames.of(id).orEmpty(), checked = id in show.channels)
                         },
@@ -150,7 +154,8 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             showTitle = podcast(episode.feedUrl)?.title.orEmpty(),
             publishedMs = episode.publishedMs,
             played = isPlayed(id),
-            downloaded = id in downloaded,
+            // A folder show's files are on the device already.
+            downloaded = id in downloaded || LocalFeeds.isLocal(episode.feedUrl),
             started = (positions[id] ?: 0L) > 0L,
         )
     }

@@ -57,6 +57,7 @@
     <string name="podcasts_priority_summary">Priority %1$d</string>
     <string name="podcasts_mark_hint">Tap an episode to mark it played. Long-press to mark it and everything older. Played episodes are never downloaded.</string>
     <string name="podcasts_remove_show">Remove show</string>
+    <string name="podcasts_folder_show">From a folder on this device. Choose a different folder, or none, in Settings → Podcasts.</string>
     <string name="podcasts_remove_title">Remove %1$s?</string>
     <string name="podcasts_remove_body">Its episodes, downloads and played history are deleted.</string>
     <string name="podcasts_remove_confirm">Remove</string>
@@ -140,8 +141,11 @@
     <string name="developer_mode_on">Developer mode is on. Settings now has a Debug page, and Podcasts has the gap between episodes.</string>
     <string name="developer_mode_already_on">Developer mode is already on.</string>
     <string name="settings_podcasts">Podcasts</string>
-    <string name="settings_podcasts_summary">How podcasts play on the channels</string>
-    <string name="settings_podcasts_empty">Nothing to set here yet. Each show’s channels, speed, priority and Pause music are on the podcast page.</string>
+    <string name="settings_podcasts_summary">Podcast folder, and how podcasts play on the channels</string>
+    <string name="settings_podcasts_empty">Each show’s channels, speed, priority and Pause music are on the podcast page.</string>
+    <string name="settings_podcast_folder">Podcast folder</string>
+    <string name="settings_podcast_folder_none">None</string>
+    <string name="settings_podcast_folder_hint">Audio files in this folder, and the folders inside it, play as one podcast show instead of songs. It’s on the podcast page, oldest file first, and stays off the music channels.</string>
     <string name="settings_podcasts_gap">Gap between episodes (developer mode)</string>
     <string name="settings_podcasts_gap_hint">How long the music runs between podcast episodes on a music channel. Pick a rule, then set its figures; each rule keeps its own. Music podcasts (Pause music on) always wait for the song to end.</string>
     <string name="settings_podcasts_params">%1$s: figures</string>

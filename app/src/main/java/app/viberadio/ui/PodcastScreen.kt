@@ -131,8 +131,13 @@ fun PodcastScreen(
                             EpisodeRow(episode, onTogglePlayed, onMarkOlderPlayed)
                         }
                         item(key = "remove:" + show.feedUrl) {
-                            TextButton(onClick = { confirmRemove = show.feedUrl }) {
-                                Text(stringResource(R.string.podcasts_remove_show))
+                            if (show.local) {
+                                // It comes back with the next scan; the folder setting is what removes it.
+                                Faint(stringResource(R.string.podcasts_folder_show))
+                            } else {
+                                TextButton(onClick = { confirmRemove = show.feedUrl }) {
+                                    Text(stringResource(R.string.podcasts_remove_show))
+                                }
                             }
                         }
                     }
@@ -487,8 +492,8 @@ private val previewState = PodcastUiState(
     loaded = true,
     upNext = previewEpisodes.take(2),
     shows = listOf(
-        ShowUi("a", "Slow Radio", previewChannels("breeze", "podcasts"), pauseMusic = false, unplayed = 2, speed = 1.0f, priority = 0, episodes = previewEpisodes),
-        ShowUi("b", "Field Notes", previewChannels(), pauseMusic = true, unplayed = 14, speed = 1.5f, priority = 1, episodes = emptyList()),
+        ShowUi("a", "Slow Radio", local = false, previewChannels("breeze", "podcasts"), pauseMusic = false, unplayed = 2, speed = 1.0f, priority = 0, episodes = previewEpisodes),
+        ShowUi("b", "Field Notes", local = false, previewChannels(), pauseMusic = true, unplayed = 14, speed = 1.5f, priority = 1, episodes = emptyList()),
     ),
 )
 

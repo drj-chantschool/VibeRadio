@@ -10,7 +10,7 @@ import java.security.MessageDigest
  * in this package imports the song pipeline (#17): the only shared surface is a channel ID.
  */
 data class Podcast(
-    /** RSS feed URL; the show's identity. */
+    /** RSS feed URL, or a [LocalFeeds] URL for a folder on the device; the show's identity. */
     val feedUrl: String,
     val title: String,
     /** Channel IDs this show plays on. New shows start on [PodcastChannels.DEFAULT]. */
@@ -48,6 +48,21 @@ data class Episode(
     val audioUrl: String,
     val durationMs: Long?,
 )
+
+/**
+ * Shows made from a folder on the device (Settings → Podcasts → Podcast folder) rather than an RSS
+ * feed. Their feed URL is [SCHEME] plus the folder, so they never collide with a web feed. They
+ * aren't fetched or downloaded (the files are already here) and their episodes follow the folder:
+ * a file that's gone is no longer an episode. The song side builds their [Feed]; this package
+ * only sees the result.
+ */
+object LocalFeeds {
+    const val SCHEME = "folder:"
+
+    fun url(folder: String): String = SCHEME + folder
+
+    fun isLocal(feedUrl: String): Boolean = feedUrl.startsWith(SCHEME)
+}
 
 /** Podcast-only channels (#3 VOCAL_ONLY). Their IDs never collide with song channel IDs. */
 object PodcastChannels {
