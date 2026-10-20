@@ -183,8 +183,8 @@ class DiagnosticsBundleTest {
     @Test
     fun `podcast shows list channels, settings and episode counts`() {
         val lines = files().getValue("podcast_shows.csv").text.trim().lines()
-        assertEquals("feed_url,title,channels,pause_music,speed,priority,episodes,unplayed,downloaded,last_refreshed_utc", lines[0])
-        assertEquals("https://feed,Show,breeze podcasts,true,1.0,0,3,2,1,", lines[1])
+        assertEquals("feed_url,title,channels,pause_music,speed,priority,skip_intro_s,episodes,unplayed,downloaded,last_refreshed_utc", lines[0])
+        assertEquals("https://feed,Show,breeze podcasts,true,1.0,0,0,3,2,1,", lines[1])
     }
 
     @Test
