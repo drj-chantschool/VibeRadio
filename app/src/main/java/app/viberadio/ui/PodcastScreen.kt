@@ -2,7 +2,11 @@ package app.viberadio.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,6 +22,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
@@ -30,13 +35,20 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -50,6 +62,7 @@ import androidx.annotation.StringRes
 import androidx.compose.ui.unit.dp
 import app.viberadio.R
 import app.viberadio.podcasts.PodcastPriority
+import app.viberadio.podcasts.PodcastSkipIntro
 import app.viberadio.podcasts.PodcastSpeeds
 import app.viberadio.ui.theme.VibeRadioTheme
 import java.time.Instant
@@ -66,6 +79,9 @@ import java.time.format.FormatStyle
 @Composable
 fun PodcastScreen(
     state: PodcastUiState,
+    /** The show open, if any: one at a time, closed when the page is left. */
+    openShow: String?,
+    onOpenShow: (feedUrl: String?) -> Unit,
     onDraftChange: (String) -> Unit,
     onAdd: () -> Unit,
     onSetChannel: (feedUrl: String, channelId: String, on: Boolean) -> Unit,
@@ -74,13 +90,23 @@ fun PodcastScreen(
     onMarkOlderPlayed: (EpisodeUi) -> Unit,
     onSetSpeed: (feedUrl: String, speed: Float) -> Unit,
     onSetPriority: (feedUrl: String, priority: Int) -> Unit,
+    onSetSkipIntro: (feedUrl: String, seconds: Int) -> Unit,
     onRemove: (feedUrl: String) -> Unit,
 ) {
-    var expanded by rememberSaveable(stateSaver = ExpandedSaver) { mutableStateOf(setOf<String>()) }
     var confirmRemove by rememberSaveable { mutableStateOf<String?>(null) }
+    val listState = rememberLazyListState()
+
+    // Closing the show open before can carry the one just opened off screen: bring it back.
+    LaunchedEffect(openShow) {
+        val index = showRowIndex(state, openShow ?: return@LaunchedEffect) ?: return@LaunchedEffect
+        withFrameNanos { } // Let the list lay out the change first.
+        val row = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+        if (row == null || row.offset < listState.layoutInfo.viewportStartOffset) listState.animateScrollToItem(index)
+    }
 
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize().safeDrawingPadding(),
             // Bottom room for the page dots.
             contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 56.dp),
@@ -105,13 +131,10 @@ fun PodcastScreen(
 
                 section(R.string.podcasts_shows)
                 for (show in state.shows) {
-                    val open = show.feedUrl in expanded
+                    val open = show.feedUrl == openShow
                     item(key = "show:" + show.feedUrl) {
-                        ShowRow(
-                            show = show,
-                            open = open,
-                            onToggleOpen = { expanded = if (open) expanded - show.feedUrl else expanded + show.feedUrl },
-                        )
+                        // Opening a show closes the one open before.
+                        ShowRow(show = show, open = open, onToggleOpen = { onOpenShow(if (open) null else show.feedUrl) })
                     }
                     if (open) {
                         item(key = "channels:" + show.feedUrl) {
@@ -125,6 +148,9 @@ fun PodcastScreen(
                         }
                         item(key = "priority:" + show.feedUrl) {
                             PriorityRow(show.priority) { onSetPriority(show.feedUrl, it) }
+                        }
+                        item(key = "skip:" + show.feedUrl) {
+                            SkipIntroRow(show.skipIntroSeconds) { onSetSkipIntro(show.feedUrl, it) }
                         }
                         item(key = "hint:" + show.feedUrl) { Faint(stringResource(R.string.podcasts_mark_hint)) }
                         items(show.episodes, key = { "ep:" + it.id }) { episode ->
@@ -161,7 +187,7 @@ fun PodcastScreen(
             confirmButton = {
                 TextButton(onClick = {
                     onRemove(feedUrl)
-                    expanded = expanded - feedUrl
+                    if (openShow == feedUrl) onOpenShow(null)
                     confirmRemove = null
                 }) { Text(stringResource(R.string.podcasts_remove_confirm)) }
             },
@@ -171,6 +197,17 @@ fun PodcastScreen(
             containerColor = MaterialTheme.colorScheme.background,
         )
     }
+}
+
+/**
+ * Where [feedUrl]'s row sits in the list, with no show open above it. Mirrors the items
+ * [PodcastScreen] emits: the heading, Up next (its title and rows, or the one "nothing queued"
+ * line), the Shows title, then a row and a rule per show.
+ */
+private fun showRowIndex(state: PodcastUiState, feedUrl: String): Int? {
+    if (!state.loaded) return null
+    val position = state.shows.indexOfFirst { it.feedUrl == feedUrl }.takeIf { it >= 0 } ?: return null
+    return 1 + 1 + maxOf(1, state.upNext.size) + 1 + 2 * position
 }
 
 @Composable
@@ -239,16 +276,23 @@ private fun UpNextRow(episode: EpisodeUi) {
     }
 }
 
+/**
+ * A show's heading, and the tap target that opens it: a faintly tinted band with a chevron, so
+ * it reads as something to tap.
+ */
 @Composable
 private fun ShowRow(show: ShowUi, open: Boolean, onToggleOpen: () -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
+            .padding(vertical = 6.dp)
+            .clip(ShowRowShape)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .clickable(onClickLabel = stringResource(if (open) R.string.podcasts_hide_episodes else R.string.podcasts_show_episodes)) {
                 onToggleOpen()
             }
-            .padding(vertical = 12.dp),
+            .padding(horizontal = 12.dp, vertical = 12.dp),
     ) {
         Column(Modifier.weight(1f)) {
             Text(
@@ -264,6 +308,8 @@ private fun ShowRow(show: ShowUi, open: Boolean, onToggleOpen: () -> Unit) {
                     formatSpeed(show.speed).takeIf { show.speed != PodcastSpeeds.DEFAULT },
                     stringResource(R.string.podcasts_priority_summary, show.priority).takeIf { show.priority != PodcastPriority.DEFAULT },
                     stringResource(R.string.podcasts_pause_music).takeIf { show.pauseMusic },
+                    stringResource(R.string.podcasts_skip_intro_summary, formatSkipIntro(show.skipIntroSeconds))
+                        .takeIf { show.skipIntroSeconds != PodcastSkipIntro.OFF },
                 ).joinToString(" · "),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.outline,
@@ -278,11 +324,23 @@ private fun ShowRow(show: ShowUi, open: Boolean, onToggleOpen: () -> Unit) {
             )
         }
         Spacer(Modifier.width(12.dp))
-        Text(
-            if (open) "\u2212" else "+",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.outline,
-        )
+        Chevron(up = open, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** A heavy down chevron (up while open), drawn rather than typed so its weight is ours. */
+@Composable
+private fun Chevron(up: Boolean, color: Color) {
+    Canvas(Modifier.size(width = 16.dp, height = 10.dp)) {
+        val stroke = 2.5.dp.toPx()
+        val inset = stroke / 2
+        val (edge, tip) = if (up) size.height - inset to inset else inset to size.height - inset
+        val path = Path().apply {
+            moveTo(inset, edge)
+            lineTo(size.width / 2, tip)
+            lineTo(size.width - inset, edge)
+        }
+        drawPath(path, color, style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
     }
 }
 
@@ -418,6 +476,47 @@ private fun PriorityRow(priority: Int, onSetPriority: (Int) -> Unit) {
     }
 }
 
+/**
+ * Per-show "Skip intro": a new episode starts this far in. A stepper over a fixed ladder, like
+ * speed, since an intro runs the same length every episode.
+ */
+@Composable
+private fun SkipIntroRow(seconds: Int, onSet: (Int) -> Unit) {
+    val shorter = stringResource(R.string.podcasts_skip_intro_shorter)
+    val longer = stringResource(R.string.podcasts_skip_intro_longer)
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Column(Modifier.weight(1f).padding(end = 16.dp)) {
+            Text(
+                stringResource(R.string.podcasts_skip_intro),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            Text(
+                stringResource(R.string.podcasts_skip_intro_about),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.outline,
+            )
+        }
+        TextButton(
+            onClick = { onSet(PodcastSkipIntro.shorter(seconds)) },
+            enabled = seconds > PodcastSkipIntro.STEPS.first(),
+            modifier = Modifier.semantics { contentDescription = shorter },
+        ) { Text("\u2212") }
+        Text(
+            formatSkipIntro(seconds),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.width(64.dp),
+        )
+        TextButton(
+            onClick = { onSet(PodcastSkipIntro.longer(seconds)) },
+            enabled = seconds < PodcastSkipIntro.STEPS.last(),
+            modifier = Modifier.semantics { contentDescription = longer },
+        ) { Text("+") }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun EpisodeRow(episode: EpisodeUi, onTogglePlayed: (EpisodeUi) -> Unit, onMarkOlderPlayed: (EpisodeUi) -> Unit) {
@@ -466,8 +565,15 @@ private fun Faint(text: String) {
     )
 }
 
-/** Which shows are expanded; a Set isn't saveable on its own. */
-private val ExpandedSaver = listSaver<Set<String>, String>(save = { it.toList() }, restore = { it.toSet() })
+private val ShowRowShape = RoundedCornerShape(6.dp)
+
+/** "Off", "30 s", "1:30". */
+@Composable
+private fun formatSkipIntro(seconds: Int): String = when {
+    seconds <= 0 -> stringResource(R.string.podcasts_skip_intro_off)
+    seconds < 60 -> stringResource(R.string.podcasts_skip_intro_seconds, seconds)
+    else -> "${seconds / 60}:${(seconds % 60).toString().padStart(2, '0')}"
+}
 
 /** "1×", "1.25×", "0.8×": no trailing zeros. */
 private fun formatSpeed(speed: Float): String =
@@ -492,19 +598,19 @@ private val previewState = PodcastUiState(
     loaded = true,
     upNext = previewEpisodes.take(2),
     shows = listOf(
-        ShowUi("a", "Slow Radio", local = false, previewChannels("breeze", "podcasts"), pauseMusic = false, unplayed = 2, speed = 1.0f, priority = 0, episodes = previewEpisodes),
-        ShowUi("b", "Field Notes", local = false, previewChannels(), pauseMusic = true, unplayed = 14, speed = 1.5f, priority = 1, episodes = emptyList()),
+        ShowUi("a", "Slow Radio", local = false, previewChannels("breeze", "podcasts"), pauseMusic = false, unplayed = 2, speed = 1.0f, priority = 0, skipIntroSeconds = 30, episodes = previewEpisodes),
+        ShowUi("b", "Field Notes", local = false, previewChannels(), pauseMusic = true, unplayed = 14, speed = 1.5f, priority = 1, skipIntroSeconds = 0, episodes = emptyList()),
     ),
 )
 
 @Preview(name = "Light", showBackground = true)
 @Composable
 private fun PodcastScreenLightPreview() {
-    VibeRadioTheme(darkTheme = false) { PodcastScreen(previewState, {}, {}, { _, _, _ -> }, { _, _ -> }, {}, {}, { _, _ -> }, { _, _ -> }, {}) }
+    VibeRadioTheme(darkTheme = false) { PodcastScreen(previewState, "a", {}, {}, {}, { _, _, _ -> }, { _, _ -> }, {}, {}, { _, _ -> }, { _, _ -> }, { _, _ -> }, {}) }
 }
 
 @Preview(name = "Dark", showBackground = true)
 @Composable
 private fun PodcastScreenDarkPreview() {
-    VibeRadioTheme(darkTheme = true) { PodcastScreen(previewState, {}, {}, { _, _, _ -> }, { _, _ -> }, {}, {}, { _, _ -> }, { _, _ -> }, {}) }
+    VibeRadioTheme(darkTheme = true) { PodcastScreen(previewState, "a", {}, {}, {}, { _, _, _ -> }, { _, _ -> }, {}, {}, { _, _ -> }, { _, _ -> }, { _, _ -> }, {}) }
 }

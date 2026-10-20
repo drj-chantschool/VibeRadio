@@ -14,6 +14,7 @@ import app.viberadio.podcasts.PodcastLibrary
 import app.viberadio.podcasts.PodcastRepository
 import app.viberadio.podcasts.PodcastRepository.SubscribeResult
 import app.viberadio.podcasts.PodcastPriority
+import app.viberadio.podcasts.PodcastSkipIntro
 import app.viberadio.podcasts.PodcastSpeeds
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -45,6 +46,8 @@ data class ShowUi(
     val speed: Float,
     /** Queue priority, lower plays first; within [PodcastPriority.MIN]..[PodcastPriority.MAX]. */
     val priority: Int,
+    /** "Skip intro": where a fresh episode starts, one of [PodcastSkipIntro.STEPS]; 0 is off. */
+    val skipIntroSeconds: Int,
     /** Newest first. */
     val episodes: List<EpisodeUi>,
 )
@@ -71,7 +74,7 @@ data class AddFeed(
 
 /**
  * The podcast page (#20): add feeds, choose which channels each show plays on and whether it
- * pauses the music, set each show's playback speed and queue priority, and mark episodes played (singly, or a whole back catalogue) before they
+ * pauses the music, set each show's playback speed, queue priority and intro skip, and mark episodes played (singly, or a whole back catalogue) before they
  * are ever downloaded.
  */
 class PodcastViewModel(application: Application) : AndroidViewModel(application) {
@@ -98,6 +101,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                         unplayed = episodes.count { !it.played },
                         speed = show.speed,
                         priority = show.priority,
+                        skipIntroSeconds = show.skipIntroSeconds,
                         episodes = episodes,
                     )
                 },
@@ -134,6 +138,8 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     fun setSpeed(feedUrl: String, speed: Float) = podcasts.setSpeed(feedUrl, speed)
 
     fun setPriority(feedUrl: String, priority: Int) = podcasts.setPriority(feedUrl, priority)
+
+    fun setSkipIntro(feedUrl: String, seconds: Int) = podcasts.setSkipIntro(feedUrl, seconds)
 
     fun togglePlayed(episode: EpisodeUi) = podcasts.setPlayed(episode.id, !episode.played)
 
