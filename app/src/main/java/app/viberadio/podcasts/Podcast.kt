@@ -34,6 +34,11 @@ data class Podcast(
      * Always within [PodcastPriority.MIN]..[PodcastPriority.MAX].
      */
     val priority: Int = PodcastPriority.DEFAULT,
+    /**
+     * "Skip intro": an episode started from the top starts this many seconds in, on every
+     * channel. A resume point wins over it. Always one of [PodcastSkipIntro.STEPS]; 0 is off.
+     */
+    val skipIntroSeconds: Int = PodcastSkipIntro.OFF,
 )
 
 /** One episode from a feed. Played state and resume position live on [PodcastLibrary], not here. */
@@ -99,6 +104,25 @@ object PodcastPriority {
     const val MAX = 99
 
     fun clamp(priority: Int): Int = priority.coerceIn(MIN, MAX)
+}
+
+/**
+ * How far a show's [Podcast.skipIntroSeconds] can be set: a fixed ladder, like speed, since an
+ * intro is the same length every episode and the setting is chosen once.
+ */
+object PodcastSkipIntro {
+    const val OFF = 0
+
+    val STEPS: List<Int> = listOf(0, 5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 300)
+
+    /** The step nearest [seconds], so stored or hand-edited values always land on the ladder. */
+    fun snap(seconds: Int): Int = STEPS.minBy { kotlin.math.abs(it - seconds) }
+
+    /** The next step up, staying on the top step once there. */
+    fun longer(seconds: Int): Int = STEPS.firstOrNull { it > snap(seconds) } ?: STEPS.last()
+
+    /** The next step down, staying on off once there. */
+    fun shorter(seconds: Int): Int = STEPS.lastOrNull { it < snap(seconds) } ?: STEPS.first()
 }
 
 object EpisodeIds {

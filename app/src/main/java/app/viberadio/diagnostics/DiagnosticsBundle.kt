@@ -220,7 +220,7 @@ object DiagnosticsBundle {
     )
 
     private fun podcastShows(library: PodcastLibrary, downloaded: Set<String>) = Csv.table(
-        listOf("feed_url", "title", "channels", "pause_music", "speed", "priority", "episodes", "unplayed", "downloaded", "last_refreshed_utc"),
+        listOf("feed_url", "title", "channels", "pause_music", "speed", "priority", "skip_intro_s", "episodes", "unplayed", "downloaded", "last_refreshed_utc"),
         library.podcasts.map { show ->
             val episodes = library.episodes.filter { it.feedUrl == show.feedUrl }
             listOf(
@@ -230,6 +230,7 @@ object DiagnosticsBundle {
                 show.pauseMusic,
                 show.speed,
                 show.priority,
+                show.skipIntroSeconds,
                 episodes.size,
                 episodes.count { !library.isPlayed(it.id) },
                 episodes.count { it.id in downloaded },
@@ -310,7 +311,7 @@ object DiagnosticsBundle {
         - library.csv: every song on a channel; track_hash is empty until the song has played once
         - levels.csv: measured loudness per song (`song:<hash>`) and downloaded episode, with the gain at the current target
         - podcasts.json: the podcast library as the app stores it (shows, channels, speed, Pause music, played, positions)
-        - podcast_shows.csv: per show, its channels, Pause music, speed, priority, and episode counts (all, unplayed, on the device)
+        - podcast_shows.csv: per show, its channels, Pause music, speed, priority, skip intro (seconds), and episode counts (all, unplayed, on the device)
         - podcast_queues.csv: per channel with a show on it, the next 10 episodes as the app would queue them now
         - podcast_events.csv: the podcast scheduling log on song channels, oldest first (newest 5,000 to 10,000 kept): tunes, the wait after each tune or episode (`detail`, times relative to the event), each song boundary and whether an episode was due, episode starts (`mode=overlay` over the music or `solo` for a music podcast), ends and failures, and why a due episode didn't start. `on_air_ms` is the clock the schedule runs on; it restarts with the service (`service_start`). `at_local` uses the export's UTC offset
     """.trimIndent() + "\n"

@@ -8,6 +8,8 @@ import androidx.compose.ui.graphics.Color
 // Light: printed page.
 internal val Paper = Color(0xFFE9E7E1)
 internal val PaperShade = Color(0xFFDEDBD4)
+// Halfway to the shade: a tap target that reads as one without boxing it in.
+internal val PaperTint = Color(0xFFE3E1DA)
 internal val Ink = Color(0xFF2E2D2B)
 internal val InkSoft = Color(0xFF5A5955)
 internal val InkFaint = Color(0xFF6E6C67)
@@ -18,6 +20,7 @@ internal val ErrorInk = Color(0xFF7A4A44)
 // Dark: page under a dim reading light.
 internal val NightPaper = Color(0xFF1B1B1A)
 internal val NightPaperShade = Color(0xFF252524)
+internal val NightPaperTint = Color(0xFF20201F)
 internal val NightInk = Color(0xFFBDBAB3)
 internal val NightInkSoft = Color(0xFF9D9A94)
 internal val NightInkFaint = Color(0xFF8A8781)

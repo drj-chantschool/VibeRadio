@@ -112,6 +112,10 @@ class PodcastRepository(
     fun setPriority(feedUrl: String, priority: Int) =
         mutate { it.withPriority(feedUrl, priority) }
 
+    /** Only where episodes start, so downloads are left alone. */
+    fun setSkipIntro(feedUrl: String, seconds: Int) =
+        mutate(syncDownloads = false) { it.withSkipIntro(feedUrl, seconds) }
+
     /** Doesn't change what's queued, so downloads are left alone. */
     fun setPauseMusic(feedUrl: String, pause: Boolean) =
         mutate(syncDownloads = false) { it.withPauseMusic(feedUrl, pause) }

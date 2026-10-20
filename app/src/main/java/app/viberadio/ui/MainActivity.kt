@@ -25,6 +25,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,11 +59,17 @@ class MainActivity : ComponentActivity() {
             VibeRadioTheme {
                 val pager = rememberPagerState(pageCount = { PAGE_COUNT })
                 var settingsOpen by rememberSaveable { mutableStateOf(false) }
+                // The one show open on the podcast page. Held here, not on the page, so leaving
+                // the page closes it even though the pager drops the page once it's off screen.
+                var openShow by rememberSaveable { mutableStateOf<String?>(null) }
+                LaunchedEffect(pager.currentPage) {
+                    if (pager.currentPage == SONG_PAGE) openShow = null
+                }
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                     HorizontalPager(state = pager, modifier = Modifier.fillMaxSize()) { page ->
                         when (page) {
                             SONG_PAGE -> SongPage()
-                            else -> PodcastPage()
+                            else -> PodcastPage(openShow = openShow, onOpenShow = { openShow = it })
                         }
                     }
                     PageDots(
@@ -221,7 +228,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun PodcastPage() {
+    private fun PodcastPage(openShow: String?, onOpenShow: (String?) -> Unit) {
         val viewModel: PodcastViewModel = viewModel()
         val state by viewModel.uiState.collectAsStateWithLifecycle()
         LifecycleResumeEffect(viewModel) {
@@ -230,6 +237,8 @@ class MainActivity : ComponentActivity() {
         }
         PodcastScreen(
             state = state,
+            openShow = openShow,
+            onOpenShow = onOpenShow,
             onDraftChange = viewModel::onDraftChange,
             onAdd = viewModel::addFeed,
             onSetChannel = viewModel::setChannel,
@@ -238,6 +247,7 @@ class MainActivity : ComponentActivity() {
             onMarkOlderPlayed = viewModel::markOlderPlayed,
             onSetSpeed = viewModel::setSpeed,
             onSetPriority = viewModel::setPriority,
+            onSetSkipIntro = viewModel::setSkipIntro,
             onRemove = viewModel::remove,
         )
     }

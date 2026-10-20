@@ -138,6 +138,10 @@ data class PodcastLibrary(
         podcasts = podcasts.map { if (it.feedUrl != feedUrl) it else it.copy(priority = PodcastPriority.clamp(priority)) },
     )
 
+    fun withSkipIntro(feedUrl: String, seconds: Int): PodcastLibrary = copy(
+        podcasts = podcasts.map { if (it.feedUrl != feedUrl) it else it.copy(skipIntroSeconds = PodcastSkipIntro.snap(seconds)) },
+    )
+
     fun withPauseMusic(feedUrl: String, pause: Boolean): PodcastLibrary = copy(
         podcasts = podcasts.map { if (it.feedUrl != feedUrl) it else it.copy(pauseMusic = pause) },
     )
@@ -149,6 +153,19 @@ data class PodcastLibrary(
     /** How fast [episodeId] plays: its show's speed, or 1x if the show is gone. */
     fun speedOf(episodeId: String): Float =
         episode(episodeId)?.let { podcast(it.feedUrl) }?.speed ?: PodcastSpeeds.DEFAULT
+
+    /**
+     * Where [episodeId] starts playing: its resume point if started, else past its show's intro
+     * ("Skip intro"), else null for the top. An intro skip as long as the episode is ignored.
+     */
+    fun startPositionOf(episodeId: String): Long? {
+        positions[episodeId]?.takeIf { it > 0 }?.let { return it }
+        val episode = episode(episodeId) ?: return null
+        val skipMs = (podcast(episode.feedUrl)?.skipIntroSeconds ?: 0) * 1000L
+        if (skipMs <= 0) return null
+        val durationMs = episode.durationMs
+        return skipMs.takeIf { durationMs == null || durationMs <= 0 || it < durationMs }
+    }
 
     /** Playing to the end and marking by hand are the same thing; either clears the resume point. */
     fun withPlayed(id: String, isPlayed: Boolean): PodcastLibrary {

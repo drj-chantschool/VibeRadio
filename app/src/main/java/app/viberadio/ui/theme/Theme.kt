@@ -30,6 +30,7 @@ private fun paperScheme(
     base: ColorScheme,
     paper: Color,
     shade: Color,
+    tint: Color,
     ink: Color,
     inkSoft: Color,
     inkFaint: Color,
@@ -59,7 +60,8 @@ private fun paperScheme(
     surfaceBright = paper,
     surfaceDim = shade,
     surfaceContainerLowest = paper,
-    surfaceContainerLow = paper,
+    // The one tinted surface: tap targets that need a ground, like a show's row on the podcast page.
+    surfaceContainerLow = tint,
     surfaceContainer = paper,
     surfaceContainerHigh = shade,
     surfaceContainerHighest = shade,
@@ -77,12 +79,12 @@ private fun paperScheme(
 
 private val LightInk = paperScheme(
     base = lightColorScheme(),
-    paper = Paper, shade = PaperShade, ink = Ink, inkSoft = InkSoft, inkFaint = InkFaint,
+    paper = Paper, shade = PaperShade, tint = PaperTint, ink = Ink, inkSoft = InkSoft, inkFaint = InkFaint,
     rule = Rule, ruleFaint = RuleFaint, error = ErrorInk,
 )
 
 private val DarkInk = paperScheme(
     base = darkColorScheme(),
-    paper = NightPaper, shade = NightPaperShade, ink = NightInk, inkSoft = NightInkSoft,
+    paper = NightPaper, shade = NightPaperShade, tint = NightPaperTint, ink = NightInk, inkSoft = NightInkSoft,
     inkFaint = NightInkFaint, rule = NightRule, ruleFaint = NightRuleFaint, error = NightErrorInk,
 )

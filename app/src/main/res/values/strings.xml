@@ -55,6 +55,13 @@
     <string name="podcasts_priority_lower">Lower priority number</string>
     <string name="podcasts_priority_higher">Higher priority number</string>
     <string name="podcasts_priority_summary">Priority %1$d</string>
+    <string name="podcasts_skip_intro">Skip intro</string>
+    <string name="podcasts_skip_intro_about">New episodes start this far in. A started one resumes where it was.</string>
+    <string name="podcasts_skip_intro_shorter">Skip less</string>
+    <string name="podcasts_skip_intro_longer">Skip more</string>
+    <string name="podcasts_skip_intro_off">Off</string>
+    <string name="podcasts_skip_intro_seconds">%1$d s</string>
+    <string name="podcasts_skip_intro_summary">Skips %1$s</string>
     <string name="podcasts_mark_hint">Tap an episode to mark it played. Long-press to mark it and everything older. Played episodes are never downloaded.</string>
     <string name="podcasts_remove_show">Remove show</string>
     <string name="podcasts_folder_show">From a folder on this device. Choose a different folder, or none, in Settings → Podcasts.</string>

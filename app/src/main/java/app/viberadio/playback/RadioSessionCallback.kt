@@ -326,6 +326,13 @@ class RadioSessionCallback(
         val previousDurationMs = currentEpisodeDurationMs
         currentEpisodeId = EpisodeMediaId.episodeId(mediaItem)
         currentEpisodeDurationMs = 0
+        // An episode reached mid-queue can't carry a start position: pick up where it was left,
+        // or past its show's intro.
+        currentEpisodeId?.takeIf { auto }?.let { episodeId ->
+            podcasts.library.value.startPositionOf(episodeId)?.let { start ->
+                handler.post { if (currentEpisodeId == episodeId) player?.seekTo(start) }
+            }
+        }
         if (mediaItem != null) onSongChannelTransition(endedEpisode = previous.takeIf { auto }, endedDurationMs = previousDurationMs, auto = auto)
         // Posted, not called inline: changing player state inside this callback gets folded into
         // the same session update as the transition, and controllers can miss the transition.
@@ -358,12 +365,8 @@ class RadioSessionCallback(
             episodeId != null -> {
                 episodeStarted(now)
                 nothingStartedReason = null
-                val saved = podcasts.library.value.positions[episodeId]
+                val saved = podcasts.library.value.startPositionOf(episodeId)
                 log(PodcastEvent.Kind.START, episodeId, "mode=solo trigger=${if (auto) "boundary" else "tune"} resume_ms=${saved ?: 0}")
-                // An episode reached mid-queue can't carry a start position; pick up where it was left.
-                if (auto && saved != null && saved > 0) {
-                    handler.post { if (currentEpisodeId == episodeId) player?.seekTo(saved) }
-                }
             }
             endedEpisode != null -> {
                 schedule.episodeEnded(endedDurationMs, episodePlayedMs(), now)
@@ -431,14 +434,14 @@ class RadioSessionCallback(
         overlay.start(
             item = item,
             episodeId = episode.id,
-            startPositionMs = library.positions[episode.id],
+            startPositionMs = library.startPositionOf(episode.id),
             speed = library.speedOf(episode.id),
             playWhenReady = playWhenReady,
         )
         log(
             PodcastEvent.Kind.START,
             episode.id,
-            "mode=overlay trigger=$trigger resume_ms=${library.positions[episode.id] ?: 0} streamed=$streamed " +
+            "mode=overlay trigger=$trigger resume_ms=${library.startPositionOf(episode.id) ?: 0} streamed=$streamed " +
                 "speed=${library.speedOf(episode.id)} play_when_ready=$playWhenReady",
         )
     }
@@ -585,7 +588,7 @@ class RadioSessionCallback(
                 return Queue(
                     channelId = channel.id,
                     items = listOf(episodeItem(library, solo.id, channel.id)) + songs.take(LOOKAHEAD),
-                    startPositionMs = library.positions[solo.id] ?: C.TIME_UNSET,
+                    startPositionMs = library.startPositionOf(solo.id) ?: C.TIME_UNSET,
                     boundary = true,
                 )
             }
@@ -673,7 +676,7 @@ class RadioSessionCallback(
         return Queue(
             channelId = channelId,
             items = episodes.map { episodeItem(library, it.id, channelId) },
-            startPositionMs = library.positions[episodes.first().id] ?: C.TIME_UNSET,
+            startPositionMs = library.startPositionOf(episodes.first().id) ?: C.TIME_UNSET,
         )
     }
 

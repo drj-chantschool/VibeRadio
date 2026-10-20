@@ -171,6 +171,46 @@ class PodcastLibraryTest {
         assertEquals(PodcastSpeeds.DEFAULT, library.withSpeed(showA, 2.0f).speedOf("nope"))
     }
 
+    @Test
+    fun `episodes start at the top until an intro skip is set`() {
+        assertEquals(null, library.startPositionOf(id(showA, 1)))
+        val lib = library.withSkipIntro(showA, 30)
+        assertEquals(30_000L, lib.startPositionOf(id(showA, 1)))
+        assertEquals(30_000L, lib.startPositionOf(id(showA, 3)))
+        assertEquals(null, lib.startPositionOf(id(showB, 4)))
+    }
+
+    @Test
+    fun `a resume point wins over the intro skip`() {
+        val lib = library.withSkipIntro(showA, 30).withPosition(id(showA, 1), 90_000)
+        assertEquals(90_000L, lib.startPositionOf(id(showA, 1)))
+    }
+
+    @Test
+    fun `an intro skip as long as the episode is ignored`() {
+        val short = PodcastLibrary()
+            .withFeed(showA, Feed("A", listOf(FeedItem("g1", "A 1", DAY, "https://x/1.mp3", durationMs = 20_000))), nowMs = 100)
+            .withSkipIntro(showA, 30)
+        assertEquals(null, short.startPositionOf(id(showA, 1)))
+    }
+
+    @Test
+    fun `intro skips land on the ladder and leave the queue alone`() {
+        val lib = library.withSkipIntro(showA, 31)
+        assertEquals(30, lib.podcast(showA)!!.skipIntroSeconds)
+        assertEquals(library.queue(PodcastChannels.PODCASTS_ID), lib.queue(PodcastChannels.PODCASTS_ID))
+        assertEquals(PodcastSkipIntro.OFF, library.podcast(showA)!!.skipIntroSeconds)
+    }
+
+    @Test
+    fun `the intro skip ladder steps and stops at its ends`() {
+        assertEquals(5, PodcastSkipIntro.longer(0))
+        assertEquals(0, PodcastSkipIntro.shorter(0))
+        assertEquals(60, PodcastSkipIntro.longer(45))
+        assertEquals(45, PodcastSkipIntro.shorter(60))
+        assertEquals(300, PodcastSkipIntro.longer(300))
+    }
+
     private val folder = LocalFeeds.url("Podcasts")
 
     private fun files(vararg days: Int) =
