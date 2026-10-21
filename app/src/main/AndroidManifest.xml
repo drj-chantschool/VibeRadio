@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Library access: READ_MEDIA_AUDIO on API 33+, READ_EXTERNAL_STORAGE below. -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
@@ -21,6 +22,11 @@
         android:name="android.permission.BLUETOOTH"
         android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!-- ONNX Runtime asks for this for its telemetry, which is removed below. -->
+    <uses-permission
+        android:name="android.permission.ACCESS_NETWORK_STATE"
+        tools:node="remove" />
 
     <!-- Settings → Debug → "Export nightly": the job is persisted, so it survives a reboot. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -67,6 +73,19 @@
             android:name=".diagnostics.NightlyExportJob"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- Audio feature analysis for song similarity, while charging and idle. -->
+        <service
+            android:name=".features.AudioFeatureJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- ONNX Runtime's telemetry: no usage data leaves the phone, and the native library
+             loads only when a feature model runs, not at every app start. -->
+        <provider
+            android:name="ai.onnxruntime.TelemetryInitializer"
+            android:authorities="${applicationId}.onnxruntime_telemetry_initializer"
+            tools:node="remove" />
 
         <!-- Settings → Debug → "Share export": hands the staged bundle to the share sheet. -->
         <provider

@@ -3,6 +3,7 @@ package app.viberadio.learning
 import app.viberadio.channels.Channel
 import app.viberadio.dial.ChannelLineup
 import app.viberadio.feedback.FeedbackEvent
+import app.viberadio.features.SimilarityIndex
 import app.viberadio.library.Track
 
 /**
@@ -12,6 +13,10 @@ import app.viberadio.library.Track
  * Holds every song's [FeatureVector] in memory, built from the feedback log on [load] and kept
  * current with [add]. A song whose hash isn't known yet (it has never played, so it has no
  * feedback either) reads as [FeatureVector.EMPTY].
+ *
+ * With a [similarity] index (audio features, see `features`), each song's placement also gets
+ * the thumbs of its [neighbourCount] most similar songs that have mood-channel feedback, so a
+ * few thumbs spread to the songs that sound like them.
  */
 class Learner(
     private val models: LearningModels,
@@ -19,6 +24,9 @@ class Learner(
     private val readEvents: () -> List<FeedbackEvent>,
     /** A track's content hash if already known, without reading the file. */
     private val hashOf: (Track) -> String?,
+    /** The current audio similarity index; empty until songs are analysed. Never blocks. */
+    private val similarity: () -> SimilarityIndex = { SimilarityIndex.EMPTY },
+    private val neighbourCount: Int = DEFAULT_NEIGHBOURS,
 ) {
     @Volatile
     private var vectors: Map<String, FeatureVector> = emptyMap()
@@ -49,8 +57,16 @@ class Learner(
         if (moodChannels.isEmpty()) return channels
         load()
         val members = ChannelLineup.moods.associateWith { mutableListOf<Track>() }
+        val current = vectors
+        val index = similarity()
+        // Songs that can lend evidence: analysed, with thumbs on some mood channel.
+        val rated = if (index.size == 0) emptyList() else current.filter { (hash, v) -> hash in index && v.channelFit.any { it > 0f } }.keys.toList()
         for (track in moodChannels.flatMap { it.tracks }.distinctBy { it.uri }) {
-            models.channelsFor(vectorOf(track)).forEach { members.getValue(it) += track }
+            val hash = hashOf(track)
+            val neighbours = if (hash == null || rated.isEmpty()) emptyList() else {
+                index.nearest(hash, rated, neighbourCount).map { NeighbourFit(it.distance, current.getValue(it.hash).channelFit) }
+            }
+            models.channelsFor(hash?.let { current[it] } ?: FeatureVector.EMPTY, neighbours).forEach { members.getValue(it) += track }
         }
         val template = moodChannels.first()
         val placed = ChannelLineup.moods.mapNotNull { id ->
@@ -62,4 +78,9 @@ class Learner(
 
     /** How strongly the shuffle should favour [track]; never below [LearningModels.preferenceFloor]. Never blocks. */
     fun preferenceWeight(track: Track): Double = models.preferenceWeight(vectorOf(track))
+
+    companion object {
+        /** Similar songs consulted per song (the plan's k). */
+        const val DEFAULT_NEIGHBOURS = 20
+    }
 }

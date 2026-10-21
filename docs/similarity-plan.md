@@ -21,11 +21,12 @@ Export: Settings → Debug → "Export data" writes a zip (SQLite + feature cach
 
 Rough data needs before Phase 2 is meaningful: a few hundred thumbs spread over every channel, and some Wrong channel events. Seasonal weighting can't be validated until the log spans at least two seasons; until then, weight by recency only.
 
-## Phase 1: Compute features (offline first)
+## Phase 1: Compute features
 
-- Compute embeddings on a PC from a copy of the library (Python), not on the phone. Fast to iterate, and lets several models be compared before committing one to Android.
-- Candidates: Essentia Discogs-EffNet (genre/style + mood/arousal-valence heads), MusiCNN, YAMNet, CLAP. Licensing is fine for personal use; revisit (Essentia is non-commercial) if the app is ever distributed.
-- Per song: analyze 2-3 excerpts (e.g. 30 s at 25%, 50%, 75%), average the embeddings. Key results on file hash, same as the rest of the app.
+- On the phone (built): the `features` package fills a per-song audio feature vector, one versioned block per extractor, keyed on content hash. A built-in signal block (`dsp`: loudness, dynamics, spectral shape, MFCCs, chroma, tempo) needs no model; every ONNX model installed from Settings → Debug adds a block (an embedding, or a classifier head's genre, mood, instrument, voice or language outputs). Details, library survey and model recipes: [audio-features.md](audio-features.md).
+- Comparing models is still easier on a PC (Python, same models, same excerpts): try several there, then install the winner. The on-device pipeline is what ships.
+- Candidates: Essentia Discogs-EffNet (genre/style + mood/arousal-valence heads), MusiCNN, YAMNet, PANNs, CLAP. Licensing is fine for personal use; revisit (Essentia's models are CC BY-NC-SA) if the app is ever distributed. No model is bundled with the app.
+- Per song: analyze 3 excerpts (30 s centred at 25%, 50%, 75%), average the per-window outputs. Key results on file hash, same as the rest of the app.
 
 ## Phase 2: Offline analysis (notebook)
 
@@ -39,9 +40,9 @@ Questions to answer from the exported log + features:
 
 ## Phase 3: Ship the propagation model on-device
 
-- Feature layout v2 = v1 thumbs block + the chosen audio block. Layout bump rebuilds every vector (already the rule).
-- Port the chosen model to TFLite; extract in a WorkManager job while charging and idle. New songs are unanalyzed until the job reaches them; they rely on the All songs channel and genre placement meanwhile.
-- Precompute each song's top-k neighbor list (k ≈ 20); rebuild on layout bump or library change.
+- Built, ahead of Phase 2's calibration, with conservative defaults (below). The audio blocks are kept apart from the thumbs vector (they're versioned per block, so a model swap recomputes only its block); the learner reads both.
+- Models run with ONNX Runtime; extraction runs in a JobScheduler job while charging and idle (or Settings → Debug → Audio features). New songs are unanalyzed until the job reaches them; they have no neighbours and are placed by thumbs alone meanwhile.
+- Neighbours (k = 20) are looked up at placement among the analysed songs that have mood-channel thumbs, in one combined space: each block standardised over the library, blocks over 64 dimensions randomly projected to 64, each scaled to unit length and weighted (equal by default), cosine distance.
 - Per (song, channel), evidence from neighbor j: seasonal-weighted counts from the log, with Wrong channel weighted heavily and plain thumbs down lightly (plain thumbs down feeds mostly the preference model).
 
   ```
@@ -50,7 +51,7 @@ Questions to answer from the exported log + features:
   P(fit) = α / (α + β); confidence = α + β
   ```
 
-- Membership changes need both a probability threshold and a confidence threshold, with hysteresis (move out below one level, back in above a higher one) so songs don't flap between channels.
+- Membership changes need both a probability threshold and a confidence threshold, with hysteresis (move out below one level, back in above a higher one) so songs don't flap between channels. Built so far (`PropagatedChannelFit`): τ = 0.35, cap 0.8, plain thumbs down at 0.5, α₀ = β₀ = 1, on at P ≥ 0.5 once confidence ≥ 2; below that confidence the thumb rule decides, and a song's own thumbs up on a channel always keeps it there. No hysteresis yet; Wrong channel (#16) isn't logged yet, so only thumbs count.
 - Coverage rule still holds: a move never leaves a song on no channel.
 
 ## Phase 4: Learn the metric

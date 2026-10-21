@@ -1,6 +1,7 @@
 package app.viberadio.diagnostics
 
 import app.viberadio.channels.Channel
+import app.viberadio.features.FeatureBlock
 import app.viberadio.feedback.FeedbackEvent
 import app.viberadio.feedback.PlayRecord
 import app.viberadio.feedback.Thumb
@@ -64,6 +65,8 @@ data class DiagnosticsSnapshot(
     val downloadedEpisodes: Set<String> = emptySet(),
     /** The podcast scheduling log ([PodcastEvent]), oldest first. */
     val podcastEvents: List<PodcastEvent> = emptyList(),
+    /** Audio feature blocks in use, each with its stored values by content hash. */
+    val audioFeatures: Map<FeatureBlock, Map<String, FloatArray>> = emptyMap(),
 )
 
 /** One file in a bundle. */
@@ -98,6 +101,10 @@ object DiagnosticsBundle {
             BundleFile("podcast_events.csv", MIME_CSV, podcastEvents(s.podcastEvents, s.podcasts, s.utcOffsetMinutes)),
         )
         s.podcastsJson?.let { files += BundleFile("podcasts.json", MIME_JSON, it) }
+        // Large embeddings stay on the phone: Phase 2 recomputes them from the files on a PC.
+        s.audioFeatures.filterKeys { it.size <= MAX_EXPORTED_DIMS }.forEach { (block, values) ->
+            files += BundleFile("audio_features_${block.id}.csv", MIME_CSV, audioFeatures(block, values))
+        }
         return files
     }
 
@@ -130,6 +137,16 @@ object DiagnosticsBundle {
                     "podcast_events" to s.podcastEvents.size,
                 ),
                 "songs_per_channel" to s.channels.associate { it.id to it.tracks.size },
+                "audio_feature_blocks" to s.audioFeatures.entries.map { (block, values) ->
+                    linkedMapOf(
+                        "id" to block.id,
+                        "version" to block.version,
+                        "dims" to block.size,
+                        "similarity_weight" to block.similarityWeight,
+                        "songs" to values.size,
+                        "exported" to (block.size <= MAX_EXPORTED_DIMS),
+                    )
+                },
                 "feedback_range" to if (times.isEmpty()) {
                     null
                 } else {
@@ -199,6 +216,11 @@ object DiagnosticsBundle {
             vectors.entries.sortedBy { it.key }.map { (hash, v) -> listOf<Any?>(hash) + v.toFloatArray().toList() },
         )
     }
+
+    private fun audioFeatures(block: FeatureBlock, values: Map<String, FloatArray>) = Csv.table(
+        listOf("track_hash") + block.names,
+        values.entries.sortedBy { it.key }.map { (hash, v) -> listOf<Any?>(hash) + v.toList() },
+    )
 
     private fun channels(channels: List<Channel>, hashes: Map<String, String>) = Csv.table(
         listOf("channel_id", "track_hash", "track_id"),
@@ -294,6 +316,9 @@ object DiagnosticsBundle {
     const val MIME_JSON = "application/json"
     const val MIME_MD = "text/markdown"
 
+    /** Audio feature blocks up to this size are exported; larger ones (embeddings) aren't. */
+    const val MAX_EXPORTED_DIMS = 256
+
     private val README = """
         # VibeRadio diagnostics bundle
 
@@ -310,6 +335,7 @@ object DiagnosticsBundle {
         - channels.csv: current placement, one row per (channel, song)
         - library.csv: every song on a channel; track_hash is empty until the song has played once
         - levels.csv: measured loudness per song (`song:<hash>`) and downloaded episode, with the gain at the current target
+        - audio_features_<id>.csv: per song, one audio feature block (`dsp`: built-in signal features; others: installed models, e.g. mood or genre probabilities). Blocks over 256 dimensions (embeddings) aren't exported; summary.json lists every block in use and how many songs have it
         - podcasts.json: the podcast library as the app stores it (shows, channels, speed, Pause music, played, positions)
         - podcast_shows.csv: per show, its channels, Pause music, speed, priority, skip intro (seconds), and episode counts (all, unplayed, on the device)
         - podcast_queues.csv: per channel with a show on it, the next 10 episodes as the app would queue them now

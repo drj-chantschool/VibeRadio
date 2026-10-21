@@ -7,13 +7,14 @@ Goal: the app learns which songs belong together, which channel to start on, and
 ## Inputs
 
 - A feature vector per song, keyed on file hash (#12). Initial scaffold (layout v1): 12 features, the total thumbs up and thumbs down counts on each of the five mood channels (Breeze, Buzz, Zone, Breath, Hall) plus The Shuffle (all). Audio-derived features come later; a layout version bump rebuilds every vector. The vector is a derived cache; the log below is the source of truth.
+- Audio feature blocks per song, keyed on file hash ([audio-features.md](audio-features.md)), kept apart from the thumbs vector. Channel fit uses them to borrow thumbs from acoustically similar songs ([similarity-plan.md](similarity-plan.md), Phase 3), so sparse feedback spreads to the songs that sound like the ones rated.
 - A timestamped log of every thumbs up and thumbs down on each song, recording the channel it happened on (#13). Channels are stored by stable ID, never by their renamable display name.
 
 ## Models
 
 Two models share the one feature vector:
 
-- Channel fit: reads the 10 mood-channel features to decide which channel(s) a song belongs on.
+- Channel fit: reads the 10 mood-channel features, plus the same features of its nearest rated neighbours in audio feature space, to decide which channel(s) a song belongs on.
 - Preference: reads all 12 features to decide how often the user wants to hear the song.
 
 ## What it decides

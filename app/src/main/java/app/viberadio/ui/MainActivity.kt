@@ -123,6 +123,8 @@ class MainActivity : ComponentActivity() {
         val separation by viewModel.separation.collectAsStateWithLifecycle()
         val diagnostics by viewModel.diagnostics.collectAsStateWithLifecycle()
         val exporting by viewModel.exporting.collectAsStateWithLifecycle()
+        val features by viewModel.features.collectAsStateWithLifecycle()
+        val modelProblems by viewModel.modelProblems.collectAsStateWithLifecycle()
 
         val folderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             if (uri == null) return@rememberLauncherForActivityResult
@@ -131,6 +133,11 @@ class MainActivity : ComponentActivity() {
             runCatching { contentResolver.takePersistableUriPermission(uri, flags) }
                 .onSuccess { viewModel.setFolder(uri) }
                 .onFailure { showToast(getString(R.string.settings_debug_folder_refused)) }
+        }
+
+        val modelLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+            if (uris.isEmpty()) return@rememberLauncherForActivityResult
+            viewModel.installModels(uris) { copied -> showToast(getString(R.string.settings_debug_models_added, copied)) }
         }
 
         // Re-checked on resume, so a grant made in system settings shows up on return.
@@ -205,6 +212,8 @@ class MainActivity : ComponentActivity() {
                 nightly = diagnostics.nightly,
                 exporting = exporting,
                 lastExport = diagnostics.lastExport,
+                features = features,
+                modelProblems = modelProblems,
             ),
             onDeveloperMode = viewModel::setDeveloperMode,
             onPickFolder = { runCatching { folderLauncher.launch(null) } },
@@ -215,6 +224,9 @@ class MainActivity : ComponentActivity() {
                 }
             },
             onNightly = viewModel::setNightly,
+            onAnalyse = viewModel::toggleAnalysis,
+            onAddModels = { runCatching { modelLauncher.launch(arrayOf("*/*")) } },
+            onRemoveModels = viewModel::removeModels,
             onClose = onClose,
         )
     }
