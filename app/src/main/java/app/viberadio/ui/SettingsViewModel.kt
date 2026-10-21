@@ -34,6 +34,8 @@ import app.viberadio.library.FolderState
 import app.viberadio.library.FolderTree
 import app.viberadio.library.PodcastFolder
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.distinctUntilChanged
+import app.viberadio.features.AudioFeatures
 
 /** One named channel on the Channels settings page. */
 data class ChannelNameUi(
@@ -236,6 +238,23 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             }
         }
     }
+
+    /** Settings → Debug → Audio features. */
+    val features: StateFlow<AudioFeatures.Status> = container.audioFeatures.status
+
+    /** Model manifests that can't be used, re-read whenever the blocks in use change. */
+    val modelProblems: StateFlow<Map<String, String>> = container.audioFeatures.status
+        .map { it.blocks }
+        .distinctUntilChanged()
+        .map { withContext(Dispatchers.IO) { runCatching { container.featureModels.scan().second }.getOrDefault(emptyMap()) } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    fun toggleAnalysis() = container.toggleAnalysis()
+
+    /** Copies picked model files in; [done] gets how many were copied. */
+    fun installModels(uris: List<Uri>, done: (Int) -> Unit) = container.installModels(uris, done)
+
+    fun removeModels() = container.removeModels()
 
     private fun ui(names: ChannelNames): List<ChannelNameUi> = ChannelLineup.ids.map { id ->
         ChannelNameUi(

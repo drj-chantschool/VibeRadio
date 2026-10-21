@@ -12,6 +12,12 @@ import app.viberadio.feedback.FeedbackDatabase
 import app.viberadio.feedback.FeedbackRecorder
 import app.viberadio.feedback.ListeningClock
 import app.viberadio.feedback.PlayHistory
+import app.viberadio.features.AudioFeatureJob
+import app.viberadio.features.AudioFeatures
+import app.viberadio.features.ExcerptDecoder
+import app.viberadio.features.FeatureModels
+import app.viberadio.features.FileAudioFeatureStore
+import app.viberadio.features.SpectralFeatures
 import app.viberadio.learning.Learner
 import app.viberadio.learning.LearningModels
 import app.viberadio.library.LibraryFolderSettings
@@ -20,6 +26,7 @@ import app.viberadio.library.PodcastFolder
 import app.viberadio.library.PodcastFolderSettings
 import app.viberadio.library.PrefsLibraryFolderStore
 import app.viberadio.library.PrefsPodcastFolderStore
+import app.viberadio.library.ContentKind
 import app.viberadio.library.Track
 import app.viberadio.playback.LastChannelStore
 import app.viberadio.playback.LiveRadio
@@ -172,14 +179,36 @@ class AppContainer(context: Context) {
         ioDispatcher = Dispatchers.IO,
     ).also { radio -> appScope.launch(Dispatchers.IO) { radio.load() } }
 
+    /** Settings → Debug → Add feature models: ONNX models with a manifest, in app storage. */
+    val featureModels = FeatureModels(File(context.filesDir, "models"))
+
+    private val excerptDecoder = ExcerptDecoder(context)
+
     /**
-     * Song placement and preference (#14), learned from the thumbs log. Swap models in
-     * [LearningModels]; nothing else constructs one. Log read off the main thread at startup.
+     * Audio feature vectors per song (Similarity plan): the built-in signal features plus a block
+     * per installed model, and the similarity index the learner borrows evidence through. Add or
+     * swap extractors here; nothing else names one. Analysed by [AudioFeatureJob] while charging
+     * and idle, or from Settings → Debug.
+     */
+    val audioFeatures = AudioFeatures(
+        store = FileAudioFeatureStore(File(context.filesDir, "features")),
+        extractors = { listOf(SpectralFeatures()) + featureModels.extractors() },
+        decode = { track, plan -> excerptDecoder.decode(track.uri, track.durationMs, plan) },
+        hashOf = { track -> playHistory.hash(track) },
+        knownHash = playHistory::hashOf,
+        ioDispatcher = Dispatchers.IO,
+    ).also { AudioFeatureJob.schedule(appContext) }
+
+    /**
+     * Song placement and preference (#14), learned from the thumbs log and spread to similar
+     * songs through [audioFeatures]. Swap models in [LearningModels]; nothing else constructs
+     * one. Log read off the main thread at startup.
      */
     val learner = Learner(
         models = LearningModels(),
         readEvents = feedbackDatabase.feedbackLog::readAll,
         hashOf = playHistory::hashOf,
+        similarity = { audioFeatures.index.value },
     ).also { learner -> appScope.launch(Dispatchers.IO) { learner.load() } }
 
     /** Settings → Audio → Library folders: folders left out of the library. */
@@ -215,6 +244,14 @@ class AppContainer(context: Context) {
         // A folder put back or left out rebuilds the channels from the last scan; the playing queue is left alone.
         appScope.launch { libraryFolders.exclusions.drop(1).collect { repository.regenerate() } }
         appScope.launch { podcastFolder.folder.drop(1).collect { repository.regenerate() } }
+        // Stored audio features load after each scan; a new similarity index re-places the songs.
+        appScope.launch {
+            repository.scanned.filterNotNull().collectLatest {
+                repository.state.first { it is ChannelRepository.State.Ready }
+                audioFeatures.refresh(songs())
+            }
+        }
+        appScope.launch { audioFeatures.index.drop(1).collect { repository.replace() } }
         // The podcast folder's files become its show on the podcast page, after every scan and folder change.
         appScope.launch {
             combine(repository.scanned.filterNotNull(), podcastFolder.folder) { tracks, folder -> tracks to folder }
@@ -223,6 +260,52 @@ class AppContainer(context: Context) {
                     val folder = podcastFolder.awaitFolder()
                     podcastRepository.syncLocalFeeds(withContext(Dispatchers.Default) { localFeeds(tracks, folder) })
                 }
+        }
+    }
+
+    /** Every song on the dial's song channels, once each. */
+    private fun songs(): List<Track> =
+        (channelRepository.state.value as? ChannelRepository.State.Ready)?.channels.orEmpty()
+            .flatMap { it.tracks }.distinctBy { it.uri }.filter { it.kind == ContentKind.MUSIC }
+
+    /**
+     * Computes missing audio features for every song, scanning the library first if nothing has
+     * (the job can start in a fresh process). Cancellable between songs.
+     */
+    suspend fun analyseSongs() {
+        if (channelRepository.state.value == ChannelRepository.State.NotScanned && AudioPermission.isGranted(appContext)) {
+            runCatching { channelRepository.refresh() }
+        }
+        withTimeoutOrNull(SCAN_WAIT_MS) { channelRepository.state.first { it is ChannelRepository.State.Ready || it == ChannelRepository.State.NotScanned } }
+        audioFeatures.analyse(songs())
+    }
+
+    private var analysis: kotlinx.coroutines.Job? = null
+
+    /** Settings → Debug → Audio features: starts analysing now, or stops a run under way. */
+    fun toggleAnalysis() {
+        val running = analysis
+        if (running != null && running.isActive) {
+            running.cancel()
+            return
+        }
+        analysis = appScope.launch { runCatching { analyseSongs() } }
+    }
+
+    /** Settings → Debug: copies picked model files in, then re-reads which blocks exist. */
+    fun installModels(uris: List<Uri>, done: (Int) -> Unit) {
+        appScope.launch {
+            val copied = withContext(Dispatchers.IO) { featureModels.install(appContext.contentResolver, uris) }
+            audioFeatures.refresh(songs())
+            done(copied)
+        }
+    }
+
+    /** Settings → Debug: removes every installed model; songs fall back to the built-in features. */
+    fun removeModels() {
+        appScope.launch {
+            withContext(Dispatchers.IO) { featureModels.removeAll() }
+            audioFeatures.refresh(songs())
         }
     }
 
@@ -386,6 +469,7 @@ class AppContainer(context: Context) {
                 podcasts = podcasts,
                 downloadedEpisodes = podcastRepository.downloaded.value,
                 podcastEvents = runCatching { podcastLog.readAll() }.getOrDefault(emptyList()),
+                audioFeatures = audioFeatures.snapshot(),
             )
         }
     }

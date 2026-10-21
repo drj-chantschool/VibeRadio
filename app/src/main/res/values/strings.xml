@@ -190,6 +190,15 @@
     <string name="settings_debug_nightly">Export nightly</string>
     <string name="settings_debug_nightly_about">Once a day, while the phone is charging and idle.</string>
     <string name="settings_debug_nightly_no_folder">Once a day, while the phone is charging and idle. Pick a diagnostics folder first, or the exports stay on the phone.</string>
+    <string name="settings_debug_features">Audio features</string>
+    <string name="settings_debug_features_about">%1$d of %2$d songs analysed. Blocks: %3$s. Similar songs share thumbs evidence for channel placement. Runs while the phone charges and is idle; tap to analyse now.</string>
+    <string name="settings_debug_features_running">Analysing: %1$d of %2$d songs done. Tap to stop; it carries on later.</string>
+    <string name="settings_debug_models_add">Add feature models</string>
+    <string name="settings_debug_models_add_about">ONNX models, each with a .properties manifest and any labels file it names (see docs/audio-features.md). Pick them all at once; each adds a block.</string>
+    <string name="settings_debug_models_problem">%1$s: %2$s</string>
+    <string name="settings_debug_models_added">Files copied: %1$d</string>
+    <string name="settings_debug_models_remove">Remove feature models</string>
+    <string name="settings_debug_models_remove_about">Back to the built-in signal features only. Results already computed are kept, in case the same model comes back.</string>
     <string name="settings_debug_developer_mode">Developer mode</string>
     <string name="settings_debug_developer_mode_about">Turning it off hides this page and the podcast gap rule, and stops the nightly export. Exports already made stay where they are, and the podcast gap rule stays as set.</string>
     <string name="unit_hz">Hz</string>

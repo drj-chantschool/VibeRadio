@@ -74,6 +74,12 @@
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 
+        <!-- Audio feature analysis for song similarity, while charging and idle. -->
+        <service
+            android:name=".features.AudioFeatureJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <!-- ONNX Runtime's telemetry: no usage data leaves the phone, and the native library
              loads only when a feature model runs, not at every app start. -->
         <provider

@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import app.viberadio.dial.ChannelNames
+import app.viberadio.features.AudioFeatures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -122,6 +123,10 @@ data class DebugSettingsUi(
     val nightly: Boolean,
     val exporting: Boolean,
     val lastExport: ExportOutcome?,
+    /** Audio feature analysis (Similarity plan): progress and the blocks in use. */
+    val features: AudioFeatures.Status = AudioFeatures.Status(),
+    /** Installed model manifests that can't be used, with the reason. */
+    val modelProblems: Map<String, String> = emptyMap(),
 )
 
 /** Settings → Bluetooth as the page shows it. */
@@ -178,6 +183,10 @@ fun SettingsScreen(
     onExportNow: () -> Unit,
     onShareExport: () -> Unit,
     onNightly: (Boolean) -> Unit,
+    /** Settings → Debug → Audio features: analyse now, or stop. */
+    onAnalyse: () -> Unit,
+    onAddModels: () -> Unit,
+    onRemoveModels: () -> Unit,
     onClose: () -> Unit,
 ) {
     var page by rememberSaveable { mutableStateOf(SettingsPage.Root) }
@@ -267,7 +276,7 @@ fun SettingsScreen(
                 }
                 SettingsPage.Debug -> {
                     SettingsHeader(stringResource(R.string.settings_debug), onBack = { page = SettingsPage.Root })
-                    DebugSettingsList(debug, onDeveloperMode, onPickFolder, onExportNow, onShareExport, onNightly)
+                    DebugSettingsList(debug, onDeveloperMode, onPickFolder, onExportNow, onShareExport, onNightly, onAnalyse, onAddModels, onRemoveModels)
                 }
             }
         }
@@ -432,7 +441,8 @@ private fun ActionRow(title: String, about: String, enabled: Boolean = true, onC
 
 /**
  * Settings → Debug (developer mode only): where diagnostics go, exporting them now or nightly,
- * sharing the latest, and the switch that turns developer mode back off.
+ * sharing the latest, audio feature analysis and its models, and the switch that turns
+ * developer mode back off.
  */
 @Composable
 private fun DebugSettingsList(
@@ -442,6 +452,9 @@ private fun DebugSettingsList(
     onExportNow: () -> Unit,
     onShareExport: () -> Unit,
     onNightly: (Boolean) -> Unit,
+    onAnalyse: () -> Unit,
+    onAddModels: () -> Unit,
+    onRemoveModels: () -> Unit,
 ) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
@@ -483,6 +496,36 @@ private fun DebugSettingsList(
                 ),
                 checked = debug.nightly,
                 onChange = onNightly,
+            )
+            Rule()
+            val features = debug.features
+            ActionRow(
+                title = stringResource(R.string.settings_debug_features),
+                about = if (features.running) {
+                    stringResource(R.string.settings_debug_features_running, features.analysed, features.total)
+                } else {
+                    stringResource(
+                        R.string.settings_debug_features_about,
+                        features.analysed,
+                        features.total,
+                        features.blocks.joinToString(", ") { "${it.id} (${it.size})" },
+                    )
+                },
+                onClick = onAnalyse,
+            )
+            Rule()
+            ActionRow(
+                title = stringResource(R.string.settings_debug_models_add),
+                about = (listOf(stringResource(R.string.settings_debug_models_add_about)) +
+                    debug.modelProblems.map { (file, problem) -> stringResource(R.string.settings_debug_models_problem, file, problem) })
+                    .joinToString("\n"),
+                onClick = onAddModels,
+            )
+            Rule()
+            ActionRow(
+                title = stringResource(R.string.settings_debug_models_remove),
+                about = stringResource(R.string.settings_debug_models_remove_about),
+                onClick = onRemoveModels,
             )
             Rule()
             SwitchRow(
@@ -1507,6 +1550,9 @@ private fun SettingsLightPreview() {
             onExportNow = {},
             onShareExport = {},
             onNightly = {},
+            onAnalyse = {},
+            onAddModels = {},
+            onRemoveModels = {},
             onClose = {},
         ) }
 }
@@ -1544,6 +1590,9 @@ private fun SettingsDarkPreview() {
             onExportNow = {},
             onShareExport = {},
             onNightly = {},
+            onAnalyse = {},
+            onAddModels = {},
+            onRemoveModels = {},
             onClose = {},
         ) }
 }
