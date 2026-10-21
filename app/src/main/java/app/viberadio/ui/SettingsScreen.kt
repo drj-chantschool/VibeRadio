@@ -1710,7 +1710,7 @@ private fun PodcastSettingsPreview() {
 private fun DebugSettingsPreview() {
     VibeRadioTheme(darkTheme = false) {
         Surface(color = MaterialTheme.colorScheme.background) {
-            DebugSettingsList(previewDebug, onDeveloperMode = {}, onPickFolder = {}, onExportNow = {}, onShareExport = {}, onNightly = {})
+            DebugSettingsList(previewDebug, onDeveloperMode = {}, onPickFolder = {}, onExportNow = {}, onShareExport = {}, onNightly = {}, onAnalyse = {}, onAddModels = {}, onRemoveModels = {})
         }
     }
 }
