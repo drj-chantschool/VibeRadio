@@ -39,7 +39,7 @@ class SignalTest {
     fun `resampling keeps a tone's pitch and level`() {
         val out = Resampler.resample(sine(440.0, 44_100, 1.0), 44_100, 16_000)
         assertEquals(16_000, out.size)
-        assertEquals(880, zeroCrossings(out).toDouble(), 4.0)
+        assertEquals(880.0, zeroCrossings(out).toDouble(), 4.0)
         assertEquals(0.5 / sqrt(2.0), rms(out, 100, out.size - 100), 0.01)
     }
 
