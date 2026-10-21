@@ -10,6 +10,8 @@ import app.viberadio.dial.ChannelLineup.HALL
 import app.viberadio.dial.ChannelLineup.SHUFFLE
 import app.viberadio.dial.ChannelLineup.VOICE
 import app.viberadio.dial.ChannelLineup.ZONE
+import app.viberadio.features.FeatureBlock
+import app.viberadio.features.SimilaritySpace
 import app.viberadio.feedback.FeedbackEvent
 import app.viberadio.feedback.Thumb
 import app.viberadio.feedback.Thumb.DOWN
@@ -18,6 +20,7 @@ import app.viberadio.library.Track
 import app.viberadio.tracks
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LearningTest {
@@ -150,5 +153,77 @@ class LearningTest {
     fun `channels without mood slots pass through`() {
         val genreOnly = listOf(Channel("genre:jazz", "Jazz", ChannelType.MUSIC_ONLY, songs))
         assertSame(genreOnly, learner().place(genreOnly))
+    }
+
+    // Similarity (Similarity plan, Phase 3)
+
+    private val propagated = PropagatedChannelFit()
+
+    private fun neighbour(distance: Double, vararg events: Pair<String, Thumb>) = NeighbourFit(distance, vector(*events).channelFit)
+
+    private fun downs(channel: String, n: Int) = Array(n) { channel to DOWN }
+
+    @Test
+    fun `without neighbours the thumb rule decides`() {
+        val v = vector(BREEZE to DOWN)
+        assertEquals(fit(v), propagated.channelsFor(v.channelFit, emptyList()))
+        assertEquals(fit(v), propagated.channelsFor(v.channelFit))
+    }
+
+    @Test
+    fun `thumbs down on a close neighbour move an unrated song off that channel`() {
+        val near = neighbour(0.0, *downs(BUZZ, 5))
+        assertEquals(ChannelLineup.moods.toSet() - BUZZ, propagated.channelsFor(FeatureVector.EMPTY.channelFit, listOf(near)))
+    }
+
+    @Test
+    fun `too little evidence leaves the song where it was`() {
+        val few = neighbour(0.0, *downs(BUZZ, 4))
+        val far = neighbour(1.0, *downs(BUZZ, 50))
+        val all = ChannelLineup.moods.toSet()
+        assertEquals(all, propagated.channelsFor(FeatureVector.EMPTY.channelFit, listOf(few)))
+        assertEquals(all, propagated.channelsFor(FeatureVector.EMPTY.channelFit, listOf(far)))
+    }
+
+    @Test
+    fun `thumbs up on similar songs bring a song back to a channel`() {
+        val own = vector(BREEZE to DOWN, BUZZ to DOWN)
+        assertTrue(BREEZE !in fit(own))
+        val liked = neighbour(0.1, *Array(5) { BREEZE to UP })
+        assertTrue(BREEZE in propagated.channelsFor(own.channelFit, listOf(liked)))
+    }
+
+    @Test
+    fun `a song's own thumbs up beats its neighbours`() {
+        val own = vector(BUZZ to UP)
+        val near = neighbour(0.0, *downs(BUZZ, 20))
+        assertTrue(BUZZ in propagated.channelsFor(own.channelFit, listOf(near)))
+    }
+
+    @Test
+    fun `neighbour weight is capped, so a duplicate can't decide alone`() {
+        assertEquals(0.8, propagated.weight(0.0), 1e-9)
+        assertTrue(propagated.weight(0.5) < 0.2)
+    }
+
+    @Test
+    fun `placement borrows thumbs from acoustically similar songs`() {
+        // songs 0 and 1 sound alike, as do 2 and 3; song 1 got thumbs down on The Buzz.
+        val block = FeatureBlock("t", 1, listOf("x", "y"))
+        val index = SimilaritySpace().build(
+            listOf(
+                block to mapOf(
+                    hashOf(songs[0]) to floatArrayOf(1f, 0f), hashOf(songs[1]) to floatArrayOf(1f, 0f),
+                    hashOf(songs[2]) to floatArrayOf(-1f, 0f), hashOf(songs[3]) to floatArrayOf(-1f, 0f),
+                ),
+            ),
+        )
+        val events = List(5) { event(hashOf(songs[1]), BUZZ, DOWN) }
+        val learner = Learner(LearningModels(), { events }, ::hashOf, similarity = { index })
+        val placed = learner.place(generated).associateBy { it.id }
+        assertEquals(songs.drop(2), placed.getValue(BUZZ).tracks)
+        assertEquals(songs, placed.getValue(BREEZE).tracks)
+        // Without the index only song 1 moves.
+        assertEquals(songs - songs[1], learner(*events.toTypedArray()).place(generated).single { it.id == BUZZ }.tracks)
     }
 }
