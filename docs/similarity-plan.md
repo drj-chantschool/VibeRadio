@@ -28,7 +28,9 @@ Rough data needs before Phase 2 is meaningful: a few hundred thumbs spread over 
 - Candidates: Essentia Discogs-EffNet (genre/style + mood/arousal-valence heads), MusiCNN, YAMNet, PANNs, CLAP. Licensing is fine for personal use; revisit (Essentia's models are CC BY-NC-SA) if the app is ever distributed. No model is bundled with the app.
 - Per song: analyze 3 excerpts (30 s centred at 25%, 50%, 75%), average the per-window outputs. Key results on file hash, same as the rest of the app.
 
-## Phase 2: Offline analysis (notebook)
+## Phase 2: Offline analysis (PC)
+
+Built: [`tools/similarity-lab`](../tools/similarity-lab/README.md) (`vrlab`). `vrlab extract` runs the phone's model manifests over a byte-identical copy of the music (same frontend, excerpts, resampler and block files as the app), so embeddings too large to export can be tested; `vrlab report` reads the diagnostics bundle plus those blocks and answers the questions below in report.html, with the weights and `PropagatedChannelFit` settings to paste into the app and a proposed placement for every song. Its similarity space and models are ports of the app's (same seeded projection), so its numbers carry over.
 
 Questions to answer from the exported log + features:
 

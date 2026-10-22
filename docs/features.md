@@ -73,7 +73,7 @@ Principle: you still have control, but you shouldn't need it, and the app doesn'
 
 ## Diagnostics (Phase A: single tester, on-device)
 
-- Purpose: expose the app's data for analysis (by Claude through the Google Drive connector or the share sheet, or a PC notebook). Not a user feature; hidden behind developer mode
+- Purpose: expose the app's data for analysis (by Claude through the Google Drive connector or the share sheet, or the PC similarity lab, `tools/similarity-lab`). Not a user feature; hidden behind developer mode
 - Developer mode: off by default. Turned on by tapping the version line at the foot of Settings 7 times (Android convention). The last 3 taps count down in a toast; a pause over 3 s starts the count over. Once on, Settings shows a Debug page; its last switch turns developer mode back off, which hides the page and stops the nightly export. Anything already exported stays where it is
 - Settings → Debug → "Diagnostics folder": pick a folder once with the system folder picker (Storage Access Framework). The app keeps the permission. No accounts, tokens or network code in the app; the folder's document provider (e.g. Google Drive, if it offers folder access) does any upload
 - Settings → Debug → "Export now": writes one bundle into the chosen folder. The row shows how the last export went (saved, ready to share, or why it failed)
