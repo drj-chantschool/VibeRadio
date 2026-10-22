@@ -10,3 +10,6 @@ build/
 .cxx
 *.apk
 *.aab
+__pycache__/
+*.egg-info/
+/tools/similarity-lab/vrlab-work/
