@@ -37,6 +37,8 @@
     <!-- Podcast page (#20) -->
     <string name="podcasts_title">Podcasts</string>
     <string name="podcasts_up_next">Up next</string>
+    <string name="podcasts_history">History</string>
+    <string name="podcasts_history_empty">Nothing played in the last 24 hours.</string>
     <string name="podcasts_shows">Shows</string>
     <string name="podcasts_nothing_queued">Nothing left to play. New episodes join the queue when the feeds update.</string>
     <string name="podcasts_empty">Add a show by pasting its RSS feed link. It goes on %1$s, and you listen by tuning the dial to it.</string>
@@ -83,6 +85,11 @@
     <string name="episode_mark_played">Mark played</string>
     <string name="episode_mark_unplayed">Mark unplayed</string>
     <string name="episode_mark_older_played">Mark this and older played</string>
+    <string name="episode_played">played</string>
+    <string name="episode_resumes_at">resumes at %1$s</string>
+    <string name="episode_heard">On air %1$s</string>
+    <string name="episode_details">Show details</string>
+    <string name="episode_no_description">No description in the feed.</string>
     <!-- Settings -->
     <string name="settings_title">Settings</string>
     <string name="settings_open">Settings</string>

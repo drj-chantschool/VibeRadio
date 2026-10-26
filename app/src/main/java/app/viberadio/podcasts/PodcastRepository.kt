@@ -137,6 +137,13 @@ class PodcastRepository(
     fun savePosition(episodeId: String, positionMs: Long) =
         mutate(syncDownloads = false) { it.withPosition(episodeId, positionMs) }
 
+    /** Playing: the resume point, and the episode joins the history. */
+    fun onAir(episodeId: String, positionMs: Long) =
+        mutate(syncDownloads = false) { it.withPosition(episodeId, positionMs).withHeard(episodeId, clock()) }
+
+    /** Played to the end: played, and in the history. */
+    fun finished(episodeId: String) = mutate { it.withPlayed(episodeId, true).withHeard(episodeId, clock()) }
+
     /** The local copy if it's on the device, otherwise the feed's URL (streamed; for a folder show, the file itself). */
     fun playableUri(episode: Episode): String {
         val file = downloader.file(episode.id)

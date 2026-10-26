@@ -1,5 +1,6 @@
 package app.viberadio.ui
 
+import android.text.format.DateUtils
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.Canvas
@@ -78,7 +79,8 @@ import java.time.format.FormatStyle
  * The podcast page (#20). More control than the song page, because podcasts are curated and
  * long-form: add a feed, choose the channels a show plays on and whether it pauses the music,
  * and mark episodes played before they come up. There is still no play button here; listening happens by
- * tuning the dial. Pulling down from the top checks every feed now.
+ * tuning the dial. Pulling down from the top checks every feed now. Below Up next, History lists what was on
+ * air in the last 24 hours; a long press on an episode in either opens its details on a page of their own.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,6 +91,8 @@ fun PodcastScreen(
     /** The show open, if any: one at a time, closed when the page is left. */
     openShow: String?,
     onOpenShow: (feedUrl: String?) -> Unit,
+    /** Long press in Up next or History: the episode's details. */
+    onOpenEpisode: (episodeId: String) -> Unit,
     onDraftChange: (String) -> Unit,
     onAdd: () -> Unit,
     onSetChannel: (feedUrl: String, channelId: String, on: Boolean) -> Unit,
@@ -150,7 +154,14 @@ fun PodcastScreen(
                     if (state.upNext.isEmpty()) {
                         item { Faint(stringResource(R.string.podcasts_nothing_queued)) }
                     } else {
-                        items(state.upNext, key = { "next:" + it.id }) { UpNextRow(it) }
+                        items(state.upNext, key = { "next:" + it.id }) { UpNextRow(it, onOpenEpisode) }
+                    }
+
+                    section(R.string.podcasts_history)
+                    if (state.history.isEmpty()) {
+                        item(key = "history:none") { Faint(stringResource(R.string.podcasts_history_empty)) }
+                    } else {
+                        items(state.history, key = { "heard:" + it.id }) { HistoryRow(it, onOpenEpisode) }
                     }
 
                     section(R.string.podcasts_shows)
@@ -227,12 +238,12 @@ fun PodcastScreen(
 /**
  * Where [feedUrl]'s row sits in the list, with no show open above it. Mirrors the items
  * [PodcastScreen] emits: the heading, Up next (its title and rows, or the one "nothing queued"
- * line), the Shows title, then a row and a rule per show.
+ * line), History (likewise), the Shows title, then a row and a rule per show.
  */
 private fun showRowIndex(state: PodcastUiState, feedUrl: String): Int? {
     if (!state.loaded) return null
     val position = state.shows.indexOfFirst { it.feedUrl == feedUrl }.takeIf { it >= 0 } ?: return null
-    return 1 + 1 + maxOf(1, state.upNext.size) + 1 + 2 * position
+    return 1 + 1 + maxOf(1, state.upNext.size) + 1 + maxOf(1, state.history.size) + 1 + 2 * position
 }
 
 @Composable
@@ -273,8 +284,9 @@ private fun LazyListScope.section(@StringRes title: Int) {
 }
 
 @Composable
-private fun UpNextRow(episode: EpisodeUi) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+private fun UpNextRow(episode: EpisodeUi, onOpenEpisode: (String) -> Unit) {
+    val details = stringResource(R.string.episode_details)
+    Column(Modifier.fillMaxWidth().opensDetails(details) { onOpenEpisode(episode.id) }.padding(vertical = 6.dp)) {
         Text(
             episode.title,
             style = MaterialTheme.typography.bodyMedium,
@@ -300,6 +312,41 @@ private fun UpNextRow(episode: EpisodeUi) {
         )
     }
 }
+
+/** What was on air, and when: "Slow Radio · 2 hours ago · resumes". */
+@Composable
+private fun HistoryRow(episode: EpisodeUi, onOpenEpisode: (String) -> Unit) {
+    val details = stringResource(R.string.episode_details)
+    Column(Modifier.fillMaxWidth().opensDetails(details) { onOpenEpisode(episode.id) }.padding(vertical = 6.dp)) {
+        Text(
+            episode.title,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            listOfNotNull(
+                episode.showTitle,
+                episode.heardMs?.let { formatHeard(it) },
+                when {
+                    episode.played -> stringResource(R.string.episode_played)
+                    episode.started -> stringResource(R.string.episode_resumes)
+                    else -> null
+                },
+            ).joinToString(" · "),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.outline,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** Long press opens the episode's details. A tap does nothing: there's nothing to play here. */
+@OptIn(ExperimentalFoundationApi::class)
+private fun Modifier.opensDetails(label: String, onLongClick: () -> Unit): Modifier =
+    combinedClickable(onLongClickLabel = label, onLongClick = onLongClick, onClick = {})
 
 /**
  * A show's heading, and the tap target that opens it: a faintly tinted band with a chevron, so
@@ -604,15 +651,23 @@ private fun formatSkipIntro(seconds: Int): String = when {
 private fun formatSpeed(speed: Float): String =
     java.math.BigDecimal(speed.toString()).stripTrailingZeros().toPlainString() + "\u00d7"
 
+/** "5 minutes ago", "2 hours ago". */
+internal fun formatHeard(epochMs: Long): String =
+    DateUtils.getRelativeTimeSpanString(epochMs, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()
+
 private val dateFormat: DateTimeFormatter = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
 
-private fun formatDate(epochMs: Long): String? =
+internal fun formatDate(epochMs: Long): String? =
     if (epochMs <= 0) null else Instant.ofEpochMilli(epochMs).atZone(ZoneId.systemDefault()).toLocalDate().format(dateFormat)
 
 private val previewEpisodes = listOf(
     EpisodeUi("1", "The long way round", "Slow Radio", 1_791_000_000_000, played = false, downloaded = true, started = true),
     EpisodeUi("2", "Harbour sounds at dawn", "Slow Radio", 1_790_000_000_000, played = false, downloaded = true, started = false),
     EpisodeUi("3", "Pilot", "Slow Radio", 1_700_000_000_000, played = true, downloaded = false, started = false),
+)
+
+private val previewHistory = listOf(
+    EpisodeUi("4", "Night ferry", "Slow Radio", 1_789_000_000_000, played = true, downloaded = true, started = false, heardMs = 1_792_000_000_000),
 )
 
 private fun previewChannels(vararg on: String) = listOf(
@@ -622,6 +677,7 @@ private fun previewChannels(vararg on: String) = listOf(
 private val previewState = PodcastUiState(
     loaded = true,
     upNext = previewEpisodes.take(2),
+    history = previewHistory,
     shows = listOf(
         ShowUi("a", "Slow Radio", local = false, previewChannels("breeze", "podcasts"), pauseMusic = false, unplayed = 2, speed = 1.0f, priority = 0, skipIntroSeconds = 30, episodes = previewEpisodes),
         ShowUi("b", "Field Notes", local = false, previewChannels(), pauseMusic = true, unplayed = 14, speed = 1.5f, priority = 1, skipIntroSeconds = 0, episodes = emptyList()),
@@ -631,11 +687,11 @@ private val previewState = PodcastUiState(
 @Preview(name = "Light", showBackground = true)
 @Composable
 private fun PodcastScreenLightPreview() {
-    VibeRadioTheme(darkTheme = false) { PodcastScreen(previewState, false, {}, "a", {}, {}, {}, { _, _, _ -> }, { _, _ -> }, {}, {}, { _, _ -> }, { _, _ -> }, { _, _ -> }, {}) }
+    VibeRadioTheme(darkTheme = false) { PodcastScreen(previewState, false, {}, "a", {}, {}, {}, {}, { _, _, _ -> }, { _, _ -> }, {}, {}, { _, _ -> }, { _, _ -> }, { _, _ -> }, {}) }
 }
 
 @Preview(name = "Dark", showBackground = true)
 @Composable
 private fun PodcastScreenDarkPreview() {
-    VibeRadioTheme(darkTheme = true) { PodcastScreen(previewState, false, {}, "a", {}, {}, {}, { _, _, _ -> }, { _, _ -> }, {}, {}, { _, _ -> }, { _, _ -> }, { _, _ -> }, {}) }
+    VibeRadioTheme(darkTheme = true) { PodcastScreen(previewState, false, {}, "a", {}, {}, {}, {}, { _, _, _ -> }, { _, _ -> }, {}, {}, { _, _ -> }, { _, _ -> }, { _, _ -> }, {}) }
 }

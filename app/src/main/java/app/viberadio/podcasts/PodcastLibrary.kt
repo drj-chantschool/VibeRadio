@@ -19,6 +19,11 @@ data class PodcastLibrary(
     val played: Set<String> = emptySet(),
     /** Resume positions of started, unplayed episodes. */
     val positions: Map<String, Long> = emptyMap(),
+    /**
+     * When each episode was last on air (wall clock), for the page's history. Only playback writes
+     * it: marking an episode played by hand isn't hearing it. Kept for [HISTORY_MS] only.
+     */
+    val heard: Map<String, Long> = emptyMap(),
 ) {
     private val episodesById: Map<String, Episode> by lazy { episodes.associateBy { it.id } }
 
@@ -46,6 +51,13 @@ data class PodcastLibrary(
         val shows = podcasts.filter { it.channels.isNotEmpty() }.mapTo(HashSet()) { it.feedUrl }
         return ordered(episodes.filter { it.feedUrl in shows && it.id !in played }).take(limit)
     }
+
+    /** Episodes on air in the [HISTORY_MS] up to [nowMs], most recently heard first. */
+    fun history(nowMs: Long): List<Episode> =
+        heard.entries
+            .filter { (_, at) -> at > nowMs - HISTORY_MS }
+            .sortedByDescending { it.value }
+            .mapNotNull { (id, _) -> episode(id) }
 
     private fun ordered(unplayed: List<Episode>): List<Episode> {
         val priorities = podcasts.associate { it.feedUrl to it.priority }
@@ -75,6 +87,7 @@ data class PodcastLibrary(
                     publishedMs = item.publishedMs,
                     audioUrl = item.audioUrl,
                     durationMs = item.durationMs,
+                    description = item.description,
                 )
             }
             .distinctBy { it.id }
@@ -121,6 +134,7 @@ data class PodcastLibrary(
             episodes = episodes.filter { it.feedUrl != feedUrl },
             played = played - gone,
             positions = positions - gone,
+            heard = heard - gone,
         )
     }
 
@@ -186,5 +200,16 @@ data class PodcastLibrary(
     fun withPosition(id: String, positionMs: Long): PodcastLibrary {
         if (episode(id) == null || id in played) return this
         return copy(positions = if (positionMs > 0) positions + (id to positionMs) else positions - id)
+    }
+
+    /** [id] was on air at [nowMs]. Drops whatever has aged out of the history. */
+    fun withHeard(id: String, nowMs: Long): PodcastLibrary {
+        if (episode(id) == null) return this
+        return copy(heard = heard.filterValues { it > nowMs - HISTORY_MS } + (id to nowMs))
+    }
+
+    companion object {
+        /** How far back the podcast page's history goes. */
+        const val HISTORY_MS = 24 * 60 * 60 * 1000L
     }
 }

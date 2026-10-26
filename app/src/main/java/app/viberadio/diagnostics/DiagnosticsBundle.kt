@@ -57,8 +57,10 @@ data class DiagnosticsSnapshot(
     val airings: List<ChannelAiring>,
     /** Leveling results, keyed `song:<hash>` or the episode's media ID. */
     val levels: Map<String, TrackLevel>,
-    /** The podcast library's own JSON file, copied as-is; null if there is none yet. */
+    /** The podcast library's own JSON file (shows and episodes), copied as-is; null if there is none yet. */
     val podcastsJson: String?,
+    /** Its playback state file (played, resume points, history), copied as-is; null if there is none yet. */
+    val podcastStateJson: String? = null,
     /** The podcast library as loaded, for the readable podcast tables. */
     val podcasts: PodcastLibrary = PodcastLibrary(),
     /** IDs of the episodes on the device. */
@@ -101,6 +103,7 @@ object DiagnosticsBundle {
             BundleFile("podcast_events.csv", MIME_CSV, podcastEvents(s.podcastEvents, s.podcasts, s.utcOffsetMinutes)),
         )
         s.podcastsJson?.let { files += BundleFile("podcasts.json", MIME_JSON, it) }
+        s.podcastStateJson?.let { files += BundleFile("podcast_state.json", MIME_JSON, it) }
         // Large embeddings stay on the phone: Phase 2 recomputes them from the files on a PC.
         s.audioFeatures.filterKeys { it.size <= MAX_EXPORTED_DIMS }.forEach { (block, values) ->
             files += BundleFile("audio_features_${block.id}.csv", MIME_CSV, audioFeatures(block, values))
@@ -186,7 +189,7 @@ object DiagnosticsBundle {
             "channels" to s.channelNames.map {
                 linkedMapOf("id" to it.id, "default_name" to it.defaultName, "name" to it.name)
             },
-            "podcasts" to "see podcasts.json",
+            "podcasts" to "see podcasts.json and podcast_state.json",
         ),
     )
 
@@ -336,7 +339,8 @@ object DiagnosticsBundle {
         - library.csv: every song on a channel; track_hash is empty until the song has played once
         - levels.csv: measured loudness per song (`song:<hash>`) and downloaded episode, with the gain at the current target
         - audio_features_<id>.csv: per song, one audio feature block (`dsp`: built-in signal features; others: installed models, e.g. mood or genre probabilities). Blocks over 256 dimensions (embeddings) aren't exported; summary.json lists every block in use and how many songs have it
-        - podcasts.json: the podcast library as the app stores it (shows, channels, speed, Pause music, played, positions)
+        - podcasts.json: the podcast library as the app stores it (shows, channels, speed, Pause music, episodes and their descriptions)
+        - podcast_state.json: the podcast playback state as the app stores it (played, resume positions, when each episode was last on air in the last 24 hours)
         - podcast_shows.csv: per show, its channels, Pause music, speed, priority, skip intro (seconds), and episode counts (all, unplayed, on the device)
         - podcast_queues.csv: per channel with a show on it, the next 10 episodes as the app would queue them now
         - podcast_events.csv: the podcast scheduling log on song channels, oldest first (newest 5,000 to 10,000 kept): tunes, the wait after each tune or episode (`detail`, times relative to the event), each song boundary and whether an episode was due, episode starts (`mode=overlay` over the music or `solo` for a music podcast), ends and failures, and why a due episode didn't start. `on_air_ms` is the clock the schedule runs on; it restarts with the service (`service_start`). `at_local` uses the export's UTC offset

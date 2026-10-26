@@ -3,6 +3,7 @@ package app.viberadio.podcasts
 import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RssParserTest {
@@ -101,5 +102,72 @@ class RssParserTest {
     @Test(expected = FeedParseException::class)
     fun `html is not a feed`() {
         parse("<html><body>Not here</body></html>")
+    }
+
+    @Test
+    fun `description prefers content encoded, then description, then the itunes summary`() {
+        val xml = """
+            <rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+              <channel>
+                <title>Notes</title>
+                <item>
+                  <title>Full</title>
+                  <description>Short</description>
+                  <content:encoded><![CDATA[<p>Long <b>notes</b></p>]]></content:encoded>
+                  <enclosure url="https://cdn.example/1.mp3" type="audio/mpeg"/>
+                </item>
+                <item>
+                  <title>Plain</title>
+                  <description>Just the &lt;i&gt;description&lt;/i&gt;</description>
+                  <itunes:summary>Summary</itunes:summary>
+                  <enclosure url="https://cdn.example/2.mp3" type="audio/mpeg"/>
+                </item>
+                <item>
+                  <title>Summary</title>
+                  <description>  </description>
+                  <itunes:summary>Only a summary</itunes:summary>
+                  <enclosure url="https://cdn.example/3.mp3" type="audio/mpeg"/>
+                </item>
+                <item>
+                  <title>None</title>
+                  <enclosure url="https://cdn.example/4.mp3" type="audio/mpeg"/>
+                </item>
+              </channel>
+            </rss>
+        """.trimIndent()
+        assertEquals(
+            listOf("Long notes", "Just the description", "Only a summary", null),
+            parse(xml).items.map { it.description },
+        )
+    }
+
+    @Test
+    fun `plain text keeps paragraphs, breaks and list items and decodes entities`() {
+        val html = "<p>First&nbsp;line<br/>second   line</p><p>Tom &amp; Jerry &#8212; &#x263A; &rsquo;</p>" +
+            "<ul><li>one</li><li>two</li></ul><script>alert(1)</script>"
+        assertEquals(
+            "First line\nsecond line\n\nTom & Jerry \u2014 \u263a \u2019\n\n\u2022 one\n\u2022 two",
+            RssParser.plainText(html),
+        )
+    }
+
+    @Test
+    fun `plain text leaves unknown entities alone and cuts long notes`() {
+        assertEquals("a &bogus; b", RssParser.plainText("a &bogus; b"))
+        val long = RssParser.plainText("x".repeat(RssParser.MAX_DESCRIPTION + 10))
+        assertEquals(RssParser.MAX_DESCRIPTION, long.length)
+        assertTrue(long.endsWith("\u2026"))
+    }
+
+    @Test
+    fun `plain text keeps web and mail links for the page and drops the rest`() {
+        val html = """<p>Read <a href="https://x.example/a?b=1&amp;c=2" target="_blank">the <b>notes</b> [here]</a>, """ +
+            """mail <a href='mailto:hi@x.example'>us</a>, <a href="/relative">not this</a>, """ +
+            """<a href="https://x.example/(paren) x"><img src="i.png"></a></p>"""
+        assertEquals(
+            "Read [the notes here](https://x.example/a?b=1&c=2), mail [us](mailto:hi@x.example), not this, " +
+                "[](https://x.example/(paren%29%20x)",
+            RssParser.plainText(html),
+        )
     }
 }

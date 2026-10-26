@@ -119,4 +119,18 @@ class PodcastRepositoryTest {
         assertEquals(listOf(true), seen)
         assertFalse(repo.refreshing.value)
     }
+
+    @Test
+    fun `playing puts an episode in the history, marking it by hand doesn't`() = runBlocking {
+        val repo = repository()
+        repo.subscribe(feedUrl)
+        val (ep1, ep2, ep3) = (1..3).map { EpisodeIds.of(feedUrl, "g$it") }
+        repo.onAir(ep1, 30_000)
+        repo.finished(ep2)
+        repo.setPlayed(ep3, true)
+        val lib = store.saved!!
+        assertEquals(30_000L, lib.positions[ep1])
+        assertTrue(lib.isPlayed(ep2))
+        assertEquals(setOf(ep1, ep2), lib.history(42L).mapTo(HashSet()) { it.id })
+    }
 }
