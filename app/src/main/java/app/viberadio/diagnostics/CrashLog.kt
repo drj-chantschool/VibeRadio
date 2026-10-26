@@ -23,7 +23,7 @@ object CrashLog {
 
     /** [log] with [entry] added last, the oldest entries dropped past [keep]. */
     fun append(log: String?, entry: String, keep: Int = KEEP): String =
-        (entries(log) + entry.trimEnd() + "\n").takeLast(keep).joinToString("\n")
+        (entries(log) + (entry.trimEnd() + "\n")).takeLast(keep).joinToString("\n")
 
     /** The log's entries, oldest first. Anything before the first header is dropped. */
     fun entries(log: String?): List<String> {
