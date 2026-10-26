@@ -106,4 +106,17 @@ class PodcastRepositoryTest {
         val file = repo.library.value.episodesOf(folder).single()
         assertEquals("content://media/1", repo.playableUri(file))
     }
+
+    @Test
+    fun `refreshing is up while feeds are fetched`() = runBlocking {
+        lateinit var repo: PodcastRepository
+        val seen = mutableListOf<Boolean>()
+        repo = repository(FeedFetcher { seen += repo.refreshing.value; feed })
+        repo.subscribe(feedUrl)
+        seen.clear()
+        assertFalse(repo.refreshing.value)
+        repo.refresh()
+        assertEquals(listOf(true), seen)
+        assertFalse(repo.refreshing.value)
+    }
 }

@@ -243,12 +243,15 @@ class MainActivity : ComponentActivity() {
     private fun PodcastPage(openShow: String?, onOpenShow: (String?) -> Unit) {
         val viewModel: PodcastViewModel = viewModel()
         val state by viewModel.uiState.collectAsStateWithLifecycle()
+        val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
         LifecycleResumeEffect(viewModel) {
             viewModel.onResume()
             onPauseOrDispose { }
         }
         PodcastScreen(
             state = state,
+            refreshing = refreshing,
+            onRefresh = viewModel::refresh,
             openShow = openShow,
             onOpenShow = onOpenShow,
             onDraftChange = viewModel::onDraftChange,

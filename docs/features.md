@@ -15,6 +15,7 @@ Principle: you still have control, but you shouldn't need it, and the app doesn'
 
 ## Podcast page
 
+- Feeds are checked when the app comes to the front, at most hourly. Pulling down from the top of the podcast page checks every feed now, with a spinner until the check ends
 - Each podcast's heading is a faintly tinted band with a bold chevron; tapping it opens the podcast's settings and episodes. One podcast is open at a time: opening another closes it, and leaving the podcast page closes it
 - Under each podcast: a checkbox per channel selecting which channels the podcast can play on (more control than songs, since podcasts are curated, long-form and limited)
 - Under each podcast: a "Pause music" slider toggle. On means the music pauses while this podcast's episodes play. Podcasts with it on are called "music podcasts", though a user may turn it on for any reason. A music podcast can be assigned to any channel, including music channels
