@@ -117,13 +117,14 @@ class AppContainer(context: Context) {
 
     // App-specific storage: no permission needed, removed with the app.
     private val podcastsFile = File(context.filesDir, "podcasts.json")
+    private val podcastStateFile = File(context.filesDir, "podcast_state.json")
     private val levelsFile = File(context.filesDir, "levels.tsv")
 
     private val episodeDownloader = EpisodeDownloader(File(context.getExternalFilesDir(null) ?: context.filesDir, "episodes"))
 
     /** The podcast pipeline (#17): hand-assigned shows, one global queue. Independent of [channelRepository]. */
     val podcastRepository = PodcastRepository(
-        store = JsonPodcastStore(podcastsFile),
+        store = JsonPodcastStore(podcastsFile, podcastStateFile),
         fetcher = HttpFeedFetcher(),
         downloader = episodeDownloader,
         scope = appScope,
@@ -466,6 +467,7 @@ class AppContainer(context: Context) {
                 airings = runCatching { feedbackDatabase.channelAirings.readAll() }.getOrDefault(emptyList()),
                 levels = runCatching { FileLevelStore(levelsFile).readAll() }.getOrDefault(emptyMap()),
                 podcastsJson = runCatching { AtomicFile(podcastsFile).readFully().decodeToString() }.getOrNull(),
+                podcastStateJson = runCatching { AtomicFile(podcastStateFile).readFully().decodeToString() }.getOrNull(),
                 podcasts = podcasts,
                 downloadedEpisodes = podcastRepository.downloaded.value,
                 podcastEvents = runCatching { podcastLog.readAll() }.getOrDefault(emptyList()),

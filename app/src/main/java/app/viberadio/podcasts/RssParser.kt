@@ -34,7 +34,7 @@ object RssParser {
     private const val ITUNES_NS = "http://www.itunes.com/dtds/podcast-1.0.dtd"
     private const val CONTENT_NS = "http://purl.org/rss/1.0/modules/content/"
 
-    /** Longer show notes are cut here: the library is rewritten whole while an episode plays. */
+    /** Longer show notes are cut here, so a feed with a long back catalogue stays small in memory and on disk. */
     const val MAX_DESCRIPTION = 4000
 
     fun parse(input: InputStream): Feed {
