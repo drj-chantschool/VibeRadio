@@ -19,7 +19,9 @@ import app.viberadio.podcasts.PodcastSpeeds
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -82,6 +84,10 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     private val podcasts: PodcastRepository = (application as VibeRadioApp).container.podcastRepository
     private val names: ChannelNamesRepository = (application as VibeRadioApp).container.channelNames
     private val add = MutableStateFlow(AddFeed())
+    private val pulled = MutableStateFlow(false)
+
+    /** A pull-to-refresh is in progress: the page shows the indicator until it ends. */
+    val refreshing: StateFlow<Boolean> = pulled.asStateFlow()
 
     val uiState: StateFlow<PodcastUiState> =
         combine(podcasts.loaded, podcasts.library, podcasts.downloaded, add, names.names) { loaded, library, downloaded, addFeed, channelNames ->
@@ -146,6 +152,21 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     fun markOlderPlayed(episode: EpisodeUi) = podcasts.markOlderPlayed(episode.id)
 
     fun remove(feedUrl: String) = podcasts.unsubscribe(feedUrl)
+
+    /** Pull to refresh: checks every feed now, however recently it was checked. */
+    fun refresh() {
+        if (pulled.value) return
+        pulled.value = true
+        viewModelScope.launch {
+            try {
+                podcasts.refresh()
+                // A refresh already running (the one on resume) makes ours a no-op: wait for it instead.
+                podcasts.refreshing.first { !it }
+            } finally {
+                pulled.value = false
+            }
+        }
+    }
 
     /** Checks feeds at most hourly, when the app comes to the front. */
     fun onResume() {

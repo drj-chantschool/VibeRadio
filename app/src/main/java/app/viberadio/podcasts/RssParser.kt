@@ -23,7 +23,8 @@ class FeedParseException(message: String, cause: Throwable? = null) : Exception(
 
 /**
  * Reads podcast RSS 2.0 feeds. Items without an audio enclosure are dropped; a missing GUID
- * falls back to the enclosure URL. Uses the JDK DOM parser, which Android also ships, so it
+ * falls back to the enclosure URL. `pubDate` is matched ignoring case, since some generators
+ * (youtube-to-rss among them) write `<pubdate>`. Uses the JDK DOM parser, which Android also ships, so it
  * runs unchanged in JVM tests.
  */
 object RssParser {
@@ -61,7 +62,7 @@ object RssParser {
         return FeedItem(
             guid = guid,
             title = item.childText("title")?.takeIf { it.isNotBlank() } ?: "Untitled episode",
-            publishedMs = item.childText("pubDate")?.let(::parseDate) ?: 0L,
+            publishedMs = item.childText("pubDate", ignoreCase = true)?.let(::parseDate) ?: 0L,
             audioUrl = url,
             durationMs = item.children("duration", ITUNES_NS).firstOrNull()?.textContent?.let(::parseDuration),
         )
@@ -100,7 +101,7 @@ object RssParser {
         "PST" to "-0800", "PDT" to "-0700",
     )
 
-    private fun Element.children(localName: String, namespace: String? = null): List<Element> {
+    private fun Element.children(localName: String, namespace: String? = null, ignoreCase: Boolean = false): List<Element> {
         val out = ArrayList<Element>()
         val nodes = childNodes
         for (i in 0 until nodes.length) {
@@ -108,15 +109,15 @@ object RssParser {
             if (node.nodeType != Node.ELEMENT_NODE) continue
             val name = node.localName ?: node.nodeName
             val matches = if (namespace == null) {
-                node.namespaceURI.isNullOrEmpty() && name == localName
+                node.namespaceURI.isNullOrEmpty() && name.equals(localName, ignoreCase)
             } else {
-                node.namespaceURI == namespace && name == localName
+                node.namespaceURI == namespace && name.equals(localName, ignoreCase)
             }
             if (matches) out += node as Element
         }
         return out
     }
 
-    private fun Element.childText(localName: String): String? =
-        children(localName).firstOrNull()?.textContent?.trim()
+    private fun Element.childText(localName: String, ignoreCase: Boolean = false): String? =
+        children(localName, ignoreCase = ignoreCase).firstOrNull()?.textContent?.trim()
 }

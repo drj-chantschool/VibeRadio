@@ -36,6 +36,10 @@ class PodcastRepository(
 
     val downloaded: StateFlow<Set<String>> get() = downloader.downloaded
 
+    private val _refreshing = MutableStateFlow(false)
+    /** True while [refresh] is fetching feeds. */
+    val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
+
     private val writeLock = Mutex()
     private val refreshLock = Mutex()
     private val downloadRequests = Channel<Unit>(Channel.CONFLATED)
@@ -75,9 +79,13 @@ class PodcastRepository(
         return SubscribeResult.Added(_library.value.podcast(url)!!)
     }
 
-    /** Refetches every show last fetched more than [maxAgeMs] ago. Failures keep the old episodes. */
+    /**
+     * Refetches every show last fetched more than [maxAgeMs] ago. Failures keep the old episodes.
+     * Returns at once while another refresh is running; [refreshing] says when that one ends.
+     */
     suspend fun refresh(maxAgeMs: Long = 0) {
         if (!refreshLock.tryLock()) return
+        _refreshing.value = true
         try {
             // Folder shows follow the library scan instead (syncLocalFeeds).
             val due = _library.value.podcasts.filter { !LocalFeeds.isLocal(it.feedUrl) && clock() - it.lastRefreshedMs >= maxAgeMs }
@@ -86,6 +94,7 @@ class PodcastRepository(
                 mutate { if (it.podcast(podcast.feedUrl) == null) it else it.withFeed(podcast.feedUrl, feed, clock()) }
             }
         } finally {
+            _refreshing.value = false
             refreshLock.unlock()
         }
     }

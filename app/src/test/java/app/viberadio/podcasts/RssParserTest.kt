@@ -64,6 +64,27 @@ class RssParserTest {
     }
 
     @Test
+    fun `reads a lowercase pubdate`() {
+        // As youtube-to-rss writes it.
+        val item = parse(
+            """
+            <rss version="2.0">
+              <channel>
+                <title>Parish</title>
+                <item>
+                  <title>Sunday Mass</title>
+                  <pubdate>Sun, 25 Oct 2026 00:00:00 -0500</pubdate>
+                  <guid isPermaLink="false">abc123</guid>
+                  <enclosure url="http://example.org/parish/abc123.mp3" type="audio/mpeg" length=""></enclosure>
+                </item>
+              </channel>
+            </rss>
+            """.trimIndent(),
+        ).items.single()
+        assertEquals(Instant.parse("2026-10-25T05:00:00Z").toEpochMilli(), item.publishedMs)
+    }
+
+    @Test
     fun `parses named US zones and ISO dates`() {
         assertEquals(Instant.parse("2026-01-02T15:04:05Z").toEpochMilli(), RssParser.parseDate("Fri, 02 Jan 2026 10:04:05 EST"))
         assertEquals(Instant.parse("2026-01-02T10:04:05Z").toEpochMilli(), RssParser.parseDate("2026-01-02T10:04:05Z"))

@@ -27,6 +27,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -34,6 +35,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -74,11 +78,14 @@ import java.time.format.FormatStyle
  * The podcast page (#20). More control than the song page, because podcasts are curated and
  * long-form: add a feed, choose the channels a show plays on and whether it pauses the music,
  * and mark episodes played before they come up. There is still no play button here; listening happens by
- * tuning the dial.
+ * tuning the dial. Pulling down from the top checks every feed now.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PodcastScreen(
     state: PodcastUiState,
+    refreshing: Boolean,
+    onRefresh: () -> Unit,
     /** The show open, if any: one at a time, closed when the page is left. */
     openShow: String?,
     onOpenShow: (feedUrl: String?) -> Unit,
@@ -104,75 +111,93 @@ fun PodcastScreen(
         if (row == null || row.offset < listState.layoutInfo.viewportStartOffset) listState.animateScrollToItem(index)
     }
 
+    val pullState = rememberPullToRefreshState()
+
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize().safeDrawingPadding(),
-            // Bottom room for the page dots.
-            contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 56.dp),
-        ) {
-            item {
-                Text(
-                    stringResource(R.string.podcasts_title),
-                    style = MaterialTheme.typography.displaySmall,
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = onRefresh,
+            state = pullState,
+            modifier = Modifier.fillMaxSize(),
+            indicator = {
+                PullToRefreshDefaults.Indicator(
+                    state = pullState,
+                    isRefreshing = refreshing,
+                    modifier = Modifier.align(Alignment.TopCenter).safeDrawingPadding(),
+                    containerColor = MaterialTheme.colorScheme.background,
                     color = MaterialTheme.colorScheme.onBackground,
                 )
-                Spacer(Modifier.height(20.dp))
-                AddFeedRow(state.add, onDraftChange, onAdd)
-            }
-
-            if (state.loaded && state.shows.isNotEmpty()) {
-                section(R.string.podcasts_up_next)
-                if (state.upNext.isEmpty()) {
-                    item { Faint(stringResource(R.string.podcasts_nothing_queued)) }
-                } else {
-                    items(state.upNext, key = { "next:" + it.id }) { UpNextRow(it) }
+            },
+        ) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+                // Bottom room for the page dots.
+                contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 56.dp),
+            ) {
+                item {
+                    Text(
+                        stringResource(R.string.podcasts_title),
+                        style = MaterialTheme.typography.displaySmall,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
+                    Spacer(Modifier.height(20.dp))
+                    AddFeedRow(state.add, onDraftChange, onAdd)
                 }
 
-                section(R.string.podcasts_shows)
-                for (show in state.shows) {
-                    val open = show.feedUrl == openShow
-                    item(key = "show:" + show.feedUrl) {
-                        // Opening a show closes the one open before.
-                        ShowRow(show = show, open = open, onToggleOpen = { onOpenShow(if (open) null else show.feedUrl) })
+                if (state.loaded && state.shows.isNotEmpty()) {
+                    section(R.string.podcasts_up_next)
+                    if (state.upNext.isEmpty()) {
+                        item { Faint(stringResource(R.string.podcasts_nothing_queued)) }
+                    } else {
+                        items(state.upNext, key = { "next:" + it.id }) { UpNextRow(it) }
                     }
-                    if (open) {
-                        item(key = "channels:" + show.feedUrl) {
-                            ChannelChoices(show.channels) { id, on -> onSetChannel(show.feedUrl, id, on) }
+
+                    section(R.string.podcasts_shows)
+                    for (show in state.shows) {
+                        val open = show.feedUrl == openShow
+                        item(key = "show:" + show.feedUrl) {
+                            // Opening a show closes the one open before.
+                            ShowRow(show = show, open = open, onToggleOpen = { onOpenShow(if (open) null else show.feedUrl) })
                         }
-                        item(key = "pause:" + show.feedUrl) {
-                            PauseMusicRow(show.pauseMusic) { onSetPauseMusic(show.feedUrl, it) }
-                        }
-                        item(key = "speed:" + show.feedUrl) {
-                            SpeedRow(show.speed) { onSetSpeed(show.feedUrl, it) }
-                        }
-                        item(key = "priority:" + show.feedUrl) {
-                            PriorityRow(show.priority) { onSetPriority(show.feedUrl, it) }
-                        }
-                        item(key = "skip:" + show.feedUrl) {
-                            SkipIntroRow(show.skipIntroSeconds) { onSetSkipIntro(show.feedUrl, it) }
-                        }
-                        item(key = "hint:" + show.feedUrl) { Faint(stringResource(R.string.podcasts_mark_hint)) }
-                        items(show.episodes, key = { "ep:" + it.id }) { episode ->
-                            EpisodeRow(episode, onTogglePlayed, onMarkOlderPlayed)
-                        }
-                        item(key = "remove:" + show.feedUrl) {
-                            if (show.local) {
-                                // It comes back with the next scan; the folder setting is what removes it.
-                                Faint(stringResource(R.string.podcasts_folder_show))
-                            } else {
-                                TextButton(onClick = { confirmRemove = show.feedUrl }) {
-                                    Text(stringResource(R.string.podcasts_remove_show))
+                        if (open) {
+                            item(key = "channels:" + show.feedUrl) {
+                                ChannelChoices(show.channels) { id, on -> onSetChannel(show.feedUrl, id, on) }
+                            }
+                            item(key = "pause:" + show.feedUrl) {
+                                PauseMusicRow(show.pauseMusic) { onSetPauseMusic(show.feedUrl, it) }
+                            }
+                            item(key = "speed:" + show.feedUrl) {
+                                SpeedRow(show.speed) { onSetSpeed(show.feedUrl, it) }
+                            }
+                            item(key = "priority:" + show.feedUrl) {
+                                PriorityRow(show.priority) { onSetPriority(show.feedUrl, it) }
+                            }
+                            item(key = "skip:" + show.feedUrl) {
+                                SkipIntroRow(show.skipIntroSeconds) { onSetSkipIntro(show.feedUrl, it) }
+                            }
+                            item(key = "hint:" + show.feedUrl) { Faint(stringResource(R.string.podcasts_mark_hint)) }
+                            items(show.episodes, key = { "ep:" + it.id }) { episode ->
+                                EpisodeRow(episode, onTogglePlayed, onMarkOlderPlayed)
+                            }
+                            item(key = "remove:" + show.feedUrl) {
+                                if (show.local) {
+                                    // It comes back with the next scan; the folder setting is what removes it.
+                                    Faint(stringResource(R.string.podcasts_folder_show))
+                                } else {
+                                    TextButton(onClick = { confirmRemove = show.feedUrl }) {
+                                        Text(stringResource(R.string.podcasts_remove_show))
+                                    }
                                 }
                             }
                         }
+                        item(key = "rule:" + show.feedUrl) { HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant) }
                     }
-                    item(key = "rule:" + show.feedUrl) { HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant) }
-                }
-            } else if (state.loaded) {
-                item {
-                    Spacer(Modifier.height(32.dp))
-                    Faint(stringResource(R.string.podcasts_empty, state.voiceName))
+                } else if (state.loaded) {
+                    item {
+                        Spacer(Modifier.height(32.dp))
+                        Faint(stringResource(R.string.podcasts_empty, state.voiceName))
+                    }
                 }
             }
         }
@@ -606,11 +631,11 @@ private val previewState = PodcastUiState(
 @Preview(name = "Light", showBackground = true)
 @Composable
 private fun PodcastScreenLightPreview() {
-    VibeRadioTheme(darkTheme = false) { PodcastScreen(previewState, "a", {}, {}, {}, { _, _, _ -> }, { _, _ -> }, {}, {}, { _, _ -> }, { _, _ -> }, { _, _ -> }, {}) }
+    VibeRadioTheme(darkTheme = false) { PodcastScreen(previewState, false, {}, "a", {}, {}, {}, { _, _, _ -> }, { _, _ -> }, {}, {}, { _, _ -> }, { _, _ -> }, { _, _ -> }, {}) }
 }
 
 @Preview(name = "Dark", showBackground = true)
 @Composable
 private fun PodcastScreenDarkPreview() {
-    VibeRadioTheme(darkTheme = true) { PodcastScreen(previewState, "a", {}, {}, {}, { _, _, _ -> }, { _, _ -> }, {}, {}, { _, _ -> }, { _, _ -> }, { _, _ -> }, {}) }
+    VibeRadioTheme(darkTheme = true) { PodcastScreen(previewState, false, {}, "a", {}, {}, {}, { _, _, _ -> }, { _, _ -> }, {}, {}, { _, _ -> }, { _, _ -> }, { _, _ -> }, {}) }
 }
