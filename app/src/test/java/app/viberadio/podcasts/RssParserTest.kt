@@ -158,4 +158,16 @@ class RssParserTest {
         assertEquals(RssParser.MAX_DESCRIPTION, long.length)
         assertTrue(long.endsWith("\u2026"))
     }
+
+    @Test
+    fun `plain text keeps web and mail links for the page and drops the rest`() {
+        val html = """<p>Read <a href="https://x.example/a?b=1&amp;c=2" target="_blank">the <b>notes</b> [here]</a>, """ +
+            """mail <a href='mailto:hi@x.example'>us</a>, <a href="/relative">not this</a>, """ +
+            """<a href="https://x.example/(paren) x"><img src="i.png"></a></p>"""
+        assertEquals(
+            "Read [the notes here](https://x.example/a?b=1&c=2), mail [us](mailto:hi@x.example), not this, " +
+                "[](https://x.example/(paren%29%20x)",
+            RssParser.plainText(html),
+        )
+    }
 }

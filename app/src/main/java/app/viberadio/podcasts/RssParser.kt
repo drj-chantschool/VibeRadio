@@ -84,12 +84,14 @@ object RssParser {
         ).mapNotNull { it?.let(::plainText) }.firstOrNull { it.isNotEmpty() }
 
     /**
-     * Show notes as plain text: paragraphs and line breaks kept, list items bulleted, every other
-     * tag dropped, entities decoded, whitespace tidied, and cut at [MAX_DESCRIPTION] characters.
+     * Show notes as plain text: paragraphs and line breaks kept, list items bulleted, web and mail
+     * links kept as `[text](url)` (the page makes them tappable), every other tag dropped, entities
+     * decoded, whitespace tidied, and cut at [MAX_DESCRIPTION] characters.
      */
     fun plainText(html: String): String {
         val text = html
             .replace(Regex("(?is)<(script|style)\\b.*?</\\1\\s*>"), "")
+            .replace(ANCHOR) { link(it.groupValues[2], it.groupValues[3]) }
             .replace(Regex("(?i)<br\\s*/?>"), "\n")
             .replace(Regex("(?i)<li\\b[^>]*>"), "\n\u2022 ")
             .replace(Regex("(?i)</?(p|div|ul|ol|h[1-6]|blockquote)\\b[^>]*>"), "\n\n")
@@ -102,6 +104,17 @@ object RssParser {
             .trim()
         return if (text.length <= MAX_DESCRIPTION) text else text.take(MAX_DESCRIPTION - 1).trimEnd() + "\u2026"
     }
+
+    private val ANCHOR = Regex("(?is)<a\\b[^>]*?\\bhref\\s*=\\s*([\"'])(.*?)\\1[^>]*>(.*?)</a\\s*>")
+
+    /** `[label](url)` for a web or mail link, else just the label. Brackets, spaces and `)` escaped so it parses back. */
+    private fun link(href: String, label: String): String {
+        val url = href.trim().replace(" ", "%20").replace(")", "%29")
+        if (!LINK_SCHEME.containsMatchIn(url)) return label
+        return "[${label.replace("[", "").replace("]", "")}]($url)"
+    }
+
+    private val LINK_SCHEME = Regex("(?i)^(https?://|mailto:)\\S")
 
     private fun decodeEntities(text: String): String =
         Regex("&(#[0-9]+|#[xX][0-9a-fA-F]+|[a-zA-Z]+);").replace(text) { match ->

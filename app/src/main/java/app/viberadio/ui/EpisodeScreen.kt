@@ -12,8 +12,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import app.viberadio.R
@@ -69,14 +77,33 @@ fun EpisodeScreen(episode: EpisodeDetailUi?) {
                 )
             }
             Spacer(Modifier.height(20.dp))
-            Text(
-                episode.description ?: stringResource(R.string.episode_no_description),
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (episode.description == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onBackground,
-            )
+            if (episode.description == null) {
+                Text(
+                    stringResource(R.string.episode_no_description),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                val text = remember(episode.description) { withLinks(episode.description) }
+                Text(text, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
+            }
         }
     }
 }
+
+/** The description with its links tappable (opened in the browser), underlined rather than coloured. */
+private fun withLinks(description: String): AnnotatedString = buildAnnotatedString {
+    for (span in DescriptionLinks.parse(description)) {
+        val url = span.url
+        if (url == null) {
+            append(span.text)
+        } else {
+            withLink(LinkAnnotation.Url(url, LinkStyles)) { append(span.text) }
+        }
+    }
+}
+
+private val LinkStyles = TextLinkStyles(style = SpanStyle(textDecoration = TextDecoration.Underline))
 
 /** "54:07", "1:02:30". */
 private fun formatClock(ms: Long): String {
@@ -95,7 +122,7 @@ private val previewEpisode = EpisodeDetailUi(
     downloaded = true,
     positionMs = 754_000,
     heardMs = null,
-    description = "A walk along the coast path from first light, with the harbour waking up below.\n\n• Recorded in October\n• No music",
+    description = "A walk along the coast path from first light, with the harbour waking up below. [Map of the walk](https://maps.example/coast), more at slowradio.example or https://slowradio.example/notes.\n\n• Recorded in October\n• No music",
 )
 
 @Preview(name = "Light", showBackground = true)
