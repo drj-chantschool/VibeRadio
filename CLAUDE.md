@@ -85,5 +85,5 @@ Tuning flow: knob release → `RadioViewModel.tune` → `controller.setMediaItem
 
 - **Work it through without stopping to ask.** Ask the user something only when the request is vague, or inconsistent with the specs in `docs/` or the current state of the code. Otherwise make the reasonable call and say what you decided in the PR description.
 - **When development is done, open the PR.** Don't ask whether to open one; skip this if one is already open for the branch. Branch from `main`, one logical change per PR, referencing the issue (`#n`). Update the relevant `docs/` spec in the same PR when behaviour changes.
-- **Enable auto-merge right after opening it**, merge-commit method (`PUT /repos/{owner}/{repo}/pulls/{n}/ccr/auto_merge`). GitHub has no repo-wide default for this, so every PR needs it; a PR without it sits unmerged after CI passes. The PR merges itself once the `check` job passes.
+- **Auto-merge arms itself.** `.github/workflows/auto-merge.yml` runs `gh pr merge --auto --merge` when a PR is opened, reopened or marked ready, so it merges itself once the `check` job passes. Nothing to do per PR; if a PR sits unmerged after CI passes, check that workflow's run (repo needs "Allow auto-merge" on).
 - If CI fails, fix it on the same branch; auto-merge stays armed.
