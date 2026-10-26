@@ -52,6 +52,13 @@ data class PodcastLibrary(
         return ordered(episodes.filter { it.feedUrl in shows && it.id !in played }).take(limit)
     }
 
+    /** Episodes on air in the [HISTORY_MS] up to [nowMs], most recently heard first. */
+    fun history(nowMs: Long): List<Episode> =
+        heard.entries
+            .filter { (_, at) -> at > nowMs - HISTORY_MS }
+            .sortedByDescending { it.value }
+            .mapNotNull { (id, _) -> episode(id) }
+
     private fun ordered(unplayed: List<Episode>): List<Episode> {
         val priorities = podcasts.associate { it.feedUrl to it.priority }
         return unplayed.sortedWith(
