@@ -66,6 +66,7 @@ import app.viberadio.playback.audio.PrefsAudioSettingsStore
 import app.viberadio.playback.audio.PrefsSeparationStore
 import app.viberadio.playback.audio.SeparationSettingsRepository
 import app.viberadio.diagnostics.ChannelNameRow
+import app.viberadio.diagnostics.CrashRecorder
 import app.viberadio.diagnostics.DiagnosticsExporter
 import app.viberadio.diagnostics.DiagnosticsSettings
 import app.viberadio.diagnostics.DiagnosticsSnapshot
@@ -472,6 +473,8 @@ class AppContainer(context: Context) {
                 downloadedEpisodes = podcastRepository.downloaded.value,
                 podcastEvents = runCatching { podcastLog.readAll() }.getOrDefault(emptyList()),
                 audioFeatures = audioFeatures.snapshot(),
+                crashLog = CrashRecorder.forApp(appContext).read(),
+                exitReasons = CrashRecorder.exitReasons(appContext),
             )
         }
     }

@@ -43,6 +43,7 @@ class DiagnosticsBundleTest {
         ),
         podcastsJson: String? = """{"version":1}""",
         podcastStateJson: String? = """{"played":[]}""",
+        crashLog: String? = null,
     ) = DiagnosticsSnapshot(
         appVersion = "1.2.3",
         // 2026-10-15T13:12:03Z, 08:12:03 at UTC−5
@@ -71,6 +72,8 @@ class DiagnosticsBundleTest {
             PodcastEvent(3_000, 40, "breeze", "start", "e2", "mode=overlay trigger=mid_song"),
             PodcastEvent(4_000, 50, "breeze", "wait", null, "cause=tune rule=music_ratio wait=boundary"),
         ),
+        crashLog = crashLog,
+        exitReasons = listOf(ExitRecord(3_000, 3, 0, 125, "lmk, \"low\"", 200_000, 250_000)),
     )
 
     private fun files(s: DiagnosticsSnapshot = snapshot()) = DiagnosticsBundle.build(s).associateBy { it.name }
@@ -86,10 +89,11 @@ class DiagnosticsBundleTest {
             setOf(
                 "README.md", "summary.json", "settings.json", "feedback.csv", "play_history.csv", "channel_airings.csv",
                 "features.csv", "channels.csv", "library.csv", "levels.csv", "podcasts.json", "podcast_state.json",
-                "podcast_shows.csv", "podcast_queues.csv", "podcast_events.csv",
+                "podcast_shows.csv", "podcast_queues.csv", "podcast_events.csv", "exit_reasons.csv",
             ),
             files().keys,
         )
+        assertFalse("crashes.txt" in files())
         assertFalse("podcasts.json" in files(snapshot(podcastsJson = null)))
         assertFalse("podcast_state.json" in files(snapshot(podcastStateJson = null)))
         assertEquals("""{"played":[]}""", files().getValue("podcast_state.json").text)
@@ -226,5 +230,19 @@ class DiagnosticsBundleTest {
         assertEquals("\"line\nbreak\"", Csv.field("line\nbreak"))
         assertEquals("", Csv.field(null))
         assertEquals("", Csv.field(Float.NaN))
+    }
+
+    @Test
+    fun `crash log is copied as-is and counted, exit reasons named`() {
+        val log = CrashLog.append(null, CrashLog.entry(1_000, -300, "1.2.3", "main", "java.lang.OutOfMemoryError"))
+        val bundle = files(snapshot(crashLog = log))
+        assertEquals(log, bundle.getValue("crashes.txt").text)
+        assertEquals("text/plain", bundle.getValue("crashes.txt").mimeType)
+        assertTrue(bundle.getValue("summary.json").text.contains("\"crashes_logged\": 1"))
+        assertEquals(
+            "at_ms,at_local,reason,reason_code,status,importance,pss_kb,rss_kb,description\n" +
+                "3000,1969-12-31T19:00:03-05:00,LOW_MEMORY,3,0,125,200000,250000,\"lmk, \"\"low\"\"\"\n",
+            bundle.getValue("exit_reasons.csv").text,
+        )
     }
 }
