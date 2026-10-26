@@ -1,8 +1,11 @@
 package app.viberadio.podcasts
 
 import android.util.AtomicFile
+import android.util.JsonWriter
+import java.io.BufferedWriter
 import java.io.File
 import java.io.IOException
+import java.io.OutputStreamWriter
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -45,7 +48,7 @@ class JsonPodcastStore(catalogFile: File, stateFile: File) : PodcastStore {
         // State first: a catalog without its state would read as all unplayed.
         state.writeJson(encodeState(library))
         if (library.podcasts === savedPodcasts && library.episodes === savedEpisodes) return
-        catalog.writeJson(encodeCatalog(library))
+        writeCatalog(library)
         savedPodcasts = library.podcasts
         savedEpisodes = library.episodes
     }
@@ -71,35 +74,58 @@ class JsonPodcastStore(catalogFile: File, stateFile: File) : PodcastStore {
         }
     }
 
-    private fun encodeCatalog(library: PodcastLibrary) = JSONObject().apply {
-        put("version", VERSION)
-        put("podcasts", JSONArray().apply {
-            library.podcasts.forEach { p ->
-                put(JSONObject().apply {
-                    put("feedUrl", p.feedUrl)
-                    put("title", p.title)
-                    put("channels", JSONArray(p.channels.toList()))
-                    put("lastRefreshedMs", p.lastRefreshedMs)
-                    put("speed", p.speed.toDouble())
-                    put("pauseMusic", p.pauseMusic)
-                    put("priority", p.priority)
-                    put("skipIntroSeconds", p.skipIntroSeconds)
-                })
-            }
-        })
-        put("episodes", JSONArray().apply {
-            library.episodes.forEach { e ->
-                put(JSONObject().apply {
-                    put("id", e.id)
-                    put("feedUrl", e.feedUrl)
-                    put("title", e.title)
-                    put("publishedMs", e.publishedMs)
-                    put("audioUrl", e.audioUrl)
-                    e.durationMs?.let { put("durationMs", it) }
-                    e.description?.let { put("description", it) }
-                })
-            }
-        })
+    /**
+     * Streams the catalog into the file rather than building it as one JSON tree and string first:
+     * with descriptions it runs to tens of MB, several times over in memory as a tree and a string.
+     * Anything thrown part-way leaves the old file in place.
+     */
+    private fun writeCatalog(library: PodcastLibrary) {
+        val out = catalog.startWrite()
+        try {
+            // Flushed, not closed: finishWrite syncs and closes the stream itself.
+            val writer = JsonWriter(BufferedWriter(OutputStreamWriter(out, Charsets.UTF_8)))
+            writer.encodeCatalog(library)
+            writer.flush()
+            catalog.finishWrite(out)
+        } catch (e: Throwable) {
+            catalog.failWrite(out)
+            throw e
+        }
+    }
+
+    private fun JsonWriter.encodeCatalog(library: PodcastLibrary) {
+        beginObject()
+        name("version").value(VERSION.toLong())
+        name("podcasts").beginArray()
+        library.podcasts.forEach { p ->
+            beginObject()
+            name("feedUrl").value(p.feedUrl)
+            name("title").value(p.title)
+            name("channels").beginArray()
+            p.channels.forEach { value(it) }
+            endArray()
+            name("lastRefreshedMs").value(p.lastRefreshedMs)
+            name("speed").value(p.speed.toDouble())
+            name("pauseMusic").value(p.pauseMusic)
+            name("priority").value(p.priority.toLong())
+            name("skipIntroSeconds").value(p.skipIntroSeconds.toLong())
+            endObject()
+        }
+        endArray()
+        name("episodes").beginArray()
+        library.episodes.forEach { e ->
+            beginObject()
+            name("id").value(e.id)
+            name("feedUrl").value(e.feedUrl)
+            name("title").value(e.title)
+            name("publishedMs").value(e.publishedMs)
+            name("audioUrl").value(e.audioUrl)
+            e.durationMs?.let { name("durationMs").value(it) }
+            e.description?.let { name("description").value(it) }
+            endObject()
+        }
+        endArray()
+        endObject()
     }
 
     private fun encodeState(library: PodcastLibrary) = JSONObject().apply {

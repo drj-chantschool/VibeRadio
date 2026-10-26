@@ -4,9 +4,9 @@ import java.io.InputStream
 import java.time.OffsetDateTime
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
-import javax.xml.parsers.DocumentBuilderFactory
-import org.w3c.dom.Element
-import org.w3c.dom.Node
+import javax.xml.parsers.SAXParserFactory
+import org.xml.sax.Attributes
+import org.xml.sax.helpers.DefaultHandler
 
 /** A parsed RSS feed, before it is merged into a [PodcastLibrary]. */
 data class Feed(val title: String, val items: List<FeedItem>)
@@ -26,7 +26,7 @@ class FeedParseException(message: String, cause: Throwable? = null) : Exception(
 /**
  * Reads podcast RSS 2.0 feeds. Items without an audio enclosure are dropped; a missing GUID
  * falls back to the enclosure URL. `pubDate` is matched ignoring case, since some generators
- * (youtube-to-rss among them) write `<pubdate>`. Uses the JDK DOM parser, which Android also ships, so it
+ * (youtube-to-rss among them) write `<pubdate>`. Uses the JDK SAX parser, which Android also ships, so it
  * runs unchanged in JVM tests.
  */
 object RssParser {
@@ -38,50 +38,138 @@ object RssParser {
     const val MAX_DESCRIPTION = 4000
 
     fun parse(input: InputStream): Feed {
-        val factory = DocumentBuilderFactory.newInstance().apply {
+        val factory = SAXParserFactory.newInstance().apply {
             isNamespaceAware = true
-            isExpandEntityReferences = false
             // Not every platform parser supports these; where it doesn't, it also doesn't fetch DTDs.
             runCatching { setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) }
             runCatching { setFeature("http://xml.org/sax/features/external-general-entities", false) }
         }
-        val document = try {
-            factory.newDocumentBuilder().parse(input)
+        val handler = FeedHandler()
+        try {
+            factory.newSAXParser().parse(input, handler)
         } catch (e: Exception) {
             throw FeedParseException("Not a readable feed", e)
         }
-        val channel = document.documentElement?.children("channel")?.firstOrNull()
-            ?: throw FeedParseException("Not an RSS feed: no <channel>")
-
-        val title = channel.childText("title")?.takeIf { it.isNotBlank() } ?: "Untitled podcast"
-        val items = channel.children("item").mapNotNull(::item)
-        return Feed(title = title, items = items)
+        if (!handler.sawChannel) throw FeedParseException("Not an RSS feed: no <channel>")
+        val title = handler.title?.trim()?.takeIf { it.isNotBlank() } ?: "Untitled podcast"
+        return Feed(title = title, items = handler.items)
     }
 
-    private fun item(item: Element): FeedItem? {
-        val enclosure = item.children("enclosure").firstOrNull { el ->
-            val type = el.getAttribute("type")
-            el.getAttribute("url").isNotBlank() && (type.isBlank() || type.startsWith("audio/") || type.startsWith("video/"))
-        } ?: return null
-        val url = enclosure.getAttribute("url").trim()
-        val guid = item.childText("guid")?.takeIf { it.isNotBlank() } ?: url
-        return FeedItem(
-            guid = guid,
-            title = item.childText("title")?.takeIf { it.isNotBlank() } ?: "Untitled episode",
-            publishedMs = item.childText("pubDate", ignoreCase = true)?.let(::parseDate) ?: 0L,
-            audioUrl = url,
-            durationMs = item.children("duration", ITUNES_NS).firstOrNull()?.textContent?.let(::parseDuration),
-            description = description(item),
-        )
+    /**
+     * Streams the feed rather than building a DOM: a back catalogue of tens of thousands of items
+     * makes a DOM far bigger than the app's heap. Reads what the DOM version read: the root's first
+     * `<channel>`, its own `<title>` and `<item>`s, and in each item the first of each field among
+     * its own children, as the text of everything inside it. Only those fields' text is kept, one
+     * item at a time.
+     */
+    private class FeedHandler : DefaultHandler() {
+        var sawChannel = false
+        var title: String? = null
+        val items = ArrayList<FeedItem>()
+
+        private var depth = 0
+        private var inChannel = false
+        private var item: ItemFields? = null
+
+        /** The field being read, the depth of its element and its text so far; null while skipping. */
+        private var field: String? = null
+        private var fieldDepth = 0
+        private val text = StringBuilder()
+
+        override fun startElement(uri: String, localName: String, qName: String, attributes: Attributes) {
+            depth++
+            if (field != null) return
+            val name = localName.ifEmpty { qName }
+            val plain = uri.isEmpty()
+            when (depth) {
+                2 -> if (plain && name == "channel" && !sawChannel) {
+                    sawChannel = true
+                    inChannel = true
+                }
+                3 -> if (inChannel && plain) when (name) {
+                    "title" -> if (title == null) read("title")
+                    "item" -> item = ItemFields()
+                }
+                4 -> item?.let { fields ->
+                    val key = when {
+                        plain && name == "enclosure" -> {
+                            if (fields.audioUrl == null) fields.enclosure(attributes)
+                            null
+                        }
+                        plain && name.equals("pubDate", ignoreCase = true) -> "pubDate"
+                        plain && name in ITEM_FIELDS -> name
+                        uri == ITUNES_NS && name == "duration" -> "duration"
+                        uri == ITUNES_NS && name == "summary" -> "summary"
+                        uri == CONTENT_NS && name == "encoded" -> "encoded"
+                        else -> null
+                    }
+                    if (key != null && key !in fields.text) read(key)
+                }
+            }
+        }
+
+        override fun characters(ch: CharArray, start: Int, length: Int) {
+            if (field != null) text.append(ch, start, length)
+        }
+
+        override fun endElement(uri: String, localName: String, qName: String) {
+            val key = field
+            if (key != null && depth == fieldDepth) {
+                val value = text.toString()
+                if (fieldDepth == 3) title = value else item?.text?.put(key, value)
+                field = null
+                text.setLength(0)
+            } else if (key == null) {
+                when (depth) {
+                    2 -> inChannel = false
+                    3 -> item?.let { fields ->
+                        fields.toFeedItem()?.let(items::add)
+                        item = null
+                    }
+                }
+            }
+            depth--
+        }
+
+        private fun read(key: String) {
+            field = key
+            fieldDepth = depth
+            text.setLength(0)
+        }
     }
 
-    /** The fullest notes the item has: content:encoded, then description, then itunes:summary. */
-    private fun description(item: Element): String? =
-        sequenceOf(
-            item.children("encoded", CONTENT_NS).firstOrNull()?.textContent,
-            item.childText("description"),
-            item.children("summary", ITUNES_NS).firstOrNull()?.textContent,
-        ).mapNotNull { it?.let(::plainText) }.firstOrNull { it.isNotEmpty() }
+    /** Field names read from an item's own children without a namespace (`pubDate` is matched apart). */
+    private val ITEM_FIELDS = setOf("guid", "title", "description")
+
+    private class ItemFields {
+        /** The first usable audio enclosure's URL. */
+        var audioUrl: String? = null
+        /** Each field's text, first occurrence only. */
+        val text = HashMap<String, String>()
+
+        fun enclosure(attributes: Attributes) {
+            val url = attributes.getValue("", "url") ?: attributes.getValue("url").orEmpty()
+            val type = attributes.getValue("", "type") ?: attributes.getValue("type").orEmpty()
+            if (url.isNotBlank() && (type.isBlank() || type.startsWith("audio/") || type.startsWith("video/"))) audioUrl = url.trim()
+        }
+
+        fun toFeedItem(): FeedItem? {
+            val url = audioUrl ?: return null
+            return FeedItem(
+                guid = text["guid"]?.trim()?.takeIf { it.isNotBlank() } ?: url,
+                title = text["title"]?.trim()?.takeIf { it.isNotBlank() } ?: "Untitled episode",
+                publishedMs = text["pubDate"]?.trim()?.let(::parseDate) ?: 0L,
+                audioUrl = url,
+                durationMs = text["duration"]?.let(::parseDuration),
+                description = description(),
+            )
+        }
+
+        /** The fullest notes the item has: content:encoded, then description, then itunes:summary. */
+        private fun description(): String? =
+            sequenceOf(text["encoded"], text["description"]?.trim(), text["summary"])
+                .mapNotNull { it?.let(::plainText) }.firstOrNull { it.isNotEmpty() }
+    }
 
     /**
      * Show notes as plain text: paragraphs and line breaks kept, list items bulleted, web and mail
@@ -165,24 +253,4 @@ object RssParser {
         "MST" to "-0700", "MDT" to "-0600",
         "PST" to "-0800", "PDT" to "-0700",
     )
-
-    private fun Element.children(localName: String, namespace: String? = null, ignoreCase: Boolean = false): List<Element> {
-        val out = ArrayList<Element>()
-        val nodes = childNodes
-        for (i in 0 until nodes.length) {
-            val node = nodes.item(i)
-            if (node.nodeType != Node.ELEMENT_NODE) continue
-            val name = node.localName ?: node.nodeName
-            val matches = if (namespace == null) {
-                node.namespaceURI.isNullOrEmpty() && name.equals(localName, ignoreCase)
-            } else {
-                node.namespaceURI == namespace && name.equals(localName, ignoreCase)
-            }
-            if (matches) out += node as Element
-        }
-        return out
-    }
-
-    private fun Element.childText(localName: String, ignoreCase: Boolean = false): String? =
-        children(localName, ignoreCase = ignoreCase).firstOrNull()?.textContent?.trim()
 }

@@ -69,6 +69,10 @@ data class DiagnosticsSnapshot(
     val podcastEvents: List<PodcastEvent> = emptyList(),
     /** Audio feature blocks in use, each with its stored values by content hash. */
     val audioFeatures: Map<FeatureBlock, Map<String, FloatArray>> = emptyMap(),
+    /** The app's crash log ([CrashLog]) as stored; null if it hasn't crashed since keeping one. */
+    val crashLog: String? = null,
+    /** Why the app's processes ended, as Android keeps it (API 30+), newest first. */
+    val exitReasons: List<ExitRecord> = emptyList(),
 )
 
 /** One file in a bundle. */
@@ -101,7 +105,9 @@ object DiagnosticsBundle {
             BundleFile("podcast_shows.csv", MIME_CSV, podcastShows(s.podcasts, s.downloadedEpisodes)),
             BundleFile("podcast_queues.csv", MIME_CSV, podcastQueues(s.podcasts, s.downloadedEpisodes)),
             BundleFile("podcast_events.csv", MIME_CSV, podcastEvents(s.podcastEvents, s.podcasts, s.utcOffsetMinutes)),
+            BundleFile("exit_reasons.csv", MIME_CSV, exitReasons(s.exitReasons, s.utcOffsetMinutes)),
         )
+        s.crashLog?.let { files += BundleFile("crashes.txt", MIME_TEXT, it) }
         s.podcastsJson?.let { files += BundleFile("podcasts.json", MIME_JSON, it) }
         s.podcastStateJson?.let { files += BundleFile("podcast_state.json", MIME_JSON, it) }
         // Large embeddings stay on the phone: Phase 2 recomputes them from the files on a PC.
@@ -138,6 +144,8 @@ object DiagnosticsBundle {
                     "podcast_episodes_played" to s.podcasts.played.size,
                     "podcast_episodes_downloaded" to s.downloadedEpisodes.size,
                     "podcast_events" to s.podcastEvents.size,
+                    "crashes_logged" to CrashLog.entries(s.crashLog).size,
+                    "exit_reasons" to s.exitReasons.size,
                 ),
                 "songs_per_channel" to s.channels.associate { it.id to it.tracks.size },
                 "audio_feature_blocks" to s.audioFeatures.entries.map { (block, values) ->
@@ -303,6 +311,13 @@ object DiagnosticsBundle {
         },
     )
 
+    private fun exitReasons(records: List<ExitRecord>, utcOffsetMinutes: Int) = Csv.table(
+        listOf("at_ms", "at_local", "reason", "reason_code", "status", "importance", "pss_kb", "rss_kb", "description"),
+        records.map {
+            listOf(it.atMs, local(it.atMs, utcOffsetMinutes), ExitReasons.name(it.reason), it.reason, it.status, it.importance, it.pssKb, it.rssKb, it.description)
+        },
+    )
+
     private fun offset(minutes: Int): ZoneOffset = ZoneOffset.ofTotalSeconds(minutes.coerceIn(-18 * 60, 18 * 60) * 60)
 
     private fun local(ms: Long, utcOffsetMinutes: Int): String =
@@ -318,6 +333,7 @@ object DiagnosticsBundle {
     const val MIME_CSV = "text/csv"
     const val MIME_JSON = "application/json"
     const val MIME_MD = "text/markdown"
+    const val MIME_TEXT = "text/plain"
 
     /** Audio feature blocks up to this size are exported; larger ones (embeddings) aren't. */
     const val MAX_EXPORTED_DIMS = 256
@@ -343,6 +359,8 @@ object DiagnosticsBundle {
         - podcast_state.json: the podcast playback state as the app stores it (played, resume positions, when each episode was last on air in the last 24 hours)
         - podcast_shows.csv: per show, its channels, Pause music, speed, priority, skip intro (seconds), and episode counts (all, unplayed, on the device)
         - podcast_queues.csv: per channel with a show on it, the next 10 episodes as the app would queue them now
+        - crashes.txt: the app's own crash log, newest 10 kept: per uncaught exception, its local time, app version, thread and full stack trace. Absent if the app hasn't crashed since it started keeping one
+        - exit_reasons.csv: why the app's processes ended, newest first, as Android keeps it (Android 11 and later; empty before): reason (`CRASH`, `CRASH_NATIVE`, `ANR`, `LOW_MEMORY`, `SIGNALED`, `USER_REQUESTED`, ...), exit status or signal, importance when it ended (100 foreground, 125 foreground service, 400 cached), memory (kB) and the platform's description. It also shows what crashes.txt can't: low-memory kills and native crashes
         - podcast_events.csv: the podcast scheduling log on song channels, oldest first (newest 5,000 to 10,000 kept): tunes, the wait after each tune or episode (`detail`, times relative to the event), each song boundary and whether an episode was due, episode starts (`mode=overlay` over the music or `solo` for a music podcast), ends and failures, and why a due episode didn't start. `on_air_ms` is the clock the schedule runs on; it restarts with the service (`service_start`). `at_local` uses the export's UTC offset
     """.trimIndent() + "\n"
 }

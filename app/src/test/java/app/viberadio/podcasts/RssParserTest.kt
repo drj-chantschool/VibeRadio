@@ -170,4 +170,53 @@ class RssParserTest {
             RssParser.plainText(html),
         )
     }
+
+    @Test
+    fun `reads only the channel's and each item's own fields, the first of each`() {
+        val result = parse(
+            """
+            <rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+              <channel>
+                <image><title>Logo</title><url>https://x.example/logo.png</url></image>
+                <title>Real <![CDATA[Title]]></title>
+                <title>Second title</title>
+                <item>
+                  <media:content url="https://x.example/v.mp4"><media:title>Media title</media:title></media:content>
+                  <source><title>Nested</title></source>
+                  <title>Episode <b>one</b></title>
+                  <title>Not this</title>
+                  <enclosure url="https://x.example/cover.jpg" type="image/jpeg"/>
+                  <enclosure url=" https://x.example/1.mp3 " type="audio/mpeg"/>
+                  <enclosure url="https://x.example/2.mp3" type="audio/mpeg"/>
+                  <guid>  </guid>
+                </item>
+              </channel>
+              <channel><title>Other</title></channel>
+            </rss>
+            """.trimIndent(),
+        )
+        assertEquals("Real Title", result.title)
+        val item = result.items.single()
+        assertEquals("Episode one", item.title)
+        assertEquals("https://x.example/1.mp3", item.audioUrl)
+        assertEquals("https://x.example/1.mp3", item.guid)
+    }
+
+    @Test
+    fun `streams a long back catalogue`() {
+        val count = 20_000
+        val xml = buildString {
+            append("<rss version=\"2.0\"><channel><title>Archive</title>")
+            repeat(count) { i ->
+                append("<item><title>Episode $i</title><guid>g$i</guid>")
+                append("<description>&lt;p&gt;Notes for $i&lt;/p&gt;</description>")
+                append("<enclosure url=\"https://x.example/$i.mp3\" type=\"audio/mpeg\"/></item>")
+            }
+            append("</channel></rss>")
+        }
+        val items = parse(xml).items
+        assertEquals(count, items.size)
+        assertEquals("Episode 19999", items.last().title)
+        assertEquals("Notes for 0", items.first().description)
+    }
 }
