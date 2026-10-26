@@ -136,6 +136,7 @@ class PodcastLibraryTest {
 
     private companion object {
         const val DAY = 86_400_000L
+        const val HOUR = 3_600_000L
     }
 
     @Test
@@ -258,5 +259,51 @@ class PodcastLibraryTest {
         val other = LocalFeeds.url("Audio/Talks")
         val moved = lib.withLocalFeeds(mapOf(other to files(4).copy(title = "Talks")), nowMs = 300)
         assertEquals(listOf(showA, showB, other), moved.podcasts.map { it.feedUrl })
+    }
+
+    @Test
+    fun `history is what was heard in the last day, most recent first`() {
+        val now = 10 * DAY
+        val lib = library
+            .withHeard(id(showA, 1), now - DAY - 1)
+            .withHeard(id(showA, 2), now - 2 * HOUR)
+            .withHeard(id(showB, 4), now - HOUR)
+        assertEquals(listOf("B 4", "A 2"), lib.history(now).map { it.title })
+    }
+
+    @Test
+    fun `hearing again moves an episode to the top, and old entries age out`() {
+        val lib = library
+            .withHeard(id(showA, 1), 0)
+            .withHeard(id(showA, 2), HOUR)
+            .withHeard(id(showA, 1), 2 * HOUR)
+        assertEquals(listOf("A 1", "A 2"), lib.history(2 * HOUR).map { it.title })
+        val later = lib.withHeard(id(showB, 4), 2 * HOUR + DAY - 1)
+        assertEquals(setOf(id(showA, 1), id(showB, 4)), later.heard.keys)
+    }
+
+    @Test
+    fun `marking played by hand is not hearing it`() {
+        assertTrue(library.withPlayed(id(showA, 1), true).history(DAY).isEmpty())
+    }
+
+    @Test
+    fun `removing a show drops it from the history`() {
+        val lib = library.withHeard(id(showA, 1), DAY).withHeard(id(showB, 4), DAY)
+        assertEquals(listOf("B 4"), lib.withoutPodcast(showA).history(DAY).map { it.title })
+    }
+
+    @Test
+    fun `an unknown episode is never heard`() {
+        assertEquals(library, library.withHeard("nope", DAY))
+    }
+
+    @Test
+    fun `descriptions come from the feed and follow refreshes`() {
+        val described = Feed("A", listOf(FeedItem("g1", "A 1", DAY, "https://x/1.mp3", null, description = "Notes")))
+        val lib = PodcastLibrary().withFeed(showA, described, nowMs = 0)
+        assertEquals("Notes", lib.episode(id(showA, 1))!!.description)
+        val edited = described.copy(items = described.items.map { it.copy(description = "New notes") })
+        assertEquals("New notes", lib.withFeed(showA, edited, nowMs = 1).episode(id(showA, 1))!!.description)
     }
 }

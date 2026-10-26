@@ -16,18 +16,23 @@ import app.viberadio.podcasts.PodcastRepository.SubscribeResult
 import app.viberadio.podcasts.PodcastPriority
 import app.viberadio.podcasts.PodcastSkipIntro
 import app.viberadio.podcasts.PodcastSpeeds
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 data class PodcastUiState(
     val loaded: Boolean = false,
     val upNext: List<EpisodeUi> = emptyList(),
+    /** Episodes on air in the last 24 hours, most recent first. */
+    val history: List<EpisodeUi> = emptyList(),
     val shows: List<ShowUi> = emptyList(),
     val add: AddFeed = AddFeed(),
     /** What the podcast-only channel is called on the dial (The Voice, unless renamed). */
@@ -66,6 +71,25 @@ data class EpisodeUi(
     val played: Boolean,
     val downloaded: Boolean,
     val started: Boolean,
+    /** When it was last on air (wall clock), null if it hasn't been in the last 24 hours. */
+    val heardMs: Long? = null,
+)
+
+/** Everything the episode page (long press in Up next or History) shows. */
+data class EpisodeDetailUi(
+    val title: String,
+    val showTitle: String,
+    /** Epoch millis, 0 if unknown. */
+    val publishedMs: Long,
+    val durationMs: Long?,
+    val played: Boolean,
+    val downloaded: Boolean,
+    /** Resume point, 0 if not started. */
+    val positionMs: Long,
+    /** When it was last on air (wall clock), null if it hasn't been in the last 24 hours. */
+    val heardMs: Long?,
+    /** Plain text, null when the feed gives none. */
+    val description: String?,
 )
 
 data class AddFeed(
@@ -86,14 +110,24 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     private val add = MutableStateFlow(AddFeed())
     private val pulled = MutableStateFlow(false)
 
+    /** The time, each minute, so the history ages out while the page is open. */
+    private val minutes = flow {
+        while (true) {
+            emit(System.currentTimeMillis())
+            delay(60_000)
+        }
+    }
+    private val libraryNow = combine(podcasts.library, minutes) { library, now -> library to now }
+
     /** A pull-to-refresh is in progress: the page shows the indicator until it ends. */
     val refreshing: StateFlow<Boolean> = pulled.asStateFlow()
 
     val uiState: StateFlow<PodcastUiState> =
-        combine(podcasts.loaded, podcasts.library, podcasts.downloaded, add, names.names) { loaded, library, downloaded, addFeed, channelNames ->
+        combine(podcasts.loaded, libraryNow, podcasts.downloaded, add, names.names) { loaded, (library, now), downloaded, addFeed, channelNames ->
             PodcastUiState(
                 loaded = loaded,
                 upNext = library.upNext(UP_NEXT_COUNT).map { library.ui(it.id, downloaded) },
+                history = library.history(now).map { library.ui(it.id, downloaded) },
                 shows = library.podcasts.map { show ->
                     val episodes = library.episodesOf(show.feedUrl).map { library.ui(it.id, downloaded) }
                     ShowUi(
@@ -168,6 +202,25 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** [episodeId]'s details, following the library; null once the episode is gone. */
+    fun episodeDetail(episodeId: String): Flow<EpisodeDetailUi?> =
+        combine(podcasts.library, podcasts.downloaded) { library, downloaded ->
+            library.episode(episodeId)?.let { episode ->
+                val ui = library.ui(episodeId, downloaded)
+                EpisodeDetailUi(
+                    title = episode.title,
+                    showTitle = ui.showTitle,
+                    publishedMs = episode.publishedMs,
+                    durationMs = episode.durationMs,
+                    played = ui.played,
+                    downloaded = ui.downloaded,
+                    positionMs = library.positions[episodeId] ?: 0L,
+                    heardMs = ui.heardMs,
+                    description = episode.description,
+                )
+            }
+        }
+
     /** Checks feeds at most hourly, when the app comes to the front. */
     fun onResume() {
         viewModelScope.launch { podcasts.refresh(maxAgeMs = REFRESH_AFTER_MS) }
@@ -184,6 +237,8 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             // A folder show's files are on the device already.
             downloaded = id in downloaded || LocalFeeds.isLocal(episode.feedUrl),
             started = (positions[id] ?: 0L) > 0L,
+            // Entries past the history window are dropped on the next write, not on read.
+            heardMs = heard[id]?.takeIf { it > System.currentTimeMillis() - PodcastLibrary.HISTORY_MS },
         )
     }
 

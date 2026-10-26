@@ -66,10 +66,11 @@ class PodcastOverlay(
         if (isActive && player.playbackParameters.speed != speed) player.setPlaybackSpeed(speed)
     }
 
-    fun savePosition() {
+    /** [onAir]: called while playing, so the episode also joins the podcast page's history. */
+    fun savePosition(onAir: Boolean = false) {
         val id = episodeId ?: return
         if (player.currentMediaItem == null) return
-        podcasts.savePosition(id, player.currentPosition)
+        if (onAir) podcasts.onAir(id, player.currentPosition) else podcasts.savePosition(id, player.currentPosition)
     }
 
     fun release() {
@@ -89,7 +90,7 @@ class PodcastOverlay(
         val id = episodeId ?: return
         val duration = durationMs
         clear()
-        podcasts.setPlayed(id, true)
+        podcasts.finished(id)
         onEnded(id, duration)
     }
 

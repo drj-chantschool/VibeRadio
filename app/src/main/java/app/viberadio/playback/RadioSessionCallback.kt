@@ -126,8 +126,8 @@ class RadioSessionCallback(
     }
     private val positionTick = object : Runnable {
         override fun run() {
-            savePosition()
-            overlay?.savePosition()
+            savePosition(onAir = true)
+            overlay?.savePosition(onAir = true)
             listening?.checkpoint()
             handler.postDelayed(this, POSITION_SAVE_INTERVAL_MS)
         }
@@ -322,7 +322,7 @@ class RadioSessionCallback(
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
         val previous = currentEpisodeId
         val auto = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO
-        if (previous != null && auto) podcasts.setPlayed(previous, true)
+        if (previous != null && auto) podcasts.finished(previous)
         val previousDurationMs = currentEpisodeDurationMs
         currentEpisodeId = EpisodeMediaId.episodeId(mediaItem)
         currentEpisodeDurationMs = 0
@@ -530,7 +530,7 @@ class RadioSessionCallback(
         if (playbackState != Player.STATE_ENDED) return
         // The last item in the queue doesn't get an AUTO transition; it just ends.
         val endedEpisode = currentEpisodeId
-        endedEpisode?.let { podcasts.setPlayed(it, true) }
+        endedEpisode?.let(podcasts::finished)
         val channelId = currentChannelId ?: return
         val songChannel = repository.channel(channelId)
         val next = if (songChannel != null) {
@@ -716,11 +716,12 @@ class RadioSessionCallback(
         if (player.playbackParameters.speed != speed) player.setPlaybackSpeed(speed)
     }
 
-    private fun savePosition() {
+    /** [onAir]: called while playing, so the episode also joins the podcast page's history. */
+    private fun savePosition(onAir: Boolean = false) {
         val player = player ?: return
         val id = currentEpisodeId ?: return
         if (EpisodeMediaId.episodeId(player.currentMediaItem) != id) return
-        podcasts.savePosition(id, player.currentPosition)
+        if (onAir) podcasts.onAir(id, player.currentPosition) else podcasts.savePosition(id, player.currentPosition)
     }
 
     private fun songChannels(): List<Channel> =

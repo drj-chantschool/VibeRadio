@@ -66,11 +66,13 @@ class JsonPodcastStore(file: File) : PodcastStore {
                     put("publishedMs", e.publishedMs)
                     put("audioUrl", e.audioUrl)
                     e.durationMs?.let { put("durationMs", it) }
+                    e.description?.let { put("description", it) }
                 })
             }
         })
         put("played", JSONArray(library.played.toList()))
         put("positions", JSONObject().apply { library.positions.forEach { (id, ms) -> put(id, ms) } })
+        put("heard", JSONObject().apply { library.heard.forEach { (id, ms) -> put(id, ms) } })
     }
 
     private fun decode(json: JSONObject): PodcastLibrary {
@@ -98,14 +100,19 @@ class JsonPodcastStore(file: File) : PodcastStore {
                 publishedMs = e.optLong("publishedMs"),
                 audioUrl = e.getString("audioUrl"),
                 durationMs = if (e.has("durationMs")) e.getLong("durationMs") else null,
+                // Absent in files written before episode descriptions.
+                description = if (e.has("description")) e.getString("description") else null,
             )
         }
         val positions = json.optJSONObject("positions")
+        // Absent in files written before the history.
+        val heard = json.optJSONObject("heard")
         return PodcastLibrary(
             podcasts = podcasts,
             episodes = episodes,
             played = json.optJSONArray("played")?.strings()?.toSet().orEmpty(),
             positions = positions?.keys()?.asSequence()?.associateWith { positions.getLong(it) }.orEmpty(),
+            heard = heard?.keys()?.asSequence()?.associateWith { heard.getLong(it) }.orEmpty(),
         )
     }
 

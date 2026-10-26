@@ -29,8 +29,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -45,11 +47,15 @@ import app.viberadio.bluetooth.BluetoothPermission
 import app.viberadio.diagnostics.DevModeUnlock
 import app.viberadio.library.AudioPermission
 import app.viberadio.ui.theme.VibeRadioTheme
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 
 /**
  * Two pages, swiped between (#20): the song page (the dial) opens first; the podcast page is
- * one swipe away. Both act on the same channels. A faint gear in the top corner of either page
- * opens settings over them; back closes it.
+ * one swipe away. Both act on the same channels. A long press on an episode in the podcast
+ * page's Up next or History adds a third page with its details, gone again once the pager is
+ * back on the podcast page. A faint gear in the top corner of any page opens settings over
+ * them; back closes it.
  */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -57,7 +63,10 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             VibeRadioTheme {
-                val pager = rememberPagerState(pageCount = { PAGE_COUNT })
+                // The episode on the details page; null while there's no such page.
+                var detailEpisode by rememberSaveable { mutableStateOf<String?>(null) }
+                val pager = rememberPagerState(pageCount = { if (detailEpisode != null) 3 else 2 })
+                val scope = rememberCoroutineScope()
                 var settingsOpen by rememberSaveable { mutableStateOf(false) }
                 // The one show open on the podcast page. Held here, not on the page, so leaving
                 // the page closes it even though the pager drops the page once it's off screen.
@@ -65,15 +74,33 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(pager.currentPage) {
                     if (pager.currentPage == SONG_PAGE) openShow = null
                 }
+                // Once the pager comes to rest short of it, not while a swipe is still running.
+                LaunchedEffect(pager) {
+                    snapshotFlow { pager.isScrollInProgress to pager.currentPage }.collect { (scrolling, page) ->
+                        if (!scrolling && page < DETAIL_PAGE) detailEpisode = null
+                    }
+                }
+                LaunchedEffect(detailEpisode) {
+                    if (detailEpisode != null && pager.currentPage != DETAIL_PAGE) pager.animateScrollToPage(DETAIL_PAGE)
+                }
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                     HorizontalPager(state = pager, modifier = Modifier.fillMaxSize()) { page ->
                         when (page) {
                             SONG_PAGE -> SongPage()
-                            else -> PodcastPage(openShow = openShow, onOpenShow = { openShow = it })
+                            PODCAST_PAGE -> PodcastPage(
+                                openShow = openShow,
+                                onOpenShow = { openShow = it },
+                                onOpenEpisode = { detailEpisode = it },
+                            )
+                            else -> EpisodePage(detailEpisode)
                         }
+                    }
+                    BackHandler(enabled = !settingsOpen && pager.currentPage == DETAIL_PAGE) {
+                        scope.launch { pager.animateScrollToPage(PODCAST_PAGE) }
                     }
                     PageDots(
                         current = pager.currentPage,
+                        count = pager.pageCount,
                         modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 12.dp),
                     )
                     if (settingsOpen) {
@@ -240,7 +267,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun PodcastPage(openShow: String?, onOpenShow: (String?) -> Unit) {
+    private fun PodcastPage(openShow: String?, onOpenShow: (String?) -> Unit, onOpenEpisode: (String) -> Unit) {
         val viewModel: PodcastViewModel = viewModel()
         val state by viewModel.uiState.collectAsStateWithLifecycle()
         val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
@@ -254,6 +281,7 @@ class MainActivity : ComponentActivity() {
             onRefresh = viewModel::refresh,
             openShow = openShow,
             onOpenShow = onOpenShow,
+            onOpenEpisode = onOpenEpisode,
             onDraftChange = viewModel::onDraftChange,
             onAdd = viewModel::addFeed,
             onSetChannel = viewModel::setChannel,
@@ -267,21 +295,31 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    @Composable
+    private fun EpisodePage(episodeId: String?) {
+        // The podcast page's view model: same activity, same instance.
+        val viewModel: PodcastViewModel = viewModel()
+        val details = remember(episodeId) { episodeId?.let(viewModel::episodeDetail) ?: flowOf(null) }
+        val episode by details.collectAsStateWithLifecycle(initialValue = null)
+        EpisodeScreen(episode)
+    }
+
     private companion object {
-        const val PAGE_COUNT = 2
         const val SONG_PAGE = 0
+        const val PODCAST_PAGE = 1
+        const val DETAIL_PAGE = 2
     }
 }
 
-/** Two quiet dots: which page you're on, nothing to tap. */
+/** Quiet dots, one per page: which page you're on, nothing to tap. */
 @Composable
-private fun PageDots(current: Int, modifier: Modifier = Modifier) {
-    val description = stringResource(R.string.pages_description, current + 1, 2)
+private fun PageDots(current: Int, count: Int, modifier: Modifier = Modifier) {
+    val description = stringResource(R.string.pages_description, current + 1, count)
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = modifier.semantics { contentDescription = description },
     ) {
-        repeat(2) { index ->
+        repeat(count) { index ->
             Box(
                 Modifier
                     .size(6.dp)

@@ -52,6 +52,8 @@ data class Episode(
     /** Enclosure URL. */
     val audioUrl: String,
     val durationMs: Long?,
+    /** The feed's show notes as plain text ([RssParser.plainText]), null when it gives none. */
+    val description: String? = null,
 )
 
 /**

@@ -17,6 +17,8 @@ data class FeedItem(
     val publishedMs: Long,
     val audioUrl: String,
     val durationMs: Long?,
+    /** Show notes as plain text, null when the item has none. */
+    val description: String? = null,
 )
 
 class FeedParseException(message: String, cause: Throwable? = null) : Exception(message, cause)
@@ -30,6 +32,10 @@ class FeedParseException(message: String, cause: Throwable? = null) : Exception(
 object RssParser {
 
     private const val ITUNES_NS = "http://www.itunes.com/dtds/podcast-1.0.dtd"
+    private const val CONTENT_NS = "http://purl.org/rss/1.0/modules/content/"
+
+    /** Longer show notes are cut here: the library is rewritten whole while an episode plays. */
+    const val MAX_DESCRIPTION = 4000
 
     fun parse(input: InputStream): Feed {
         val factory = DocumentBuilderFactory.newInstance().apply {
@@ -65,8 +71,54 @@ object RssParser {
             publishedMs = item.childText("pubDate", ignoreCase = true)?.let(::parseDate) ?: 0L,
             audioUrl = url,
             durationMs = item.children("duration", ITUNES_NS).firstOrNull()?.textContent?.let(::parseDuration),
+            description = description(item),
         )
     }
+
+    /** The fullest notes the item has: content:encoded, then description, then itunes:summary. */
+    private fun description(item: Element): String? =
+        sequenceOf(
+            item.children("encoded", CONTENT_NS).firstOrNull()?.textContent,
+            item.childText("description"),
+            item.children("summary", ITUNES_NS).firstOrNull()?.textContent,
+        ).mapNotNull { it?.let(::plainText) }.firstOrNull { it.isNotEmpty() }
+
+    /**
+     * Show notes as plain text: paragraphs and line breaks kept, list items bulleted, every other
+     * tag dropped, entities decoded, whitespace tidied, and cut at [MAX_DESCRIPTION] characters.
+     */
+    fun plainText(html: String): String {
+        val text = html
+            .replace(Regex("(?is)<(script|style)\\b.*?</\\1\\s*>"), "")
+            .replace(Regex("(?i)<br\\s*/?>"), "\n")
+            .replace(Regex("(?i)<li\\b[^>]*>"), "\n\u2022 ")
+            .replace(Regex("(?i)</?(p|div|ul|ol|h[1-6]|blockquote)\\b[^>]*>"), "\n\n")
+            .replace(Regex("<[^>]*>"), "")
+            .let(::decodeEntities)
+            .replace('\u00a0', ' ')
+            .lines()
+            .joinToString("\n") { it.replace(Regex("[ \\t]+"), " ").trim() }
+            .replace(Regex("\n{3,}"), "\n\n")
+            .trim()
+        return if (text.length <= MAX_DESCRIPTION) text else text.take(MAX_DESCRIPTION - 1).trimEnd() + "\u2026"
+    }
+
+    private fun decodeEntities(text: String): String =
+        Regex("&(#[0-9]+|#[xX][0-9a-fA-F]+|[a-zA-Z]+);").replace(text) { match ->
+            val name = match.groupValues[1]
+            val code = when {
+                name.startsWith("#x") || name.startsWith("#X") -> name.drop(2).toIntOrNull(16)
+                name.startsWith("#") -> name.drop(1).toIntOrNull()
+                else -> NAMED_ENTITIES[name]
+            }
+            if (code == null || !Character.isValidCodePoint(code)) match.value else String(Character.toChars(code))
+        }
+
+    private val NAMED_ENTITIES = mapOf(
+        "amp" to '&'.code, "lt" to '<'.code, "gt" to '>'.code, "quot" to '"'.code, "apos" to '\''.code,
+        "nbsp" to 0xa0, "ndash" to 0x2013, "mdash" to 0x2014, "hellip" to 0x2026,
+        "lsquo" to 0x2018, "rsquo" to 0x2019, "ldquo" to 0x201c, "rdquo" to 0x201d,
+    )
 
     /** RFC 822 as feeds actually write it: optional weekday and seconds, named US zones, or ISO 8601. */
     fun parseDate(raw: String): Long? {
