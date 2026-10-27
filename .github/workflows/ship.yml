@@ -1,0 +1,96 @@
+name: Ship
+
+# Merges a PR and releases it once its CI run passes. One workflow does both because merges made
+# with the Actions token (GitHub's auto-merge, a merge step here) start no `push` workflows, so
+# nothing downstream of a merge could be relied on to run. This workflow is started by CI itself
+# (workflow_run), which a user-triggered run does start, and it starts Release by dispatch, which
+# the Actions token is allowed to do.
+#
+# Version: patch bump of the newest stable tag (v1.2.3 -> 1.2.4; at patch 99 the minor, as the
+# release workflow caps both below 100). Pre-releases and bigger bumps stay manual:
+# Actions -> Release -> Run workflow.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+# One at a time, and never cancel a run that may be part-way through merging or picking a version.
+concurrency:
+  group: ship
+  cancel-in-progress: false
+
+jobs:
+  ship:
+    # Same-repo PRs only (fork PRs get a read-only token).
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Merge the PR
+        id: merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.workflow_run.pull_requests[0].number }}
+          CI_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ -z "$PR" ]; then echo "No PR on this CI run; nothing to ship"; exit 0; fi
+          IFS=$'\t' read -r state draft head < <(gh pr view "$PR" --repo "$REPO" \
+            --json state,isDraft,headRefOid --jq '[.state, .isDraft, .headRefOid] | @tsv')
+          if [ "$head" != "$CI_SHA" ]; then
+            echo "PR #$PR has moved on to $head; leaving it to the CI run for that commit"
+            exit 0
+          fi
+          case "$state" in
+            MERGED) ;;
+            OPEN)
+              if [ "$draft" = true ]; then echo "PR #$PR is a draft; not shipping"; exit 0; fi
+              gh pr merge "$PR" --repo "$REPO" --merge --match-head-commit "$CI_SHA"
+              ;;
+            *) echo "PR #$PR is $state; nothing to ship"; exit 0 ;;
+          esac
+          echo "merged=true" >> "$GITHUB_OUTPUT"
+
+      - name: Release the next version
+        if: steps.merge.outputs.merged == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          # An earlier PR's release may still be running; its tag must exist before we pick the next.
+          for _ in $(seq 60); do
+            running="$(gh run list --repo "$REPO" --workflow release.yml --limit 20 --json status \
+              --jq '[.[] | select(.status != "completed")] | length')"
+            [ "$running" = 0 ] && break
+            sleep 30
+          done
+
+          head="$(gh api "repos/$REPO/commits/main" --jq .sha)"
+          tagged="$(gh api "repos/$REPO/git/matching-refs/tags/v" --paginate \
+            --jq '.[] | select(.object.type == "commit") | .object.sha')"
+          if grep -qx "$head" <<< "$tagged"; then
+            echo "main at $head is already released"
+            exit 0
+          fi
+
+          latest="$(gh api "repos/$REPO/git/matching-refs/tags/v" --paginate --jq '.[].ref' \
+            | sed 's|^refs/tags/v||' \
+            | grep -E '^(0|[1-9][0-9]*)\.[0-9]+\.[0-9]+$' \
+            | sort -V | tail -n 1 || true)"
+          if [ -z "$latest" ]; then
+            next=0.1.0
+          else
+            IFS=. read -r major minor patch <<< "$latest"
+            if [ "$patch" -ge 99 ]; then next="$major.$((minor + 1)).0"; else next="$major.$minor.$((patch + 1))"; fi
+          fi
+          echo "Releasing $next (after ${latest:-no release}) from $head"
+          gh workflow run release.yml --repo "$REPO" --ref main -f version="$next"
