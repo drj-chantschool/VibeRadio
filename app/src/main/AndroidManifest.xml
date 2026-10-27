@@ -80,6 +80,12 @@
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 
+        <!-- Podcast feed refresh every few hours, on Wi-Fi only. -->
+        <service
+            android:name=".podcasts.FeedRefreshJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <!-- ONNX Runtime's telemetry: no usage data leaves the phone, and the native library
              loads only when a feature model runs, not at every app start. -->
         <provider
