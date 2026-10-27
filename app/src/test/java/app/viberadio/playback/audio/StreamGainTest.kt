@@ -23,7 +23,8 @@ class StreamGainTest {
         gain.startItem(levelDb = -6f, mixDb = 0f)
         assertEquals(StreamGain.dbToLinear(-6f), gain.run(1), 1e-6f)
         gain.startItem(levelDb = 3f, mixDb = 0f)
-        assertEquals(StreamGain.dbToLinear(3f), gain.run(1), 1e-6f)
+        // Quiet input, so the limiter stays out of it.
+        assertEquals(StreamGain.dbToLinear(3f) * 0.1f, gain.run(1, value = 0.1f), 1e-6f)
     }
 
     @Test
