@@ -106,17 +106,10 @@ class LoudnessTest {
     }
 
     @Test
-    fun `a quiet track is boosted to the target when the peak allows`() {
-        // Peak at -12 dBFS: 11 dB of headroom to the -1 dBFS ceiling; 6 dB wanted.
+    fun `a quiet track is boosted to the target whatever its peak`() {
         assertEquals(6f, TrackLevel(loudnessLufs = -24f, peak = 0.2512f).gainDb(-18f), 0.01f)
-    }
-
-    @Test
-    fun `a boost stops where the peak would pass the ceiling`() {
-        // Peak at -4 dBFS: only 3 dB of headroom.
-        assertEquals(3f, TrackLevel(loudnessLufs = -26f, peak = 0.631f).gainDb(-18f), 0.01f)
-        // Already at the ceiling: no boost at all, never a cut.
-        assertEquals(0f, TrackLevel(loudnessLufs = -26f, peak = 1f).gainDb(-18f), 1e-4f)
+        // Peaks near full scale still get the whole boost; the limiter handles them.
+        assertEquals(8f, TrackLevel(loudnessLufs = -26f, peak = 1f).gainDb(-18f), 1e-4f)
     }
 
     @Test

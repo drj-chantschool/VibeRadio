@@ -4,7 +4,6 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.log10
 import kotlin.math.max
-import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.tan
 
@@ -20,23 +19,18 @@ data class TrackLevel(
     val peak: Float,
 ) {
     /**
-     * The fixed gain in dB that brings this item to [targetLufs]. A cut is applied in full; a
-     * boost only as far as the peak allows, so nothing is pushed past [PEAK_CEILING_DB] and
-     * clipped. Silence and unmeasurable items get 0 dB.
+     * The fixed gain in dB that brings this item to [targetLufs], boost or cut, in full: a quiet
+     * track is lifted to the target whatever its peak, and [SoftLimiter] in the gain stage keeps
+     * the peaks the boost pushes up from clipping. Silence and unmeasurable items get 0 dB.
      */
     fun gainDb(targetLufs: Float): Float {
         if (!loudnessLufs.isFinite()) return 0f
-        val wanted = targetLufs - loudnessLufs
-        if (wanted <= 0f) return wanted.coerceAtLeast(MIN_GAIN_DB)
-        val headroom = if (peak > 0f) PEAK_CEILING_DB - 20f * log10(peak) else MAX_GAIN_DB
-        return min(wanted, max(0f, headroom)).coerceAtMost(MAX_GAIN_DB)
+        return (targetLufs - loudnessLufs).coerceIn(MIN_GAIN_DB, MAX_GAIN_DB)
     }
 
     companion object {
-        /** Highest a boosted peak may reach, in dBFS. */
-        const val PEAK_CEILING_DB = -1f
         const val MIN_GAIN_DB = -30f
-        const val MAX_GAIN_DB = 20f
+        const val MAX_GAIN_DB = 30f
     }
 }
 
