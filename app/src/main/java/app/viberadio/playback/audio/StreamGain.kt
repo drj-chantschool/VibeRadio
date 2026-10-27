@@ -2,6 +2,25 @@ package app.viberadio.playback.audio
 
 import kotlin.math.abs
 import kotlin.math.pow
+import kotlin.math.tanh
+
+/**
+ * Memoryless peak limiter after the gain: samples below [KNEE] pass untouched; above it they are
+ * bent smoothly (tanh) towards [CEILING] (−1 dBFS), which they never reach. It is what lets
+ * leveling lift a quiet, dynamic track all the way to the target without clipping.
+ */
+object SoftLimiter {
+    const val KNEE = 0.708f
+    const val CEILING = 0.891f
+
+    fun apply(x: Float): Float {
+        val a = abs(x)
+        if (a <= KNEE) return x
+        val room = CEILING - KNEE
+        val y = KNEE + room * tanh((a - KNEE) / room)
+        return if (x < 0f) -y else y
+    }
+}
 
 /**
  * One stream's gain stage: the playing item's leveling gain (#1), plus, on the music stream, the
@@ -57,6 +76,9 @@ class StreamGain(private val sampleRate: Int, private val channels: Int) {
         }
     }
 
+    /** Whether the current gain can push peaks past the knee, so the limiter has work to do. */
+    private val limit get() = currentDb > 0f || targetDb > 0f
+
     /** Applies the gain to one interleaved frame in place, moving one step along any ramp. */
     fun processFrame(frame: FloatArray) {
         framesInItem++
@@ -67,8 +89,8 @@ class StreamGain(private val sampleRate: Int, private val channels: Int) {
             }
             linear = dbToLinear(currentDb)
         }
-        if (linear == 1f) return
-        for (ch in 0 until channels) frame[ch] *= linear
+        if (linear != 1f) for (ch in 0 until channels) frame[ch] *= linear
+        if (limit) for (ch in 0 until channels) frame[ch] = SoftLimiter.apply(frame[ch])
     }
 
     private fun set(db: Float) {
