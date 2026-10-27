@@ -13,6 +13,7 @@ import app.viberadio.feedback.FeedbackRecorder
 import app.viberadio.feedback.ListeningClock
 import app.viberadio.feedback.PlayHistory
 import app.viberadio.features.AudioFeatureJob
+import app.viberadio.podcasts.FeedRefreshJob
 import app.viberadio.features.AudioFeatures
 import app.viberadio.features.ExcerptDecoder
 import app.viberadio.features.FeatureModels
@@ -131,6 +132,8 @@ class AppContainer(context: Context) {
         scope = appScope,
         ioDispatcher = Dispatchers.IO,
     )
+
+    init { FeedRefreshJob.schedule(appContext) }
 
     /** A music gap between podcast episodes still owed, kept across restarts of the player. */
     val podcastWaitStore: PodcastWaitStore = PrefsPodcastWaitStore(context)
