@@ -1,0 +1,54 @@
+name: Auto-release
+
+# Releases every commit that lands on main once its CI run passes: bumps the patch of the
+# newest stable tag (v1.2.3 -> 1.2.4; at patch 99 the minor, which the release workflow caps
+# at 99) and starts Release on main. Pre-releases and bigger bumps stay manual:
+# Actions -> Release -> Run workflow.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: write
+  contents: read
+
+# One at a time, and never cancel a run that may already have picked a version.
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Start Release for the next version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          CI_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          # Release builds main's head, so only release if that is the commit CI just passed.
+          # A newer push has its own CI run, which will release it.
+          head="$(gh api "repos/$REPO/commits/main" --jq .sha)"
+          if [ "$head" != "$CI_SHA" ]; then
+            echo "main moved on to $head; leaving the release to its CI run"
+            exit 0
+          fi
+
+          latest="$(gh api "repos/$REPO/git/matching-refs/tags/v" --paginate --jq '.[].ref' \
+            | sed 's|^refs/tags/v||' \
+            | grep -E '^(0|[1-9][0-9]*)\.[0-9]+\.[0-9]+$' \
+            | sort -V | tail -n 1 || true)"
+          if [ -z "$latest" ]; then
+            next=0.1.0
+          else
+            IFS=. read -r major minor patch <<< "$latest"
+            if [ "$patch" -ge 99 ]; then next="$major.$((minor + 1)).0"; else next="$major.$minor.$((patch + 1))"; fi
+          fi
+          echo "Releasing $next (after ${latest:-no release}) from $head"
+          gh workflow run release.yml --repo "$REPO" --ref main -f version="$next"
