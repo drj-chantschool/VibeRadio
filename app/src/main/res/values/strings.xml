@@ -65,6 +65,13 @@
     <string name="podcasts_skip_intro_seconds">%1$d s</string>
     <string name="podcasts_skip_intro_summary">Skips %1$s</string>
     <string name="podcasts_mark_hint">Tap an episode to mark it played. Long-press to mark it and everything older. Played episodes are never downloaded.</string>
+    <string name="podcasts_show_info">Show details and feed link</string>
+    <string name="podcasts_info_episodes">%1$d episodes</string>
+    <string name="podcasts_info_checked">checked %1$s</string>
+    <string name="podcasts_info_feed_link">Feed link</string>
+    <string name="podcasts_info_save">Save</string>
+    <string name="podcasts_info_saving">Checking…</string>
+    <string name="podcasts_info_close">Close</string>
     <string name="podcasts_remove_show">Remove show</string>
     <string name="podcasts_folder_show">From a folder on this device. Choose a different folder, or none, in Settings → Podcasts.</string>
     <string name="podcasts_remove_title">Remove %1$s?</string>

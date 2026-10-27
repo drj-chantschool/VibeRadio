@@ -57,6 +57,8 @@ data class ShowUi(
     val skipIntroSeconds: Int,
     /** Newest first. */
     val episodes: List<EpisodeUi>,
+    /** When the feed was last fetched (wall clock), 0 if never. */
+    val lastRefreshedMs: Long = 0L,
 )
 
 /** One channel a show can be put on. */
@@ -143,6 +145,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                         priority = show.priority,
                         skipIntroSeconds = show.skipIntroSeconds,
                         episodes = episodes,
+                        lastRefreshedMs = show.lastRefreshedMs,
                     )
                 },
                 add = addFeed,
@@ -186,6 +189,21 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     fun markOlderPlayed(episode: EpisodeUi) = podcasts.markOlderPlayed(episode.id)
 
     fun remove(feedUrl: String) = podcasts.unsubscribe(feedUrl)
+
+    /** Moves a show to a new feed link; [onDone] gets null on success, else the message to show. */
+    fun changeFeedUrl(feedUrl: String, input: String, onDone: (error: Int?) -> Unit) {
+        viewModelScope.launch {
+            onDone(
+                when (val result = podcasts.changeFeedUrl(feedUrl, input)) {
+                    is SubscribeResult.Added -> null
+                    is SubscribeResult.AlreadySubscribed -> R.string.add_feed_already
+                    SubscribeResult.InvalidUrl -> R.string.add_feed_invalid
+                    is SubscribeResult.Failed ->
+                        if (result.error is FeedParseException) R.string.add_feed_not_a_feed else R.string.add_feed_unreachable
+                },
+            )
+        }
+    }
 
     /** Pull to refresh: checks every feed now, however recently it was checked. */
     fun refresh() {
