@@ -36,7 +36,9 @@ Release signing reads `VIBERADIO_KEYSTORE_PATH`, `VIBERADIO_KEYSTORE_PASSWORD`, 
 
 Distribution is GitHub Releases, installed and updated on-device with Obtainium. `.github/workflows/release.yml` validates the version, runs unit tests, builds a signed release APK with that version, verifies the signature and publishes `viberadio-<version>.apk` (plus a `.sha256`) as a GitHub Release. Versions with `-alpha.N`, `-beta.N` or `-rc.N` publish as pre-releases.
 
-Start a release either way:
+**Releases are automatic.** `.github/workflows/auto-release.yml` runs when CI passes on a push to `main`: it bumps the patch of the newest stable tag and dispatches Release for the commit CI passed (skipped if `main` has moved on; the newer commit's CI run releases it). Nothing to do per PR, and sessions should not start releases themselves. It needs CI to run on `main` after the merge, and pushes made with the Actions token start no workflows, so if a merge produced no CI run, no release follows. For a pre-release or a minor/major bump, start one by hand:
+
+Start a release by hand either way:
 
 - **Run workflow** (works from a phone browser): Actions → Release → Run workflow on `main`, version e.g. `0.2.0` or `0.2.0-beta.1`. The workflow creates the `v` tag on the `main` commit it built. This is the route for Claude sessions, which cannot push tags.
 - **Push a tag:** `git tag v0.2.0 && git push origin v0.2.0`.
