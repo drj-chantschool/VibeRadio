@@ -292,6 +292,7 @@ class MainActivity : ComponentActivity() {
             onSetPriority = viewModel::setPriority,
             onSetSkipIntro = viewModel::setSkipIntro,
             onRemove = viewModel::remove,
+            onChangeUrl = viewModel::changeFeedUrl,
         )
     }
 

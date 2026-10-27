@@ -103,8 +103,11 @@ fun PodcastScreen(
     onSetPriority: (feedUrl: String, priority: Int) -> Unit,
     onSetSkipIntro: (feedUrl: String, seconds: Int) -> Unit,
     onRemove: (feedUrl: String) -> Unit,
+    /** Saves a new feed link for a show; the callback gets null on success, else the message to show. */
+    onChangeUrl: (feedUrl: String, input: String, onDone: (error: Int?) -> Unit) -> Unit = { _, _, _ -> },
 ) {
     var confirmRemove by rememberSaveable { mutableStateOf<String?>(null) }
+    var info by rememberSaveable { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
 
     // Closing the show open before can carry the one just opened off screen: bring it back.
@@ -169,7 +172,12 @@ fun PodcastScreen(
                         val open = show.feedUrl == openShow
                         item(key = "show:" + show.feedUrl) {
                             // Opening a show closes the one open before.
-                            ShowRow(show = show, open = open, onToggleOpen = { onOpenShow(if (open) null else show.feedUrl) })
+                            ShowRow(
+                                show = show,
+                                open = open,
+                                onToggleOpen = { onOpenShow(if (open) null else show.feedUrl) },
+                                onShowInfo = { info = show.feedUrl },
+                            )
                         }
                         if (open) {
                             item(key = "channels:" + show.feedUrl) {
@@ -212,6 +220,11 @@ fun PodcastScreen(
                 }
             }
         }
+    }
+
+    info?.let { feedUrl ->
+        val show = state.shows.firstOrNull { it.feedUrl == feedUrl }
+        if (show == null) info = null else ShowInfoDialog(show, onChangeUrl) { info = null }
     }
 
     confirmRemove?.let { feedUrl ->
@@ -349,11 +362,90 @@ private fun Modifier.opensDetails(label: String, onLongClick: () -> Unit): Modif
     combinedClickable(onLongClickLabel = label, onLongClick = onLongClick, onClick = {})
 
 /**
- * A show's heading, and the tap target that opens it: a faintly tinted band with a chevron, so
- * it reads as something to tap.
+ * What a long press on a show's heading opens: its title, how many episodes and when the feed was
+ * last checked, and the feed link to edit. Saving fetches the new link first; the old one stays if
+ * that fails. A folder show has no link, so it only shows the details.
  */
 @Composable
-private fun ShowRow(show: ShowUi, open: Boolean, onToggleOpen: () -> Unit) {
+private fun ShowInfoDialog(
+    show: ShowUi,
+    onChangeUrl: (feedUrl: String, input: String, onDone: (error: Int?) -> Unit) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var draft by rememberSaveable(show.feedUrl) { mutableStateOf(show.feedUrl) }
+    var saving by rememberSaveable { mutableStateOf(false) }
+    var error by rememberSaveable { mutableStateOf<Int?>(null) }
+    val save = {
+        if (!saving && draft.isNotBlank()) {
+            saving = true
+            error = null
+            onChangeUrl(show.feedUrl, draft) { failure ->
+                saving = false
+                error = failure
+                if (failure == null) onDismiss()
+            }
+        }
+    }
+    AlertDialog(
+        onDismissRequest = { if (!saving) onDismiss() },
+        title = { Text(show.title) },
+        text = {
+            Column {
+                Text(
+                    listOfNotNull(
+                        stringResource(R.string.podcasts_info_episodes, show.episodes.size),
+                        if (show.local || show.lastRefreshedMs <= 0L) null else stringResource(
+                            R.string.podcasts_info_checked,
+                            DateUtils.getRelativeTimeSpanString(show.lastRefreshedMs, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS),
+                        ),
+                    ).joinToString(" · "),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.outline,
+                )
+                Spacer(Modifier.height(16.dp))
+                if (show.local) {
+                    Faint(stringResource(R.string.podcasts_folder_show))
+                } else {
+                    OutlinedTextField(
+                        value = draft,
+                        onValueChange = { draft = it; error = null },
+                        label = { Text(stringResource(R.string.podcasts_info_feed_link)) },
+                        enabled = !saving,
+                        isError = error != null,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { save() }),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    error?.let {
+                        Spacer(Modifier.height(6.dp))
+                        Text(stringResource(it), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (show.local) {
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.podcasts_info_close)) }
+            } else {
+                TextButton(onClick = { save() }, enabled = !saving && draft.isNotBlank() && draft.trim() != show.feedUrl) {
+                    Text(stringResource(if (saving) R.string.podcasts_info_saving else R.string.podcasts_info_save))
+                }
+            }
+        },
+        dismissButton = if (show.local) null else {
+            { TextButton(onClick = onDismiss, enabled = !saving) { Text(stringResource(R.string.cancel)) } }
+        },
+        containerColor = MaterialTheme.colorScheme.background,
+    )
+}
+
+/**
+ * A show's heading, and the tap target that opens it: a faintly tinted band with a chevron, so
+ * it reads as something to tap. A long press opens the show's details and feed link.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ShowRow(show: ShowUi, open: Boolean, onToggleOpen: () -> Unit, onShowInfo: () -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -361,9 +453,12 @@ private fun ShowRow(show: ShowUi, open: Boolean, onToggleOpen: () -> Unit) {
             .padding(vertical = 6.dp)
             .clip(ShowRowShape)
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .clickable(onClickLabel = stringResource(if (open) R.string.podcasts_hide_episodes else R.string.podcasts_show_episodes)) {
-                onToggleOpen()
-            }
+            .combinedClickable(
+                onClickLabel = stringResource(if (open) R.string.podcasts_hide_episodes else R.string.podcasts_show_episodes),
+                onLongClickLabel = stringResource(R.string.podcasts_show_info),
+                onLongClick = onShowInfo,
+                onClick = onToggleOpen,
+            )
             .padding(horizontal = 12.dp, vertical = 12.dp),
     ) {
         Column(Modifier.weight(1f)) {
