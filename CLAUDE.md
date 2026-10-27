@@ -36,7 +36,7 @@ Release signing reads `VIBERADIO_KEYSTORE_PATH`, `VIBERADIO_KEYSTORE_PASSWORD`, 
 
 Distribution is GitHub Releases, installed and updated on-device with Obtainium. `.github/workflows/release.yml` validates the version, runs unit tests, builds a signed release APK with that version, verifies the signature and publishes `viberadio-<version>.apk` (plus a `.sha256`) as a GitHub Release. Versions with `-alpha.N`, `-beta.N` or `-rc.N` publish as pre-releases.
 
-**Every PR ships itself.** Opening a PR is the whole job: `auto-merge.yml` arms auto-merge, the PR merges when `check` passes, and `.github/workflows/auto-release.yml` then releases when CI passes on `main`. It bumps the patch of the newest stable tag and dispatches Release for the commit CI passed (skipped if `main` has moved on; the newer commit's CI run releases it). Sessions never start a release for a merged PR and don't wait to be asked. The chain needs CI to run on `main` after the merge, and pushes made with the Actions token start no workflows, so if a merge produced no CI run, no release follows: fix the token in `auto-merge.yml` rather than releasing by hand. For a pre-release or a minor/major bump, start one by hand:
+**Every PR ships itself.** Opening a PR is the whole job: when its CI run passes, `.github/workflows/ship.yml` merges it (merge commit) and dispatches Release for the next version (patch bump of the newest stable tag; skipped if `main` is already tagged). Sessions never merge or release a PR themselves and don't wait to be asked. Merges and tag pushes made with the Actions token start no workflows, which is why one workflow does both, started by CI's own run and starting Release by dispatch; don't split it back into a workflow that waits on a merge. For a pre-release or a minor/major bump, start one by hand:
 
 Start a release by hand either way:
 
@@ -87,5 +87,5 @@ Tuning flow: knob release → `RadioViewModel.tune` → `controller.setMediaItem
 
 - **Work it through without stopping to ask.** Ask the user something only when the request is vague, or inconsistent with the specs in `docs/` or the current state of the code. Otherwise make the reasonable call and say what you decided in the PR description.
 - **When development is done, open the PR.** Don't ask whether to open one; skip this if one is already open for the branch. Branch from `main`, one logical change per PR, referencing the issue (`#n`). Update the relevant `docs/` spec in the same PR when behaviour changes.
-- **Auto-merge arms itself.** `.github/workflows/auto-merge.yml` runs `gh pr merge --auto --merge` when a PR is opened, reopened or marked ready, so it merges itself once the `check` job passes. Nothing to do per PR; if a PR sits unmerged after CI passes, check that workflow's run (repo needs "Allow auto-merge" on).
-- If CI fails, fix it on the same branch; auto-merge stays armed.
+- **Merging is automatic.** Once `check` passes on the PR, `ship.yml` merges and releases it (see Releases). Nothing to do per PR; if one sits unmerged after CI passes, read that workflow's run. A draft PR waits: it ships on the CI run after it is marked ready.
+- If CI fails, fix it on the same branch; the next passing CI run ships it.
