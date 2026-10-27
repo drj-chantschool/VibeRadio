@@ -80,6 +80,25 @@ class PodcastRepository(
     }
 
     /**
+     * Points the show at [feedUrl] to the feed at [input] (anything [FeedUrls.normalize] accepts)
+     * once that feed has been fetched; the old address stays if it can't be. See [PodcastLibrary.withFeedUrl].
+     */
+    suspend fun changeFeedUrl(feedUrl: String, input: String): SubscribeResult {
+        if (LocalFeeds.isLocal(feedUrl)) return SubscribeResult.InvalidUrl
+        val url = FeedUrls.normalize(input) ?: return SubscribeResult.InvalidUrl
+        val current =_library.value.podcast(feedUrl) ?: return SubscribeResult.InvalidUrl
+        if (url == feedUrl) return SubscribeResult.Added(current)
+        _library.value.podcast(url)?.let { return SubscribeResult.AlreadySubscribed(it) }
+        val feed = try {
+            withContext(ioDispatcher) { fetcher.fetch(url) }
+        } catch (e: Exception) {
+            return SubscribeResult.Failed(e)
+        }
+        mutate { it.withFeedUrl(feedUrl, url, feed, clock()) }
+        return _library.value.podcast(url)?.let { SubscribeResult.Added(it) } ?: SubscribeResult.InvalidUrl
+    }
+
+    /**
      * Refetches every show last fetched more than [maxAgeMs] ago. Failures keep the old episodes.
      * Returns at once while another refresh is running; [refreshing] says when that one ends.
      */

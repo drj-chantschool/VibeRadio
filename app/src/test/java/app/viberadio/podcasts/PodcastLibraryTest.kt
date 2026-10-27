@@ -27,6 +27,20 @@ class PodcastLibraryTest {
     }
 
     @Test
+    fun `changing a feed link keeps settings and carries played state over`() {
+        val newUrl = "https://new.example/feed"
+        val lib = library.withSpeed(showA, 1.5f).withPlayed(id(showA, 1), true).withPosition(id(showA, 2), 5_000)
+            .withFeedUrl(showA, newUrl, feed("A", 3, 2, 1), nowMs = 200)
+        assertEquals(null, lib.podcast(showA))
+        assertEquals(1.5f, lib.podcast(newUrl)!!.speed)
+        assertEquals(3, lib.episodesOf(newUrl).size)
+        assertTrue(lib.isPlayed(id(newUrl, 1)))
+        assertEquals(5_000L, lib.positions[id(newUrl, 2)])
+        assertEquals(0, lib.episodes.count { it.feedUrl == showA })
+        assertFalse(lib.isPlayed(id(showA, 1)))
+    }
+
+    @Test
     fun `queue is oldest first across shows`() {
         assertEquals(listOf("A 1", "A 2", "A 3", "B 4", "B 5"), library.queue(PodcastChannels.PODCASTS_ID).map { it.title })
     }

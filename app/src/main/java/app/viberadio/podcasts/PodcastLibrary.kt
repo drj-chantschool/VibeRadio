@@ -127,6 +127,35 @@ data class PodcastLibrary(
         return library
     }
 
+    /**
+     * Moves the show at [oldUrl] to [newUrl], whose fetched [feed] replaces its episodes. The show's
+     * settings stay. Episode IDs hash the feed URL, so they change; played state, resume points and
+     * history carry over to the episode with the same enclosure URL (else the same title).
+     */
+    fun withFeedUrl(oldUrl: String, newUrl: String, feed: Feed, nowMs: Long): PodcastLibrary {
+        val show = podcast(oldUrl) ?: return this
+        if (oldUrl == newUrl || podcast(newUrl) != null) return this
+        val old = episodes.filter { it.feedUrl == oldUrl }
+        val oldIds = old.mapTo(HashSet()) { it.id }
+        val base = copy(
+            podcasts = podcasts.map { if (it === show) show.copy(feedUrl = newUrl) else it },
+            episodes = episodes.filter { it.feedUrl != oldUrl },
+        )
+        val merged = base.withFeed(newUrl, feed, nowMs)
+        val byAudio = old.associateBy { it.audioUrl }
+        val byTitle = old.associateBy { it.title }
+        var played = played - oldIds
+        var positions = positions - oldIds
+        var heard = heard - oldIds
+        for (episode in merged.episodes.filter { it.feedUrl == newUrl }) {
+            val before = (byAudio[episode.audioUrl] ?: byTitle[episode.title])?.id ?: continue
+            if (before in this.played) played = played + episode.id
+            this.positions[before]?.let { positions = positions + (episode.id to it) }
+            this.heard[before]?.let { heard = heard + (episode.id to it) }
+        }
+        return merged.copy(played = played, positions = positions, heard = heard)
+    }
+
     fun withoutPodcast(feedUrl: String): PodcastLibrary {
         val gone = episodes.filter { it.feedUrl == feedUrl }.mapTo(HashSet()) { it.id }
         return copy(
