@@ -10,8 +10,6 @@
 
     <!-- Podcast feeds and episodes. -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- JobScheduler refuses jobs with a network constraint (FeedRefreshJob) without it. -->
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- Background playback. Media-session notifications are exempt from POST_NOTIFICATIONS. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -25,10 +23,9 @@
         android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
-    <!-- ONNX Runtime asks for this for its telemetry, which is removed below. -->
-    <uses-permission
-        android:name="android.permission.ACCESS_NETWORK_STATE"
-        tools:node="remove" />
+    <!-- JobScheduler refuses jobs with a network constraint (FeedRefreshJob) without it.
+         ONNX Runtime also asks for it, for the telemetry provider removed below. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- Settings → Debug → "Export nightly": the job is persisted, so it survives a reboot. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
