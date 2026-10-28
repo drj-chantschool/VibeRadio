@@ -1,31 +1,55 @@
 name: Auto-merge
 
-# Arms auto-merge on every PR, so it merges itself once the required `check`
-# job passes. Replaces the per-session ccr/auto_merge call.
-# Needs Settings -> General -> "Allow auto-merge" and merge commits enabled.
+# Merges a PR once its CI run passes, then starts CI on main. A merge made with the Actions
+# token is a push that starts no workflows, so main would get no CI run and Auto-release
+# would never fire; dispatching CI (workflow_dispatch is exempt) is what starts that chain.
+# Needs merge commits enabled. The ruleset's required `check` is still enforced by the merge.
 
 on:
-  pull_request:
-    types: [opened, reopened, ready_for_review]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
 
 permissions:
+  actions: write
   contents: write
   pull-requests: write
 
+# One at a time, so two PRs finishing together merge one after the other.
+concurrency:
+  group: auto-merge
+  cancel-in-progress: false
+
 jobs:
-  enable:
-    # Fork PRs get a read-only token, and drafts can't be auto-merged.
-    if: github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft
+  merge:
+    # Same-repo PR branches only (fork runs carry no write token and no pull_requests list).
+    if: >-
+      github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.event == 'pull_request'
+      && github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Enable auto-merge
+      - name: Merge the PR and start CI on main
         env:
-          # The merge is made as whoever armed it. With the Actions token that is
-          # github-actions[bot], whose push starts no workflows, so CI never runs on main
-          # and Auto-release never fires. AUTO_MERGE_TOKEN (a PAT or GitHub App token with
-          # contents + pull-requests write) makes the merge start CI. Without it the PR
-          # still merges, but a release has to be started by hand.
-          GH_TOKEN: ${{ secrets.AUTO_MERGE_TOKEN || github.token }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-        run: gh pr merge --auto --merge "$PR_URL"
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.workflow_run.pull_requests[0].number }}
+          CI_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ -z "$PR" ]; then
+            echo "CI run has no pull request; nothing to merge"
+            exit 0
+          fi
+          read -r state draft head < <(gh api "repos/$REPO/pulls/$PR" --jq '[.state, .draft, .head.sha] | @tsv')
+          if [ "$state" != open ] || [ "$draft" = true ]; then
+            echo "PR #$PR is $state (draft: $draft); not merging"
+            exit 0
+          fi
+          # A newer push has its own CI run, which will merge it.
+          if [ "$head" != "$CI_SHA" ]; then
+            echo "PR #$PR head moved on to $head; leaving the merge to its CI run"
+            exit 0
+          fi
+          gh pr merge "$PR" --repo "$REPO" --merge --match-head-commit "$CI_SHA"
+          gh workflow run ci.yml --repo "$REPO" --ref main

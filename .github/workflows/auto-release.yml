@@ -22,7 +22,13 @@ concurrency:
 
 jobs:
   release:
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    # A push (a user's merge) or the CI run Auto-merge dispatches on main after its own merge,
+    # which starts no push run. Only the bot's dispatches count, so a hand-run CI doesn't release.
+    if: >-
+      github.event.workflow_run.conclusion == 'success'
+      && (github.event.workflow_run.event == 'push'
+        || (github.event.workflow_run.event == 'workflow_dispatch'
+          && github.event.workflow_run.triggering_actor.login == 'github-actions[bot]'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
