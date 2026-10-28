@@ -25,6 +25,9 @@ class CrashRecorder(file: File, private val appVersion: String) {
     /** The log, or null if the app hasn't crashed since it started keeping one. */
     fun read(): String? = runCatching { log.readFully().decodeToString() }.getOrNull()?.takeIf { it.isNotBlank() }
 
+    /** Forgets the log once it has been exported. */
+    fun clear() = log.delete()
+
     /** Best effort, and never throws: the process is going down either way (after an OutOfMemoryError there may be no room). */
     private fun record(threadName: String, error: Throwable) {
         try {
