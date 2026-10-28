@@ -21,6 +21,10 @@ object CrashLog {
         return "$MARKER$at · app $appVersion · thread $threadName ===\n${stackTrace.trimEnd()}\n"
     }
 
+    /** The file name an export of the log made at [atMs] gets: sorts by time, safe on every provider. */
+    fun exportName(atMs: Long, utcOffsetMinutes: Int): String =
+        "viberadio-crashes-${DiagnosticsBundle.folderName(atMs, utcOffsetMinutes)}.txt"
+
     /** [log] with [entry] added last, the oldest entries dropped past [keep]. */
     fun append(log: String?, entry: String, keep: Int = KEEP): String =
         (entries(log) + (entry.trimEnd() + "\n")).takeLast(keep).joinToString("\n")

@@ -54,4 +54,12 @@ class CrashLogTest {
         assertEquals("ANR", ExitReasons.name(6))
         assertEquals("99", ExitReasons.name(99))
     }
+
+    @Test
+    fun `an export is named after its local time`() {
+        assertEquals(
+            "viberadio-crashes-${DiagnosticsBundle.folderName(1_792_069_923_000, -300)}.txt",
+            CrashLog.exportName(1_792_069_923_000, -300),
+        )
+    }
 }
