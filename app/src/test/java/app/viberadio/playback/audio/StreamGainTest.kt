@@ -1,6 +1,7 @@
 package app.viberadio.playback.audio
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class StreamGainTest {
@@ -22,7 +23,8 @@ class StreamGainTest {
         gain.startItem(levelDb = -6f, mixDb = 0f)
         assertEquals(StreamGain.dbToLinear(-6f), gain.run(1), 1e-6f)
         gain.startItem(levelDb = 3f, mixDb = 0f)
-        assertEquals(StreamGain.dbToLinear(3f), gain.run(1), 1e-6f)
+        // Quiet input, so the limiter stays out of it.
+        assertEquals(StreamGain.dbToLinear(3f) * 0.1f, gain.run(1, value = 0.1f), 1e-6f)
     }
 
     @Test
@@ -72,5 +74,21 @@ class StreamGainTest {
         gain.processFrame(frame)
         assertEquals(0.123f, frame[0])
         assertEquals(-0.456f, frame[1])
+    }
+
+    @Test
+    fun `a boost never pushes a sample past the limiter ceiling`() {
+        val gain = StreamGain(rate, 1)
+        gain.startItem(levelDb = 12f, mixDb = 0f)
+        assertEquals(SoftLimiter.CEILING, gain.run(1, value = 1f), 0.01f)
+        assertTrue(gain.run(1, value = 1f) < SoftLimiter.CEILING + 1e-6f)
+        // Quiet material passes untouched.
+        assertEquals(StreamGain.dbToLinear(12f) * 0.1f, gain.run(1, value = 0.1f), 1e-5f)
+    }
+
+    @Test
+    fun `the limiter leaves samples under the knee alone and is odd`() {
+        assertEquals(0.5f, SoftLimiter.apply(0.5f), 0f)
+        assertEquals(-SoftLimiter.apply(2f), SoftLimiter.apply(-2f), 0f)
     }
 }
