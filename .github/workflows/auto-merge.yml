@@ -21,6 +21,11 @@ jobs:
     steps:
       - name: Enable auto-merge
         env:
-          GH_TOKEN: ${{ github.token }}
+          # The merge is made as whoever armed it. With the Actions token that is
+          # github-actions[bot], whose push starts no workflows, so CI never runs on main
+          # and Auto-release never fires. AUTO_MERGE_TOKEN (a PAT or GitHub App token with
+          # contents + pull-requests write) makes the merge start CI. Without it the PR
+          # still merges, but a release has to be started by hand.
+          GH_TOKEN: ${{ secrets.AUTO_MERGE_TOKEN || github.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: gh pr merge --auto --merge "$PR_URL"
