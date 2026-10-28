@@ -10,6 +10,8 @@
 
     <!-- Podcast feeds and episodes. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- JobScheduler refuses jobs with a network constraint (FeedRefreshJob) without it. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- Background playback. Media-session notifications are exempt from POST_NOTIFICATIONS. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
