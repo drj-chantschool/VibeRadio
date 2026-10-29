@@ -1,6 +1,9 @@
 package app.viberadio.playback.audio
 
+import kotlin.math.abs
 import kotlin.math.ln
+import kotlin.math.pow
+import kotlin.math.sign
 
 /** How a [SeparationEq] parameter is shown and edited. */
 enum class EqUnit { Hz, Db }
@@ -36,6 +39,13 @@ interface SeparationStage {
      * array may be reused between calls.
      */
     fun bandOffsetsDb(): FloatArray? = null
+
+    /**
+     * Moves to [separation]'s parameters, which must be the module that made this stage. Takes
+     * effect at the current [mix] and glides there, never snaps, so an edit while applied is
+     * heard directly rather than through flat.
+     */
+    fun retune(separation: SeparationEq)
 }
 
 /**
@@ -133,7 +143,7 @@ sealed interface SeparationEq {
         }
 
         override fun stage(stream: AudioStream, sampleRate: Int, channels: Int, rampMs: Long, initialMix: Float): SeparationStage =
-            DryWetStage(design(stream, sampleRate), sampleRate, channels, rampMs, initialMix)
+            DryWetStage(this, stream, sampleRate, channels, rampMs, initialMix)
 
         companion object {
             const val ID = "band_pass_notch"
@@ -187,7 +197,7 @@ sealed interface SeparationEq {
         override val consistent: Boolean get() = music.size == ToneBands.COUNT && podcast.size == ToneBands.COUNT
 
         override fun stage(stream: AudioStream, sampleRate: Int, channels: Int, rampMs: Long, initialMix: Float): SeparationStage =
-            GraphicStage(offsets(stream).map { it.toFloat() }.toFloatArray(), sampleRate, rampMs, initialMix)
+            GraphicStage(this, stream, sampleRate, rampMs, initialMix)
 
         companion object {
             const val ID = "graphic"
@@ -248,15 +258,28 @@ internal class MixRamp(private val sampleRate: Int, rampMs: Long, initial: Float
     }
 }
 
-/** [SeparationEq.BandPassNotch]'s running form: fixed filters, blended with the dry signal. */
+/**
+ * [SeparationEq.BandPassNotch]'s running form: filters blended with the dry signal. A [retune]
+ * glides the band edges at [GLIDE_OCTAVES_PER_S] and the depth at [GraphicEq.SLEW_DB_PER_S],
+ * redesigning the filters every [GraphicEq.BLOCK] frames, the way the tone EQ moves its bands.
+ */
 internal class DryWetStage(
-    val stages: List<BiquadCoefficients>,
-    sampleRate: Int,
+    notch: SeparationEq.BandPassNotch,
+    private val stream: AudioStream,
+    private val sampleRate: Int,
     private val channels: Int,
     rampMs: Long,
     initialMix: Float,
 ) : SeparationStage {
     private val ramp = MixRamp(sampleRate, rampMs, initialMix)
+
+    /** The figures the filters are designed from now, and the ones they glide to. */
+    private var current = notch
+    private var goal = notch
+    private var stages = notch.design(stream, sampleRate)
+    private var countdown = 0
+    private val maxStepOctaves = GLIDE_OCTAVES_PER_S * GraphicEq.BLOCK / sampleRate
+    private val maxStepDb = GraphicEq.SLEW_DB_PER_S * GraphicEq.BLOCK / sampleRate
 
     // Transposed direct form II state, per stage and channel.
     private val z1 = Array(stages.size) { DoubleArray(channels) }
@@ -270,7 +293,40 @@ internal class DryWetStage(
             ramp.rampMs = ms
         }
 
+    override fun retune(separation: SeparationEq) {
+        goal = separation as SeparationEq.BandPassNotch
+    }
+
+    private fun glide() {
+        val c = current
+        val g = goal
+        current = SeparationEq.BandPassNotch(
+            podcastLowHz = stepHz(c.podcastLowHz, g.podcastLowHz),
+            podcastHighHz = stepHz(c.podcastHighHz, g.podcastHighHz),
+            musicLowHz = stepHz(c.musicLowHz, g.musicLowHz),
+            musicHighHz = stepHz(c.musicHighHz, g.musicHighHz),
+            musicDepthDb = stepDb(c.musicDepthDb, g.musicDepthDb),
+        )
+        // Same number of filters for a stream whatever the figures, so the state carries over.
+        stages = current.design(stream, sampleRate)
+    }
+
+    private fun stepHz(from: Double, to: Double): Double {
+        val octaves = ln(to / from) / ln(2.0)
+        return if (abs(octaves) <= maxStepOctaves) to else from * 2.0.pow(maxStepOctaves * sign(octaves))
+    }
+
+    private fun stepDb(from: Double, to: Double): Double =
+        if (abs(to - from) <= maxStepDb) to else from + maxStepDb * sign(to - from)
+
     override fun processFrame(frame: FloatArray, target: Float) {
+        if (current != goal) {
+            if (countdown == 0) {
+                glide()
+                countdown = GraphicEq.BLOCK
+            }
+            countdown--
+        }
         val m = ramp.advance(target)
         for (ch in 0 until channels) {
             val dry = frame[ch].toDouble()
@@ -285,17 +341,33 @@ internal class DryWetStage(
             frame[ch] = (dry + (x - dry) * m).toFloat()
         }
     }
+
+    companion object {
+        /** How fast a band edge glides: the whole audible range in about a second. */
+        const val GLIDE_OCTAVES_PER_S = 10.0
+    }
 }
 
-/** [SeparationEq.Graphic]'s running form: no filters of its own, just offsets for the tone bands, scaled by the ramp. */
+/**
+ * [SeparationEq.Graphic]'s running form: no filters of its own, just offsets for the tone bands,
+ * scaled by the ramp. A [retune] swaps the offsets; the tone EQ glides its bands to them.
+ */
 internal class GraphicStage(
-    private val offsetsDb: FloatArray,
+    graphic: SeparationEq.Graphic,
+    private val stream: AudioStream,
     sampleRate: Int,
     rampMs: Long,
     initialMix: Float,
 ) : SeparationStage {
     private val ramp = MixRamp(sampleRate, rampMs, initialMix)
+    private var offsetsDb = offsetsOf(graphic)
     private val scaled = FloatArray(offsetsDb.size)
+
+    private fun offsetsOf(graphic: SeparationEq.Graphic) = graphic.offsets(stream).map { it.toFloat() }.toFloatArray()
+
+    override fun retune(separation: SeparationEq) {
+        offsetsDb = offsetsOf(separation as SeparationEq.Graphic)
+    }
 
     override val mix: Float get() = ramp.value
 

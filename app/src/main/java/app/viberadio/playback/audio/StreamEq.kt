@@ -111,9 +111,10 @@ data class BiquadCoefficients(val b0: Double, val b1: Double, val b2: Double, va
  * says. A [SeparationEq.Graphic] module doesn't filter on its own: its offsets go onto the tone
  * bands. Pure Kotlin over float samples; [StreamEqProcessor] feeds it PCM.
  *
- * Nothing snaps: tone changes glide, and a different separation module (or new parameters)
- * waits until the current one has ramped out, then ramps in. While the current one contributes
- * nothing, the swap happens straight away.
+ * Nothing snaps, and nothing detours through flat: tone changes glide, new parameters for the
+ * running separation module glide from where they are, and a different module ramps in while
+ * the one it replaces ramps out over the same time (a crossfade). While the current one
+ * contributes nothing, the swap happens straight away.
  */
 class StreamEq(
     val stream: AudioStream,
@@ -125,14 +126,17 @@ class StreamEq(
     /** Where the separation starts: 0 = flat, 1 = applied. */
     initialMix: Float,
 ) {
-    /** The module running now. */
+    /** The module running now (ramping in, if it just took over). */
     var separation: SeparationEq = separation
         private set
 
     private var stage: SeparationStage = separation.stage(stream, sampleRate, channels, rampMs, initialMix)
 
-    /** The module (or parameters) to change to once [stage] has ramped out. */
-    private var pending: SeparationEq? = null
+    /**
+     * Modules switched away from, ramping out while [stage] ramps in; dropped once flat. At most
+     * one per module: switching back to one revives its stage rather than starting another.
+     */
+    private val outgoing = ArrayList<Pair<SeparationEq, SeparationStage>>(SeparationEq.all.size)
 
     private var toneDb = tone.bandsDb.toFloatArray()
     private var rampMs = rampMs
@@ -150,33 +154,50 @@ class StreamEq(
         if (rampMs != this.rampMs) {
             this.rampMs = rampMs
             stage.rampMs = rampMs
+            for (o in outgoing) o.second.rampMs = rampMs
         }
         val bands = tone.bandsDb
         if (bands.size != toneDb.size || bands.indices.any { bands[it] != toneDb[it] }) toneDb = bands.toFloatArray()
-        pending = if (separation == this.separation) null else separation
-        swapIfOut()
+        if (separation != this.separation) switchTo(separation)
     }
 
     /** Filters one interleaved frame in place, moving the separation one step towards [target] (0 flat, 1 applied). */
     fun processFrame(frame: FloatArray, target: Float) {
         if (graphic.readsTargets) bandTargets()
         graphic.processFrame(frame, targets)
-        stage.processFrame(frame, if (pending != null) 0f else target)
-        if (pending != null) swapIfOut()
+        if (outgoing.isNotEmpty()) {
+            for (o in outgoing) o.second.processFrame(frame, 0f)
+            outgoing.removeAll { it.second.mix == 0f }
+        }
+        stage.processFrame(frame, target)
     }
 
-    private fun swapIfOut() {
-        val next = pending ?: return
-        if (stage.mix > 0f) return
+    private fun switchTo(next: SeparationEq) {
+        if (next.id == separation.id) {
+            stage.retune(next)
+        } else {
+            val revived = outgoing.indexOfFirst { it.first.id == next.id }
+            val nextStage = if (revived >= 0) {
+                outgoing.removeAt(revived).second.also { it.retune(next) }
+            } else {
+                next.stage(stream, sampleRate, channels, rampMs, initialMix = 0f)
+            }
+            if (stage.mix > 0f) outgoing.add(separation to stage)
+            stage = nextStage
+        }
         separation = next
-        stage = next.stage(stream, sampleRate, channels, rampMs, initialMix = 0f)
-        pending = null
     }
 
-    /** Tone curve plus the separation's band offsets at its current mix. */
+    /** Tone curve plus the band offsets of every separation stage at its current mix. */
     private fun bandTargets(): FloatArray {
-        val offsets = stage.bandOffsetsDb()
-        for (b in 0 until ToneBands.COUNT) targets[b] = toneDb[b] + (offsets?.get(b) ?: 0f)
+        for (b in 0 until ToneBands.COUNT) targets[b] = toneDb[b]
+        addOffsets(stage)
+        for (o in outgoing) addOffsets(o.second)
         return targets
+    }
+
+    private fun addOffsets(stage: SeparationStage) {
+        val offsets = stage.bandOffsetsDb() ?: return
+        for (b in 0 until ToneBands.COUNT) targets[b] += offsets[b]
     }
 }
