@@ -98,36 +98,6 @@ class StreamEqTest {
         assertEquals(0.355f, peak, 0.02f)
     }
 
-    /** Peaks of a music-centre sine through [eq] at full separation, one per 10 ms window, over [seconds]. */
-    private fun windowPeaks(eq: StreamEq, seconds: Double, from: Int = 0): List<Float> {
-        val frame = FloatArray(1)
-        val window = rate / 100
-        val peaks = ArrayList<Float>()
-        var peak = 0f
-        for (i in from until from + (rate * seconds).toInt()) {
-            frame[0] = sin(2 * PI * defaults.musicCentreHz * i / rate).toFloat()
-            eq.processFrame(frame, target = 1f)
-            peak = maxOf(peak, abs(frame[0]))
-            if ((i - from + 1) % window == 0) {
-                peaks += peak
-                peak = 0f
-            }
-        }
-        return peaks
-    }
-
-    @Test
-    fun `a new depth while applied glides straight there, never through flat`() {
-        val eq = StreamEq(AudioStream.MUSIC, rate, 1, defaults, ToneCurve.FLAT, 1_500, initialMix = 1f)
-        windowPeaks(eq, 0.5)
-        eq.configure(defaults.copy(musicDepthDb = -18.0), ToneCurve.FLAT, 1_500)
-        val peaks = windowPeaks(eq, 1.0, from = rate / 2)
-        // Never back above the old −9 dB (0.355), let alone flat; settled at −18 dB (0.126).
-        assertTrue(peaks.max() < 0.37f)
-        assertEquals(0.126f, peaks.last(), 0.01f)
-        assertEquals(1f, eq.mix, 0f)
-    }
-
     @Test
     fun `settings validation`() {
         assertTrue(defaults.isValid)
@@ -268,68 +238,29 @@ class GraphicSeparationTest {
         assertTrue(eq.bandGainsDb.all { it == 0f })
     }
 
-    /** Largest 10 ms peak of a 2 kHz sine through [eq] at full separation over [seconds]. */
-    private fun maxPeak(eq: StreamEq, seconds: Double): Float {
+    @Test
+    fun `switching module while applied takes over at once, still applied`() {
+        val eq = StreamEq(AudioStream.MUSIC, rate, 1, SeparationEq.BandPassNotch(), ToneCurve.FLAT, rampMs = 1_000, initialMix = 1f)
+        eq.configure(graphic, ToneCurve.FLAT, rampMs = 1_000)
+        assertTrue(eq.separation is SeparationEq.Graphic)
+        assertEquals(1f, eq.mix, 0f)
+    }
+
+    @Test
+    fun `new figures while applied take effect at once`() {
+        val notch = SeparationEq.BandPassNotch()
+        val eq = StreamEq(AudioStream.MUSIC, rate, 1, notch, ToneCurve.FLAT, rampMs = 1_000, initialMix = 1f)
         val frame = FloatArray(1)
         var peak = 0f
-        for (i in 0 until (rate * seconds).toInt()) {
-            frame[0] = sin(2 * PI * 2_000.0 * i / rate).toFloat()
+        for (i in 0 until rate) {
+            if (i == rate / 2) eq.configure(notch.copy(musicDepthDb = -18.0), ToneCurve.FLAT, rampMs = 1_000)
+            frame[0] = sin(2 * PI * notch.musicCentreHz * i / rate).toFloat()
             eq.processFrame(frame, target = 1f)
-            if (i > rate / 100) peak = maxOf(peak, abs(frame[0]))
+            if (i > rate / 2 + rate / 10) peak = maxOf(peak, abs(frame[0]))
         }
-        return peak
-    }
-
-    @Test
-    fun `switching module while applied crossfades, never through flat`() {
-        val eq = StreamEq(AudioStream.MUSIC, rate, 1, SeparationEq.BandPassNotch(), ToneCurve.FLAT, rampMs = 1_000, initialMix = 1f)
-        val frame = FloatArray(1)
-        repeat(rate / 2) { eq.processFrame(frame, target = 1f) }
-        eq.configure(graphic, ToneCurve.FLAT, rampMs = 1_000)
-        // The new module takes over at once and ramps in while the notch ramps out.
-        assertTrue(eq.separation is SeparationEq.Graphic)
-        assertEquals(0f, eq.mix, 0f)
-        repeat(rate / 2) { eq.processFrame(frame, target = 1f) }
-        assertEquals(0.5f, eq.mix, 0.01f)
-        assertEquals(-4.5f, eq.bandGainsDb[5], 0.3f)
-        val fresh = StreamEq(AudioStream.MUSIC, rate, 1, SeparationEq.BandPassNotch(), ToneCurve.FLAT, rampMs = 1_000, initialMix = 1f)
-        maxPeak(fresh, 0.5)
-        fresh.configure(graphic, ToneCurve.FLAT, rampMs = 1_000)
-        // 2 kHz stays well down the whole way (flat would be 1, the notch alone 0.355).
-        assertTrue(maxPeak(fresh, 1.5) < 0.4f)
-        assertEquals(1f, fresh.mix, 0f)
-    }
-
-    @Test
-    fun `switching back mid-crossfade picks the old module up where it was`() {
-        val eq = StreamEq(AudioStream.MUSIC, rate, 1, SeparationEq.BandPassNotch(), ToneCurve.FLAT, rampMs = 1_000, initialMix = 1f)
-        val frame = FloatArray(1)
-        eq.configure(graphic, ToneCurve.FLAT, rampMs = 1_000)
-        repeat(rate / 4) { eq.processFrame(frame, target = 1f) }
-        eq.configure(SeparationEq.BandPassNotch(), ToneCurve.FLAT, rampMs = 1_000)
-        assertTrue(eq.separation is SeparationEq.BandPassNotch)
-        assertEquals(0.75f, eq.mix, 0.01f)
-        repeat(rate) { eq.processFrame(frame, target = 1f) }
         assertEquals(1f, eq.mix, 0f)
-        // The graphic offsets have ramped back out.
-        assertTrue(eq.bandGainsDb.all { it == 0f })
-    }
-
-    @Test
-    fun `new offsets while applied glide from where they are`() {
-        val eq = StreamEq(AudioStream.MUSIC, rate, 1, graphic, ToneCurve.FLAT, rampMs = 1_000, initialMix = 1f)
-        val frame = FloatArray(1)
-        repeat(rate / 10) { eq.processFrame(frame, target = 1f) }
-        assertEquals(-9f, eq.bandGainsDb[5], 0f)
-        eq.configure(graphic.with("music_1k", -15.0), ToneCurve.FLAT, rampMs = 1_000)
-        // 6 dB at 48 dB/s: an eighth of a second, never back towards 0.
-        repeat(rate / 16) {
-            eq.processFrame(frame, target = 1f)
-            assertTrue(eq.bandGainsDb[5] <= -9f)
-        }
-        repeat(rate / 8) { eq.processFrame(frame, target = 1f) }
-        assertEquals(-15f, eq.bandGainsDb[5], 0f)
-        assertEquals(1f, eq.mix, 0f)
+        // -18 dB is about 0.126.
+        assertEquals(0.126f, peak, 0.01f)
     }
 
     @Test
