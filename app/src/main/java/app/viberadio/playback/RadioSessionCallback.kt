@@ -139,22 +139,8 @@ class RadioSessionCallback(
      */
     private var joiningMediaId: String? = null
 
-    /** How far the fade-in has got, in ms of playback, or -1 when not fading. */
-    private var fadeElapsedMs = -1L
-    private val fadeTick = object : Runnable {
-        override fun run() {
-            val player = player ?: return
-            if (player.isPlaying) fadeElapsedMs += FADE_STEP_MS
-            if (fadeElapsedMs >= FADE_IN_MS) {
-                stopFade()
-                return
-            }
-            val t = fadeElapsedMs.toFloat() / FADE_IN_MS
-            // Squared: closer to an even rise in loudness than a linear gain ramp.
-            player.volume = t * t
-            handler.postDelayed(this, FADE_STEP_MS)
-        }
-    }
+    /** Fades in a song joined part-way. */
+    private var fade: FadeIn? = null
 
     private data class Queue(
         val channelId: String,
@@ -176,11 +162,13 @@ class RadioSessionCallback(
     fun attach(player: Player, overlayPlayer: Player? = null, mix: MixState = MixState()) {
         this.player = player
         player.addListener(this)
+        fade = FadeIn(player, handler)
         overlay = overlayPlayer?.let {
             PodcastOverlay(
                 player = it,
                 podcasts = podcasts,
                 mix = mix,
+                fade = FadeIn(it, handler),
                 onEnded = ::onOverlayEnded,
                 // Not marked played; it's tried again at the next boundary.
                 onFailed = ::onOverlayFailed,
@@ -213,7 +201,8 @@ class RadioSessionCallback(
         onAir.stop()
         handler.removeCallbacks(positionTick)
         handler.removeCallbacks(scheduleTick)
-        stopFade()
+        fade?.stop()
+        fade = null
         player?.removeListener(this)
         player = null
     }
@@ -303,10 +292,11 @@ class RadioSessionCallback(
         logWait("tune")
         if (queue.joined) {
             joiningMediaId = queue.items.first().mediaId
-            startFade()
+            // Started as the queue is handed over, before the joined song loads.
+            fade?.start()
         } else {
             joiningMediaId = null
-            stopFade()
+            fade?.stop()
         }
         return queue
     }
@@ -540,7 +530,7 @@ class RadioSessionCallback(
         } ?: return
         log(PodcastEvent.Kind.QUEUE_END, endedEpisode, "next_channel=${next.channelId}")
         joiningMediaId = null
-        stopFade()
+        fade?.stop()
         var boundary = next.boundary
         if (next.channelId != currentChannelId) {
             overlay?.stop()
@@ -651,23 +641,6 @@ class RadioSessionCallback(
         if (songPlaying) listening.start() else listening.stop()
     }
 
-    /**
-     * Silences the player and raises it over [FADE_IN_MS] of actual playback. Started when the
-     * queue is handed over, before the joined song loads, so it never starts at full volume.
-     */
-    private fun startFade() {
-        handler.removeCallbacks(fadeTick)
-        fadeElapsedMs = 0
-        player?.volume = 0f
-        handler.postDelayed(fadeTick, FADE_STEP_MS)
-    }
-
-    private fun stopFade() {
-        handler.removeCallbacks(fadeTick)
-        if (fadeElapsedMs >= 0) player?.volume = 1f
-        fadeElapsedMs = -1
-    }
-
     /** The channel's episodes, resuming a started one; or the #4 fallback if there are none. */
     private fun podcastQueue(channelId: String): Queue? {
         val library = podcasts.library.value
@@ -735,8 +708,6 @@ class RadioSessionCallback(
 
         /** Songs queued after the current one, so the next is preloaded. */
         const val LOOKAHEAD = 1
-        const val FADE_IN_MS = 1_500L
-        const val FADE_STEP_MS = 50L
 
         val FORBIDDEN_COMMANDS = intArrayOf(
             Player.COMMAND_SEEK_TO_NEXT,
