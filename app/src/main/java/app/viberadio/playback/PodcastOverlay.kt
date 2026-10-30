@@ -17,14 +17,16 @@ import app.viberadio.podcasts.PodcastRepository
  * Like episodes on the session player: plays at its show's speed, saves its position, and is
  * marked played only when it actually plays to the end.
  *
- * While it plays, [MixState.podcastOverMusic] is on, so the music's EQ ramps into its notch;
- * when it ends or stops, the music ramps back to flat.
+ * Every episode comes in with [fade], as the music ramps down under it: while it plays,
+ * [MixState.podcastOverMusic] is on, so the music's EQ ramps into its notch; when it ends or
+ * stops, the music ramps back to flat.
  */
 @OptIn(UnstableApi::class)
 class PodcastOverlay(
     private val player: Player,
     private val podcasts: PodcastRepository,
     private val mix: MixState,
+    private val fade: FadeIn,
     /** The episode played to the end, after [durationMs] of content (0 if unknown). */
     private val onEnded: (episodeId: String, durationMs: Long) -> Unit,
     /** The episode couldn't play; it isn't marked played. */
@@ -46,6 +48,7 @@ class PodcastOverlay(
     fun start(item: MediaItem, episodeId: String, startPositionMs: Long?, speed: Float, playWhenReady: Boolean) {
         this.episodeId = episodeId
         durationMs = 0
+        fade.start()
         player.setMediaItem(item, startPositionMs ?: 0L)
         player.setPlaybackSpeed(speed)
         player.prepare()
@@ -74,6 +77,7 @@ class PodcastOverlay(
     }
 
     fun release() {
+        fade.stop()
         player.removeListener(this)
         mix.podcastOverMusic = false
     }
@@ -103,6 +107,7 @@ class PodcastOverlay(
     private fun clear() {
         episodeId = null
         mix.podcastOverMusic = false
+        fade.stop()
         player.stop()
         player.clearMediaItems()
     }
