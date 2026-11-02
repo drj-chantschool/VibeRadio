@@ -1,9 +1,12 @@
 package app.viberadio.playback
 
+import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.view.KeyEvent
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -35,6 +38,8 @@ import kotlinx.coroutines.launch
  * including the system media notification and headset buttons: no skip, no seek, no
  * shuffle/repeat toggles. Play/pause and tuning remain, including [ChannelStep]: the
  * notification's channel down/up buttons, which tune the neighbouring station on the dial.
+ * Next and previous media keys (Bluetooth headphones and car stereos, wired headsets) do the
+ * same: they tune up and down a station rather than skip ([onMediaButtonEvent]).
  *
  * Song channels queue from [StreamPlanner] one song at a time: the current song plus
  * [LOOKAHEAD] more (so the player can preload), topped up each time a song starts. Podcast-only channels queue from the global
@@ -236,16 +241,51 @@ class RadioSessionCallback(
             ChannelStep.UP.customAction -> 1
             else -> return failed(SessionError(SessionError.ERROR_NOT_SUPPORTED, "Unknown command"))
         }
-        val player = player ?: return failed(SessionError(SessionError.ERROR_INVALID_STATE, "No player"))
+        if (player == null) return failed(SessionError(SessionError.ERROR_INVALID_STATE, "No player"))
+        if (!stepChannel(delta)) return failed(SessionError(SessionError.ERROR_BAD_VALUE, "No other channel to tune"))
+        return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+    }
+
+    /**
+     * Next and previous media keys (Bluetooth AVRCP, wired headsets) tune a station up or down,
+     * like [ChannelStep], instead of skipping: the skip commands are stripped from every
+     * controller, so without this they would do nothing. Held keys repeat; only the first press
+     * counts, so holding the button doesn't spin the dial. Every other key keeps Media3's handling.
+     */
+    override fun onMediaButtonEvent(
+        session: MediaSession,
+        controllerInfo: MediaSession.ControllerInfo,
+        intent: Intent,
+    ): Boolean {
+        val event = mediaKeyEvent(intent) ?: return false
+        val delta = when (event.keyCode) {
+            KeyEvent.KEYCODE_MEDIA_NEXT -> 1
+            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> -1
+            else -> return false
+        }
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) stepChannel(delta)
+        return true
+    }
+
+    /** Tunes the station [delta] steps along the dial, wrapping ([Dial.step]), and plays it, as the knob does. */
+    private fun stepChannel(delta: Int): Boolean {
+        val player = player ?: return false
         // Only the order matters here, not the names.
         val stations = Dial.stations(songChannels(), podcasts.library.value.channelIds, ChannelNames(emptyMap()))
-        val queue = Dial.step(stations, currentChannelId, delta)?.id?.let(::tune)
-            ?: return failed(SessionError(SessionError.ERROR_BAD_VALUE, "No other channel to tune"))
+        val queue = Dial.step(stations, currentChannelId, delta)?.id?.let(::tune) ?: return false
         player.setMediaItems(queue.items, 0, queue.startPositionMs)
         player.prepare()
         player.play()
-        return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+        return true
     }
+
+    private fun mediaKeyEvent(intent: Intent): KeyEvent? =
+        if (Build.VERSION.SDK_INT >= 33) {
+            intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+        }
 
     private fun failed(error: SessionError): ListenableFuture<SessionResult> = Futures.immediateFuture(SessionResult(error))
 
