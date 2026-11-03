@@ -141,6 +141,10 @@ class AppContainer(context: Context) {
         scope = appScope,
         ioDispatcher = Dispatchers.IO,
         keepDownloaded = { podcastDownloadSettings.count.value },
+        storageLimitBytes = { podcastDownloadSettings.limitBytes.value },
+        pinned = { podcastDownloadSettings.pinned },
+        setPinned = podcastDownloadSettings::setPinned,
+        settingsReady = { podcastDownloadSettings.awaitLoaded() },
         fileDurationMs = { file ->
             val retriever = android.media.MediaMetadataRetriever()
             try {

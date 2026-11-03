@@ -47,6 +47,31 @@ class EpisodeDownloaderTest {
     }
 
     @Test
+    fun `stops starting downloads once the targets' files reach the byte limit`() {
+        downloader.sync(listOf(episode(1), episode(2), episode(3)), maxBytes = 20)
+        assertEquals(setOf("e1"), downloader.downloaded.value)
+        // Files already there count against the limit, so nothing more is fetched.
+        downloader.sync(listOf(episode(1), episode(2), episode(3)), maxBytes = 20)
+        assertEquals(listOf("https://x/1.mp3"), fetched)
+    }
+
+    @Test
+    fun `episodes kept on the side survive and aren't fetched`() {
+        downloader.sync(listOf(episode(1), episode(2)))
+        fetched.clear()
+        downloader.sync(listOf(episode(3)), alsoKeep = setOf("e1"))
+        assertEquals(setOf("e1", "e3"), downloader.downloaded.value)
+        assertEquals(listOf("https://x/3.mp3"), fetched)
+    }
+
+    @Test
+    fun `nothing is fetched when the device has too little space to spare`() {
+        downloader.sync(listOf(episode(1)), minFreeBytes = Long.MAX_VALUE)
+        assertTrue(fetched.isEmpty())
+        assertTrue(downloader.downloaded.value.isEmpty())
+    }
+
+    @Test
     fun `feed urls are normalised from what people paste`() {
         assertEquals("https://example.com/feed.xml", FeedUrls.normalize(" example.com/feed.xml "))
         assertEquals("https://example.com/rss", FeedUrls.normalize("feed://example.com/rss"))

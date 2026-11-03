@@ -155,6 +155,16 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     /** False, nothing changed, when outside the allowed range. */
     fun setPodcastDownloads(count: Int): Boolean = container.podcastDownloadSettings.set(count)
 
+    /** The storage limit in bytes, null for none. */
+    val podcastStorageLimit: StateFlow<Long?> = container.podcastDownloadSettings.limitBytes
+
+    fun setPodcastStorageLimit(bytes: Long?): Boolean = container.podcastDownloadSettings.setLimitBytes(bytes)
+
+    /** True while a one-off preload ("download everything now") is running. */
+    val podcastPreloading: StateFlow<Boolean> = container.podcastRepository.preloading
+
+    fun preloadPodcasts() = container.podcastRepository.preloadAll()
+
     /** Settings → Podcasts, in developer mode: the gap rule between episodes and each rule's figures. */
     val podcastGap: StateFlow<PodcastGapSettings> = container.podcastGapSettings.settings
 

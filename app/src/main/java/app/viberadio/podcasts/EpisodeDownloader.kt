@@ -25,19 +25,30 @@ class EpisodeDownloader(
 
     fun file(id: String): File = File(dir, "$id$SUFFIX")
 
-    /** Blocking. Deletes everything outside [targets], then fetches missing targets in order. */
-    fun sync(targets: List<Episode>) {
+    /**
+     * Blocking. Deletes everything outside [targets] and [alsoKeep] (files kept but never fetched),
+     * then fetches missing targets in order, stopping at the first one that would start with the
+     * targets' files already at [maxBytes] or more (one episode can run past it), or with less than
+     * [minFreeBytes] left on the device.
+     */
+    fun sync(targets: List<Episode>, alsoKeep: Set<String> = emptySet(), maxBytes: Long? = null, minFreeBytes: Long = MIN_FREE_BYTES) {
         dir.mkdirs()
-        val keep = targets.mapTo(HashSet()) { it.id }
+        val keep = targets.mapTo(HashSet(alsoKeep)) { it.id }
         dir.listFiles()?.forEach { f ->
             val partial = f.name.endsWith(PARTIAL)
             if (partial || f.name.removeSuffix(SUFFIX) !in keep) f.delete()
         }
         _downloaded.value = scan()
 
+        var used = 0L
         for (episode in targets) {
             val target = file(episode.id)
-            if (target.exists()) continue
+            if (target.exists()) {
+                used += target.length()
+                continue
+            }
+            if (maxBytes != null && used >= maxBytes) break
+            if (dir.usableSpace < minFreeBytes) break
             val part = File(dir, "${episode.id}$PARTIAL")
             try {
                 open(episode.audioUrl).use { input -> part.outputStream().use { input.copyTo(it) } }
@@ -47,6 +58,7 @@ class EpisodeDownloader(
                 part.delete()
                 continue
             }
+            used += target.length()
             _downloaded.value = scan()
         }
     }
@@ -57,5 +69,8 @@ class EpisodeDownloader(
     private companion object {
         const val SUFFIX = ".audio"
         const val PARTIAL = ".part"
+
+        /** Left free on the device, so a big preload can't fill it. */
+        const val MIN_FREE_BYTES = 1L shl 30
     }
 }

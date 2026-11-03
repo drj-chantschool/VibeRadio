@@ -148,6 +148,8 @@ class MainActivity : ComponentActivity() {
         val podcastGap by viewModel.podcastGap.collectAsStateWithLifecycle()
         val podcastFolder by viewModel.podcastFolder.collectAsStateWithLifecycle()
         val podcastDownloads by viewModel.podcastDownloads.collectAsStateWithLifecycle()
+        val podcastStorageLimit by viewModel.podcastStorageLimit.collectAsStateWithLifecycle()
+        val podcastPreloading by viewModel.podcastPreloading.collectAsStateWithLifecycle()
         val separation by viewModel.separation.collectAsStateWithLifecycle()
         val diagnostics by viewModel.diagnostics.collectAsStateWithLifecycle()
         val exporting by viewModel.exporting.collectAsStateWithLifecycle()
@@ -221,6 +223,10 @@ class MainActivity : ComponentActivity() {
             onPodcastFolder = viewModel::setPodcastFolder,
             podcastDownloads = podcastDownloads,
             onPodcastDownloads = viewModel::setPodcastDownloads,
+            podcastStorageLimit = podcastStorageLimit,
+            onPodcastStorageLimit = viewModel::setPodcastStorageLimit,
+            podcastPreloading = podcastPreloading,
+            onPodcastPreload = viewModel::preloadPodcasts,
             podcastGap = podcastGap,
             onSelectGapRule = viewModel::selectGapRule,
             onGapParam = viewModel::setGapParam,

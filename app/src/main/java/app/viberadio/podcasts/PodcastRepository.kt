@@ -29,6 +29,13 @@ class PodcastRepository(
     private val keepDownloaded: () -> Int = { PodcastDownloadSettings.DEFAULT },
     /** The length of a downloaded file, null if it can't be read. Blocking. */
     private val fileDurationMs: (File) -> Long? = { null },
+    /** Stop downloading once the kept episodes take this many bytes; null for no limit. */
+    private val storageLimitBytes: () -> Long? = { null },
+    /** Episodes a preload pinned: kept until played, though outside the usual count. */
+    private val pinned: () -> Set<String> = { emptySet() },
+    private val setPinned: (Set<String>) -> Unit = {},
+    /** Completes once the saved settings are loaded, so nothing is pruned on defaults. */
+    private val settingsReady: suspend () -> Unit = {},
 ) {
     private val initial = PodcastLibrary()
     private val _library = MutableStateFlow(initial)
@@ -46,6 +53,12 @@ class PodcastRepository(
     private val writeLock = Mutex()
     private val refreshLock = Mutex()
     private val downloadRequests = Channel<Unit>(Channel.CONFLATED)
+    private val preloadRequested = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    private val _preloading = MutableStateFlow(false)
+
+    /** True while a [preloadAll] is refreshing and downloading. */
+    val preloading: StateFlow<Boolean> = _preloading.asStateFlow()
 
     init {
         scope.launch(ioDispatcher) {
@@ -55,11 +68,29 @@ class PodcastRepository(
         }
         scope.launch(ioDispatcher) {
             for (request in downloadRequests) {
-                // Folder shows are already on the device, so they take none of the download slots.
-                val next = _library.value.upNext(Int.MAX_VALUE).asSequence().filterNot { LocalFeeds.isLocal(it.feedUrl) }
-                val targets = next.take(keepDownloaded()).toList()
-                runCatching { downloader.sync(targets) }
-                learnDownloadedDurations(targets)
+                runCatching { settingsReady() }
+                val preload = preloadRequested.getAndSet(false)
+                if (preload) {
+                    _preloading.value = true
+                    // The feeds first, so the flight gets what's newest.
+                    runCatching { refresh() }
+                }
+                try {
+                    // Folder shows are already on the device, so they take none of the download slots.
+                    val next = _library.value.upNext(Int.MAX_VALUE).filterNot { LocalFeeds.isLocal(it.feedUrl) }
+                    val nextIds = next.mapTo(HashSet()) { it.id }
+                    // A preload takes everything unplayed, past the count and the limit, once; those episodes
+                    // stay pinned until played, and the usual count and limit apply again to new downloads.
+                    val keepPinned = if (preload) nextIds else pinned().filterTo(HashSet()) { it in nextIds }
+                    if (keepPinned != pinned()) setPinned(keepPinned)
+                    val targets = if (preload) next else next.take(keepDownloaded())
+                    runCatching {
+                        downloader.sync(targets, alsoKeep = keepPinned, maxBytes = if (preload) null else storageLimitBytes())
+                    }
+                    learnDownloadedDurations(targets)
+                } finally {
+                    if (preload) _preloading.value = false
+                }
             }
         }
     }
@@ -73,6 +104,18 @@ class PodcastRepository(
             val duration = runCatching { fileDurationMs(file) }.getOrNull() ?: continue
             learnDuration(target.id, duration)
         }
+    }
+
+    /**
+     * One-off: refreshes the feeds, then downloads every unplayed web episode, past the usual count
+     * and storage limit (not past the space the device has to spare), for a stretch without a
+     * connection. The settings stay as they are; the episodes stay until played.
+     */
+    fun preloadAll() {
+        if (_preloading.value) return
+        _preloading.value = true
+        preloadRequested.set(true)
+        downloadRequests.trySend(Unit)
     }
 
     /** Re-syncs the downloads, e.g. after the number to keep changed. */
