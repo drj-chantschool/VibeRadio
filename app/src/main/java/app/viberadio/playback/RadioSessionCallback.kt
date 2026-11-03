@@ -556,7 +556,10 @@ class RadioSessionCallback(
 
     override fun onPlaybackStateChanged(playbackState: Int) {
         val player = player ?: return
-        if (currentEpisodeId != null && player.duration != C.TIME_UNSET) currentEpisodeDurationMs = player.duration
+        if (currentEpisodeId != null && player.duration != C.TIME_UNSET) {
+            currentEpisodeDurationMs = player.duration
+            currentEpisodeId?.let { podcasts.learnDuration(it, player.duration) }
+        }
         if (playbackState != Player.STATE_ENDED) return
         // The last item in the queue doesn't get an AUTO transition; it just ends.
         val endedEpisode = currentEpisodeId

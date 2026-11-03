@@ -320,4 +320,17 @@ class PodcastLibraryTest {
         val edited = described.copy(items = described.items.map { it.copy(description = "New notes") })
         assertEquals("New notes", lib.withFeed(showA, edited, nowMs = 1).episode(id(showA, 1))!!.description)
     }
+
+    @Test
+    fun `a learned length fills in a missing one and survives a refresh that still lacks it`() {
+        val feed = Feed("A", listOf(FeedItem("g1", "A 1", DAY, "https://x/1.mp3", durationMs = null)))
+        val id = EpisodeIds.of("https://a", "g1")
+        val library = PodcastLibrary().withFeed("https://a", feed, nowMs = 1)
+        assertEquals(null, library.episode(id)?.durationMs)
+        val learned = library.withDuration(id, 90_000)
+        assertEquals(90_000L, learned.episode(id)?.durationMs)
+        assertEquals(90_000L, learned.withFeed("https://a", feed, nowMs = 2).episode(id)?.durationMs)
+        // A length the feed gave isn't replaced.
+        assertEquals(90_000L, learned.withDuration(id, 5_000).episode(id)?.durationMs)
+    }
 }

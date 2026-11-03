@@ -89,7 +89,10 @@ class PodcastOverlay(
     }
 
     override fun onPlaybackStateChanged(playbackState: Int) {
-        if (player.duration != C.TIME_UNSET) durationMs = player.duration
+        if (player.duration != C.TIME_UNSET) {
+            durationMs = player.duration
+            episodeId?.let { podcasts.learnDuration(it, player.duration) }
+        }
         if (playbackState != Player.STATE_ENDED) return
         val id = episodeId ?: return
         val duration = durationMs

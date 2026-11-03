@@ -156,6 +156,10 @@ class PodcastRepository(
     fun savePosition(episodeId: String, positionMs: Long) =
         mutate(syncDownloads = false) { it.withPosition(episodeId, positionMs) }
 
+    /** The player's own length for an episode whose feed gave none; no-op when one is known. */
+    fun learnDuration(episodeId: String, durationMs: Long) =
+        mutate(syncDownloads = false) { it.withDuration(episodeId, durationMs) }
+
     /** Playing: the resume point, and the episode joins the history. */
     fun onAir(episodeId: String, positionMs: Long) =
         mutate(syncDownloads = false) { it.withPosition(episodeId, positionMs).withHeard(episodeId, clock()) }
