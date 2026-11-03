@@ -68,6 +68,7 @@ import app.viberadio.library.FolderNode
 import app.viberadio.library.FolderState
 import app.viberadio.library.FolderTree
 import app.viberadio.library.PodcastFolder
+import app.viberadio.podcasts.PodcastDownloadSettings
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
@@ -168,6 +169,10 @@ fun SettingsScreen(
     podcastFolder: PodcastFolderUi,
     /** A folder path, or null for no podcast folder. */
     onPodcastFolder: (String?) -> Unit,
+    /** Settings → Podcasts: how many upcoming episodes stay downloaded. */
+    podcastDownloads: Int,
+    /** Sets the number if it's allowed; false (nothing changed) if not. */
+    onPodcastDownloads: (Int) -> Boolean,
     /** Settings → Podcasts: the gap rule between episodes and its parameters (shown in developer mode only). */
     podcastGap: PodcastGapSettings,
     onSelectGapRule: (id: String) -> Unit,
@@ -272,7 +277,7 @@ fun SettingsScreen(
                 }
                 SettingsPage.Podcasts -> {
                     SettingsHeader(stringResource(R.string.settings_podcasts), onBack = { page = SettingsPage.Root })
-                    PodcastSettingsList(debug.developerMode, podcastFolder, onPodcastFolder, podcastGap, onSelectGapRule, onGapParam, onRestoreGap)
+                    PodcastSettingsList(debug.developerMode, podcastFolder, onPodcastFolder, podcastDownloads, onPodcastDownloads, podcastGap, onSelectGapRule, onGapParam, onRestoreGap)
                 }
                 SettingsPage.Debug -> {
                     SettingsHeader(stringResource(R.string.settings_debug), onBack = { page = SettingsPage.Root })
@@ -1089,6 +1094,8 @@ private fun PodcastSettingsList(
     developerMode: Boolean,
     folder: PodcastFolderUi,
     onFolder: (String?) -> Unit,
+    downloads: Int,
+    onDownloads: (Int) -> Boolean,
     settings: PodcastGapSettings,
     onSelect: (id: String) -> Unit,
     onParam: (ruleId: String, key: String, value: Double) -> Boolean,
@@ -1096,6 +1103,7 @@ private fun PodcastSettingsList(
 ) {
     var editing by rememberSaveable { mutableStateOf<String?>(null) }
     var choosingFolder by rememberSaveable { mutableStateOf(false) }
+    var editingDownloads by rememberSaveable { mutableStateOf(false) }
     val active = settings.active
     val defaults = PodcastGapRule.all.first { it.id == active.id }
 
@@ -1109,6 +1117,19 @@ private fun PodcastSettingsList(
             )
             Text(
                 stringResource(R.string.settings_podcast_folder_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 16.dp),
+            )
+            Rule()
+            FigureRow(
+                label = stringResource(R.string.settings_podcast_downloads),
+                value = downloads.toString(),
+                isDefault = downloads == PodcastDownloadSettings.DEFAULT,
+                onClick = { editingDownloads = true },
+            )
+            Text(
+                stringResource(R.string.settings_podcast_downloads_hint),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 16.dp),
@@ -1202,6 +1223,20 @@ private fun PodcastSettingsList(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             ) { Text(stringResource(R.string.settings_audio_restore)) }
         }
+    }
+
+    if (editingDownloads) {
+        val range = PodcastDownloadSettings.RANGE
+        FigureDialog(
+            key = "podcast.downloads",
+            title = stringResource(R.string.settings_podcast_downloads),
+            unit = null,
+            current = downloads.toString(),
+            default = PodcastDownloadSettings.DEFAULT.toString(),
+            invalidText = stringResource(R.string.settings_podcasts_invalid_whole, range.first.toString(), range.last.toString()),
+            onSave = { value -> value == Math.rint(value) && onDownloads(value.toInt()) },
+            onDismiss = { editingDownloads = false },
+        )
     }
 
     if (choosingFolder) {
@@ -1538,6 +1573,8 @@ private fun SettingsLightPreview() {
             onToggleFolder = {},
             podcastFolder = PodcastFolderUi.EMPTY,
             onPodcastFolder = {},
+            podcastDownloads = PodcastDownloadSettings.DEFAULT,
+            onPodcastDownloads = { true },
             podcastGap = PodcastGapSettings.DEFAULT,
             onSelectGapRule = {},
             onGapParam = { _, _, _ -> true },
@@ -1578,6 +1615,8 @@ private fun SettingsDarkPreview() {
             onToggleFolder = {},
             podcastFolder = PodcastFolderUi.EMPTY,
             onPodcastFolder = {},
+            podcastDownloads = PodcastDownloadSettings.DEFAULT,
+            onPodcastDownloads = { true },
             podcastGap = PodcastGapSettings.DEFAULT,
             onSelectGapRule = {},
             onGapParam = { _, _, _ -> true },
@@ -1696,6 +1735,8 @@ private fun PodcastSettingsPreview() {
                 developerMode = true,
                 folder = PodcastFolderUi.EMPTY,
                 onFolder = {},
+                downloads = PodcastDownloadSettings.DEFAULT,
+                onDownloads = { true },
                 settings = PodcastGapSettings.DEFAULT.select(PodcastGapRule.MusicRatio.ID),
                 onSelect = {},
                 onParam = { _, _, _ -> true },

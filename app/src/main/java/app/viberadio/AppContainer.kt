@@ -44,7 +44,9 @@ import app.viberadio.podcasts.FeedItem
 import app.viberadio.podcasts.LocalFeeds
 import app.viberadio.podcasts.HttpFeedFetcher
 import app.viberadio.podcasts.JsonPodcastStore
+import app.viberadio.podcasts.PodcastDownloadSettings
 import app.viberadio.podcasts.PodcastRepository
+import app.viberadio.podcasts.PrefsPodcastDownloadStore
 import app.viberadio.ui.LineupStrings
 import android.net.Uri
 import java.io.File
@@ -125,13 +127,34 @@ class AppContainer(context: Context) {
     private val episodeDownloader = EpisodeDownloader(File(context.getExternalFilesDir(null) ?: context.filesDir, "episodes"))
 
     /** The podcast pipeline (#17): hand-assigned shows, one global queue. Independent of [channelRepository]. */
+    /** Settings → Podcasts: how many upcoming episodes stay downloaded. */
+    val podcastDownloadSettings = PodcastDownloadSettings(
+        store = PrefsPodcastDownloadStore(context),
+        scope = appScope,
+        ioDispatcher = Dispatchers.IO,
+    )
+
     val podcastRepository = PodcastRepository(
         store = JsonPodcastStore(podcastsFile, podcastStateFile),
         fetcher = HttpFeedFetcher(),
         downloader = episodeDownloader,
         scope = appScope,
         ioDispatcher = Dispatchers.IO,
+        keepDownloaded = { podcastDownloadSettings.count.value },
+        fileDurationMs = { file ->
+            val retriever = android.media.MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(file.absolutePath)
+                retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+            } finally {
+                runCatching { retriever.release() }
+            }
+        },
     )
+
+    init {
+        appScope.launch { podcastDownloadSettings.count.drop(1).collect { podcastRepository.resyncDownloads() } }
+    }
 
     init { FeedRefreshJob.schedule(appContext) }
 

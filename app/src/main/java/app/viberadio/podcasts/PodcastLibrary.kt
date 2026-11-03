@@ -78,6 +78,8 @@ data class PodcastLibrary(
         val podcast = existing?.copy(title = feed.title, lastRefreshedMs = nowMs)
             ?: Podcast(feedUrl = feedUrl, title = feed.title, channels = PodcastChannels.DEFAULT, lastRefreshedMs = nowMs)
 
+        // A length the player learned stands in when the feed doesn't give one.
+        val known = episodes.filter { it.feedUrl == feedUrl && (it.durationMs ?: 0L) > 0L }.associate { it.id to it.durationMs }
         val fresh = feed.items
             .map { item ->
                 Episode(
@@ -86,7 +88,7 @@ data class PodcastLibrary(
                     title = item.title,
                     publishedMs = item.publishedMs,
                     audioUrl = item.audioUrl,
-                    durationMs = item.durationMs,
+                    durationMs = item.durationMs ?: known[EpisodeIds.of(feedUrl, item.guid)],
                     description = item.description,
                 )
             }
@@ -211,6 +213,13 @@ data class PodcastLibrary(
     }
 
     /** Playing to the end and marking by hand are the same thing; either clears the resume point. */
+    /** Records the length the player found for [id], when the feed gave none. */
+    fun withDuration(id: String, durationMs: Long): PodcastLibrary {
+        val episode = episode(id) ?: return this
+        if (durationMs <= 0 || (episode.durationMs ?: 0L) > 0L) return this
+        return copy(episodes = episodes.map { if (it.id == id) it.copy(durationMs = durationMs) else it })
+    }
+
     fun withPlayed(id: String, isPlayed: Boolean): PodcastLibrary {
         if (episode(id) == null) return this
         return copy(

@@ -36,7 +36,7 @@ class PodcastRepositoryTest {
         scope = CoroutineScope(Dispatchers.Unconfined),
         ioDispatcher = Dispatchers.Unconfined,
         clock = { 42L },
-        keepDownloaded = 2,
+        keepDownloaded = { 2 },
     )
 
     @Test

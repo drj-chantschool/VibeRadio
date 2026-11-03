@@ -147,6 +147,7 @@ class MainActivity : ComponentActivity() {
         val libraryFolders by viewModel.libraryFolders.collectAsStateWithLifecycle()
         val podcastGap by viewModel.podcastGap.collectAsStateWithLifecycle()
         val podcastFolder by viewModel.podcastFolder.collectAsStateWithLifecycle()
+        val podcastDownloads by viewModel.podcastDownloads.collectAsStateWithLifecycle()
         val separation by viewModel.separation.collectAsStateWithLifecycle()
         val diagnostics by viewModel.diagnostics.collectAsStateWithLifecycle()
         val exporting by viewModel.exporting.collectAsStateWithLifecycle()
@@ -218,6 +219,8 @@ class MainActivity : ComponentActivity() {
             onToggleFolder = viewModel::toggleFolder,
             podcastFolder = podcastFolder,
             onPodcastFolder = viewModel::setPodcastFolder,
+            podcastDownloads = podcastDownloads,
+            onPodcastDownloads = viewModel::setPodcastDownloads,
             podcastGap = podcastGap,
             onSelectGapRule = viewModel::selectGapRule,
             onGapParam = viewModel::setGapParam,
