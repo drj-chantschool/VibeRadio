@@ -133,4 +133,31 @@ class PodcastRepositoryTest {
         assertTrue(lib.isPlayed(ep2))
         assertEquals(setOf(ep1, ep2), lib.history(42L).mapTo(HashSet()) { it.id })
     }
+
+    @Test
+    fun `a preload downloads everything unplayed and keeps it pinned while the usual count applies to new downloads`() = runBlocking {
+        var pinnedIds = emptySet<String>()
+        val repo = PodcastRepository(
+            store = store,
+            fetcher = FeedFetcher { feed },
+            downloader = downloader,
+            scope = CoroutineScope(Dispatchers.Unconfined),
+            ioDispatcher = Dispatchers.Unconfined,
+            clock = { 42L },
+            keepDownloaded = { 2 },
+            pinned = { pinnedIds },
+            setPinned = { pinnedIds = it },
+        )
+        repo.subscribe(feedUrl)
+        assertEquals(2, downloader.downloaded.value.size)
+        repo.preloadAll()
+        val all = repo.library.value.upNext(Int.MAX_VALUE).map { it.id }.toSet()
+        assertEquals(all, downloader.downloaded.value)
+        assertEquals(all, pinnedIds)
+        assertFalse(repo.preloading.value)
+        // Marking one played drops it from the pins and the disk; the rest stay though only 2 are "kept".
+        repo.setPlayed(all.first(), true)
+        assertEquals(all.size - 1, downloader.downloaded.value.size)
+        assertEquals(all - all.first(), pinnedIds)
+    }
 }

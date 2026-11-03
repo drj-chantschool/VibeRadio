@@ -169,6 +169,17 @@
     <string name="settings_podcast_folder_hint">Audio files in this folder, and the folders inside it, play as one podcast show instead of songs. It’s on the podcast page, oldest file first, and stays off the music channels.</string>
     <string name="settings_podcast_downloads">Episodes kept on the device</string>
     <string name="settings_podcast_downloads_hint">How many upcoming episodes are downloaded ahead, so they play without a connection and show their length. 0 streams everything. Played episodes are never kept.</string>
+    <string name="settings_podcast_limit">Storage limit</string>
+    <string name="settings_podcast_limit_none">None</string>
+    <string name="settings_podcast_limit_hint">Stop downloading once the kept episodes take this much space. Downloads go to the lesser of this and the number above.</string>
+    <string name="settings_podcast_limit_note">More than %1$d episodes can take a lot of space. Set a limit in GB (0 for none); downloads stop at the lesser of the limit and the number of episodes.</string>
+    <string name="settings_podcast_limit_invalid">A number of GB, 0 or more.</string>
+    <string name="settings_storage_space">%1$s free of %2$s</string>
+    <string name="settings_podcast_preload">Airplane mode</string>
+    <string name="settings_podcast_preload_hint">Before a flight or a stretch without a connection: download every unplayed episode now, beyond the number and limit above. Those settings don’t change; the episodes stay until played.</string>
+    <string name="settings_podcast_preload_button">Download everything now</string>
+    <string name="settings_podcast_preload_running">Downloading…</string>
+    <string name="settings_podcast_preload_confirm">This refreshes your shows, then downloads every unplayed episode, as many as fit while leaving about 1 GB free. That can be a lot of data: use Wi-Fi if you can. It keeps going in the background.</string>
     <string name="settings_podcasts_gap">Gap between episodes (developer mode)</string>
     <string name="settings_podcasts_gap_hint">How long the music runs between podcast episodes on a music channel. Pick a rule, then set its figures; each rule keeps its own. Music podcasts (Pause music on) always wait for the song to end.</string>
     <string name="settings_podcasts_params">%1$s: figures</string>

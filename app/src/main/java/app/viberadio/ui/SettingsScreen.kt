@@ -1,6 +1,9 @@
 package app.viberadio.ui
 
+import android.os.StatFs
+import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.Switch
@@ -18,6 +21,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.input.ImeAction
@@ -173,6 +177,12 @@ fun SettingsScreen(
     podcastDownloads: Int,
     /** Sets the number if it's allowed; false (nothing changed) if not. */
     onPodcastDownloads: (Int) -> Boolean,
+    /** Stop downloading once the kept episodes take this many bytes; null for no limit. */
+    podcastStorageLimit: Long?,
+    onPodcastStorageLimit: (Long?) -> Boolean,
+    /** A one-off "download everything now" is running. */
+    podcastPreloading: Boolean,
+    onPodcastPreload: () -> Unit,
     /** Settings → Podcasts: the gap rule between episodes and its parameters (shown in developer mode only). */
     podcastGap: PodcastGapSettings,
     onSelectGapRule: (id: String) -> Unit,
@@ -277,7 +287,7 @@ fun SettingsScreen(
                 }
                 SettingsPage.Podcasts -> {
                     SettingsHeader(stringResource(R.string.settings_podcasts), onBack = { page = SettingsPage.Root })
-                    PodcastSettingsList(debug.developerMode, podcastFolder, onPodcastFolder, podcastDownloads, onPodcastDownloads, podcastGap, onSelectGapRule, onGapParam, onRestoreGap)
+                    PodcastSettingsList(debug.developerMode, podcastFolder, onPodcastFolder, podcastDownloads, onPodcastDownloads, podcastStorageLimit, onPodcastStorageLimit, podcastPreloading, onPodcastPreload, podcastGap, onSelectGapRule, onGapParam, onRestoreGap)
                 }
                 SettingsPage.Debug -> {
                     SettingsHeader(stringResource(R.string.settings_debug), onBack = { page = SettingsPage.Root })
@@ -713,6 +723,8 @@ private fun FigureDialog(
     invalidText: String,
     onSave: (Double) -> Boolean,
     onDismiss: () -> Unit,
+    /** An extra line under the field, e.g. how much space is left. */
+    note: String? = null,
 ) {
     var draft by rememberSaveable(key) { mutableStateOf(current.replace('\u2212', '-')) }
     var invalid by rememberSaveable(key) { mutableStateOf(false) }
@@ -737,13 +749,16 @@ private fun FigureDialog(
                 },
                 isError = invalid,
                 supportingText = {
-                    Text(
-                        if (invalid) {
-                            invalidText
-                        } else {
-                            stringResource(R.string.settings_audio_default, default, unit.orEmpty()).trimEnd()
-                        },
-                    )
+                    Column {
+                        Text(
+                            if (invalid) {
+                                invalidText
+                            } else {
+                                stringResource(R.string.settings_audio_default, default, unit.orEmpty()).trimEnd()
+                            },
+                        )
+                        if (note != null) Text(note)
+                    }
                 },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
@@ -757,6 +772,19 @@ private fun FigureDialog(
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         },
     )
+}
+
+/** "12.3 GB free of 128 GB", for where the episodes are stored. */
+@Composable
+private fun storageSpaceNote(): String {
+    val context = LocalContext.current
+    val (free, total) = remember {
+        runCatching {
+            val stat = StatFs((context.getExternalFilesDir(null) ?: context.filesDir).path)
+            stat.availableBytes to stat.totalBytes
+        }.getOrDefault(0L to 0L)
+    }
+    return stringResource(R.string.settings_storage_space, Formatter.formatFileSize(context, free), Formatter.formatFileSize(context, total))
 }
 
 /** Labels and number formats for the tone EQ and the separation modules; the modules themselves are pure. */
@@ -1096,6 +1124,10 @@ private fun PodcastSettingsList(
     onFolder: (String?) -> Unit,
     downloads: Int,
     onDownloads: (Int) -> Boolean,
+    storageLimit: Long?,
+    onStorageLimit: (Long?) -> Boolean,
+    preloading: Boolean,
+    onPreload: () -> Unit,
     settings: PodcastGapSettings,
     onSelect: (id: String) -> Unit,
     onParam: (ruleId: String, key: String, value: Double) -> Boolean,
@@ -1104,6 +1136,9 @@ private fun PodcastSettingsList(
     var editing by rememberSaveable { mutableStateOf<String?>(null) }
     var choosingFolder by rememberSaveable { mutableStateOf(false) }
     var editingDownloads by rememberSaveable { mutableStateOf(false) }
+    var editingLimit by rememberSaveable { mutableStateOf(false) }
+    var confirmingPreload by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
     val active = settings.active
     val defaults = PodcastGapRule.all.first { it.id == active.id }
 
@@ -1134,6 +1169,36 @@ private fun PodcastSettingsList(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 16.dp),
             )
+            Rule()
+            FigureRow(
+                label = stringResource(R.string.settings_podcast_limit),
+                value = storageLimit?.let { Formatter.formatFileSize(context, it) } ?: stringResource(R.string.settings_podcast_limit_none),
+                isDefault = storageLimit == null,
+                onClick = { editingLimit = true },
+            )
+            Text(
+                stringResource(R.string.settings_podcast_limit_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 16.dp),
+            )
+            Rule()
+            Column(Modifier.padding(horizontal = 24.dp, vertical = 12.dp)) {
+                Text(
+                    stringResource(R.string.settings_podcast_preload),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+                Text(
+                    stringResource(R.string.settings_podcast_preload_hint),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 4.dp),
+                )
+                TextButton(onClick = { confirmingPreload = true }, enabled = !preloading) {
+                    Text(stringResource(if (preloading) R.string.settings_podcast_preload_running else R.string.settings_podcast_preload_button))
+                }
+            }
             Rule()
         }
         if (!developerMode) {
@@ -1234,8 +1299,43 @@ private fun PodcastSettingsList(
             current = downloads.toString(),
             default = PodcastDownloadSettings.DEFAULT.toString(),
             invalidText = stringResource(R.string.settings_podcasts_invalid_whole, range.first.toString(), range.last.toString()),
-            onSave = { value -> value == Math.rint(value) && onDownloads(value.toInt()) },
+            note = storageSpaceNote(),
+            onSave = { value ->
+                val saved = value == Math.rint(value) && onDownloads(value.toInt())
+                // A lot of audio: offer a storage limit as well.
+                if (saved && value > PodcastDownloadSettings.WARN_ABOVE) editingLimit = true
+                saved
+            },
             onDismiss = { editingDownloads = false },
+        )
+    }
+
+    if (editingLimit) {
+        FigureDialog(
+            key = "podcast.limit",
+            title = stringResource(R.string.settings_podcast_limit),
+            unit = "GB",
+            current = storageLimit?.let { java.math.BigDecimal.valueOf(it).movePointLeft(9).stripTrailingZeros().toPlainString() } ?: "0",
+            default = "0",
+            invalidText = stringResource(R.string.settings_podcast_limit_invalid),
+            note = stringResource(R.string.settings_podcast_limit_note, PodcastDownloadSettings.WARN_ABOVE) + "\n" + storageSpaceNote(),
+            onSave = { gb -> gb >= 0 && onStorageLimit((gb * 1_000_000_000).toLong()) },
+            onDismiss = { editingLimit = false },
+        )
+    }
+
+    if (confirmingPreload) {
+        AlertDialog(
+            onDismissRequest = { confirmingPreload = false },
+            title = { Text(stringResource(R.string.settings_podcast_preload)) },
+            text = { Text(stringResource(R.string.settings_podcast_preload_confirm) + "\n\n" + storageSpaceNote()) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmingPreload = false
+                    onPreload()
+                }) { Text(stringResource(R.string.settings_podcast_preload_button)) }
+            },
+            dismissButton = { TextButton(onClick = { confirmingPreload = false }) { Text(stringResource(R.string.cancel)) } },
         )
     }
 
@@ -1575,6 +1675,10 @@ private fun SettingsLightPreview() {
             onPodcastFolder = {},
             podcastDownloads = PodcastDownloadSettings.DEFAULT,
             onPodcastDownloads = { true },
+            podcastStorageLimit = null,
+            onPodcastStorageLimit = { true },
+            podcastPreloading = false,
+            onPodcastPreload = {},
             podcastGap = PodcastGapSettings.DEFAULT,
             onSelectGapRule = {},
             onGapParam = { _, _, _ -> true },
@@ -1617,6 +1721,10 @@ private fun SettingsDarkPreview() {
             onPodcastFolder = {},
             podcastDownloads = PodcastDownloadSettings.DEFAULT,
             onPodcastDownloads = { true },
+            podcastStorageLimit = null,
+            onPodcastStorageLimit = { true },
+            podcastPreloading = false,
+            onPodcastPreload = {},
             podcastGap = PodcastGapSettings.DEFAULT,
             onSelectGapRule = {},
             onGapParam = { _, _, _ -> true },
@@ -1737,6 +1845,10 @@ private fun PodcastSettingsPreview() {
                 onFolder = {},
                 downloads = PodcastDownloadSettings.DEFAULT,
                 onDownloads = { true },
+                storageLimit = null,
+                onStorageLimit = { true },
+                preloading = false,
+                onPreload = {},
                 settings = PodcastGapSettings.DEFAULT.select(PodcastGapRule.MusicRatio.ID),
                 onSelect = {},
                 onParam = { _, _, _ -> true },
