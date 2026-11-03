@@ -106,7 +106,7 @@ private fun withLinks(description: String): AnnotatedString = buildAnnotatedStri
 private val LinkStyles = TextLinkStyles(style = SpanStyle(textDecoration = TextDecoration.Underline))
 
 /** "54:07", "1:02:30". */
-private fun formatClock(ms: Long): String {
+internal fun formatClock(ms: Long): String {
     val seconds = ms / 1000
     val (h, m, s) = Triple(seconds / 3600, seconds / 60 % 60, seconds % 60)
     val mmss = "${m.toString().padStart(if (h > 0) 2 else 1, '0')}:${s.toString().padStart(2, '0')}"
