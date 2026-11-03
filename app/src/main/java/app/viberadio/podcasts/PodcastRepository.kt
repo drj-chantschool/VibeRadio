@@ -1,5 +1,6 @@
 package app.viberadio.podcasts
 
+import java.io.File
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
@@ -25,7 +26,9 @@ class PodcastRepository(
     private val ioDispatcher: CoroutineDispatcher,
     private val clock: () -> Long = System::currentTimeMillis,
     /** How many upcoming episodes to keep on the device. */
-    private val keepDownloaded: Int = 3,
+    private val keepDownloaded: () -> Int = { PodcastDownloadSettings.DEFAULT },
+    /** The length of a downloaded file, null if it can't be read. Blocking. */
+    private val fileDurationMs: (File) -> Long? = { null },
 ) {
     private val initial = PodcastLibrary()
     private val _library = MutableStateFlow(initial)
@@ -54,9 +57,27 @@ class PodcastRepository(
             for (request in downloadRequests) {
                 // Folder shows are already on the device, so they take none of the download slots.
                 val next = _library.value.upNext(Int.MAX_VALUE).asSequence().filterNot { LocalFeeds.isLocal(it.feedUrl) }
-                runCatching { downloader.sync(next.take(keepDownloaded).toList()) }
+                val targets = next.take(keepDownloaded()).toList()
+                runCatching { downloader.sync(targets) }
+                learnDownloadedDurations(targets)
             }
         }
+    }
+
+    /** Reads the length of each downloaded target the feed gave none for, so its row shows one before it's played. */
+    private fun learnDownloadedDurations(targets: List<Episode>) {
+        for (target in targets) {
+            if ((_library.value.episode(target.id)?.durationMs ?: 0L) > 0L) continue
+            val file = downloader.file(target.id)
+            if (target.id !in downloader.downloaded.value || !file.exists()) continue
+            val duration = runCatching { fileDurationMs(file) }.getOrNull() ?: continue
+            learnDuration(target.id, duration)
+        }
+    }
+
+    /** Re-syncs the downloads, e.g. after the number to keep changed. */
+    fun resyncDownloads() {
+        downloadRequests.trySend(Unit)
     }
 
     sealed interface SubscribeResult {

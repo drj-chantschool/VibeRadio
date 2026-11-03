@@ -149,6 +149,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         container.libraryFolders.update { FolderTree.toggle(node, it, counts) }
     }
 
+    /** Settings → Podcasts: how many upcoming episodes stay on the device. */
+    val podcastDownloads: StateFlow<Int> = container.podcastDownloadSettings.count
+
+    /** False, nothing changed, when outside the allowed range. */
+    fun setPodcastDownloads(count: Int): Boolean = container.podcastDownloadSettings.set(count)
+
     /** Settings → Podcasts, in developer mode: the gap rule between episodes and each rule's figures. */
     val podcastGap: StateFlow<PodcastGapSettings> = container.podcastGapSettings.settings
 
