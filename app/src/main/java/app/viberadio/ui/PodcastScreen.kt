@@ -708,6 +708,7 @@ private fun EpisodeRow(episode: EpisodeUi, onTogglePlayed: (EpisodeUi) -> Unit, 
             Text(episode.title, style = MaterialTheme.typography.bodyMedium, color = ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
             val detail = listOfNotNull(
                 formatDate(episode.publishedMs),
+                episodeLength(episode),
                 when {
                     episode.played -> null
                     episode.started -> stringResource(R.string.episode_started)
@@ -720,6 +721,13 @@ private fun EpisodeRow(episode: EpisodeUi, onTogglePlayed: (EpisodeUi) -> Unit, 
             }
         }
     }
+}
+
+/** "54:07" for an episode not started or played, "42:10 / 54:07" (remaining / total) once started; null without a length. */
+private fun episodeLength(episode: EpisodeUi): String? {
+    val total = episode.durationMs?.takeIf { it > 0 } ?: return null
+    if (episode.played || episode.positionMs <= 0) return formatClock(total)
+    return "${formatClock((total - episode.positionMs).coerceAtLeast(0))} / ${formatClock(total)}"
 }
 
 @Composable

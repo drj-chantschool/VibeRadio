@@ -75,6 +75,10 @@ data class EpisodeUi(
     val started: Boolean,
     /** When it was last on air (wall clock), null if it hasn't been in the last 24 hours. */
     val heardMs: Long? = null,
+    /** Length of the episode, null when the feed gives none. */
+    val durationMs: Long? = null,
+    /** Resume point, 0 if not started. */
+    val positionMs: Long = 0L,
 )
 
 /** Everything the episode page (long press in Up next or History) shows. */
@@ -255,6 +259,8 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             // A folder show's files are on the device already.
             downloaded = id in downloaded || LocalFeeds.isLocal(episode.feedUrl),
             started = (positions[id] ?: 0L) > 0L,
+            durationMs = episode.durationMs,
+            positionMs = positions[id] ?: 0L,
             // Entries past the history window are dropped on the next write, not on read.
             heardMs = heard[id]?.takeIf { it > System.currentTimeMillis() - PodcastLibrary.HISTORY_MS },
         )
