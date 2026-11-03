@@ -51,6 +51,14 @@ class RssParserTest {
     }
 
     @Test
+    fun `reads itunes durations declared with an https namespace`() {
+        val xml = """<rss xmlns:itunes="https://www.itunes.com/dtds/podcast-1.0.dtd"><channel><title>T</title>
+            <item><title>A</title><enclosure url="https://x/a.mp3"/><itunes:duration>12:34</itunes:duration></item>
+            </channel></rss>"""
+        assertEquals(754_000L, parse(xml).items.single().durationMs)
+    }
+
+    @Test
     fun `reads itunes durations in both formats`() {
         val items = parse(feed).items
         assertEquals((3600 + 2 * 60 + 3) * 1000L, items[0].durationMs)

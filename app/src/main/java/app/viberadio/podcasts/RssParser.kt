@@ -31,7 +31,8 @@ class FeedParseException(message: String, cause: Throwable? = null) : Exception(
  */
 object RssParser {
 
-    private const val ITUNES_NS = "http://www.itunes.com/dtds/podcast-1.0.dtd"
+    /** Feeds declare it with http or https, with or without www, and sometimes a trailing slash. */
+    private fun isItunes(uri: String) = uri.substringAfter("://").removePrefix("www.").trimEnd('/') == "itunes.com/dtds/podcast-1.0.dtd"
     private const val CONTENT_NS = "http://purl.org/rss/1.0/modules/content/"
 
     /** Longer show notes are cut here, so a feed with a long back catalogue stays small in memory and on disk. */
@@ -98,8 +99,8 @@ object RssParser {
                         }
                         plain && name.equals("pubDate", ignoreCase = true) -> "pubDate"
                         plain && name in ITEM_FIELDS -> name
-                        uri == ITUNES_NS && name == "duration" -> "duration"
-                        uri == ITUNES_NS && name == "summary" -> "summary"
+                        isItunes(uri) && name == "duration" -> "duration"
+                        isItunes(uri) && name == "summary" -> "summary"
                         uri == CONTENT_NS && name == "encoded" -> "encoded"
                         else -> null
                     }
