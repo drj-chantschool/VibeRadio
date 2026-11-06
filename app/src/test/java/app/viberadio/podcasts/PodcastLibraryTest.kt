@@ -41,6 +41,14 @@ class PodcastLibraryTest {
     }
 
     @Test
+    fun `queue follows the feed's order, not the dates`() {
+        // Dates say 9 is the newest, but the feed lists it last, so it plays first.
+        val odd = PodcastLibrary().withFeed(showA, feed("A", 1, 9, 5), nowMs = 100)
+        assertEquals(listOf("A 5", "A 9", "A 1"), odd.queue(PodcastChannels.PODCASTS_ID).map { it.title })
+        assertEquals(listOf("A 1", "A 9", "A 5"), odd.episodesOf(showA).map { it.title })
+    }
+
+    @Test
     fun `queue is oldest first across shows`() {
         assertEquals(listOf("A 1", "A 2", "A 3", "B 4", "B 5"), library.queue(PodcastChannels.PODCASTS_ID).map { it.title })
     }
@@ -233,10 +241,10 @@ class PodcastLibraryTest {
 
     @Test
     fun `a folder with audio becomes a show on the podcasts channel`() {
-        val lib = library.withLocalFeeds(mapOf(folder to files(1, 2)), nowMs = 200)
+        val lib = library.withLocalFeeds(mapOf(folder to files(2, 1)), nowMs = 200)
         assertEquals("Podcasts", lib.podcast(folder)!!.title)
         assertEquals(PodcastChannels.DEFAULT, lib.podcast(folder)!!.channels)
-        assertEquals(listOf("F 1", "F 2"), lib.episodesOf(folder).map { it.title }.reversed())
+        assertEquals(listOf("F 2", "F 1"), lib.episodesOf(folder).map { it.title })
     }
 
     @Test
@@ -246,10 +254,10 @@ class PodcastLibraryTest {
 
     @Test
     fun `a folder show follows the files, keeping its settings and played state`() {
-        val lib = library.withLocalFeeds(mapOf(folder to files(1, 2)), nowMs = 200)
+        val lib = library.withLocalFeeds(mapOf(folder to files(2, 1)), nowMs = 200)
             .withPriority(folder, 3)
             .withPlayed(EpisodeIds.of(folder, "g1"), true)
-        val rescanned = lib.withLocalFeeds(mapOf(folder to files(2, 3)), nowMs = 300)
+        val rescanned = lib.withLocalFeeds(mapOf(folder to files(3, 2)), nowMs = 300)
         assertEquals(listOf("F 3", "F 2"), rescanned.episodesOf(folder).map { it.title })
         assertEquals(3, rescanned.podcast(folder)!!.priority)
         // Emptied (an SD card taken out): the show stays, with nothing to play.

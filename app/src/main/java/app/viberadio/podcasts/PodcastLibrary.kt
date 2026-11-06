@@ -7,7 +7,8 @@ package app.viberadio.podcasts
  *
  * Queue policy (#19): one queue for the whole app. A channel plays the unplayed episodes of
  * the shows assigned to it, an episode already started first (so tuning away and back
- * resumes it), then oldest first, so a back catalogue plays in order. Each show's priority
+ * resumes it), then each show from the end of its feed (its oldest) towards the top, one show
+ * after another in the show list's order, so a back catalogue plays in order. Each show's priority
  * comes before all of that: a show on a lower priority plays all its unplayed episodes before
  * a show on a higher one. Marking older episodes played is how the user skips a back
  * catalogue they don't want.
@@ -31,9 +32,9 @@ data class PodcastLibrary(
 
     fun episode(id: String): Episode? = episodesById[id]
 
-    /** A show's episodes, newest first. */
+    /** A show's episodes in feed order (the feed's first item first, usually the newest). */
     fun episodesOf(feedUrl: String): List<Episode> =
-        episodes.filter { it.feedUrl == feedUrl }.sortedByDescending { it.publishedMs }
+        episodes.filter { it.feedUrl == feedUrl }
 
     fun isPlayed(id: String): Boolean = id in played
 
@@ -61,10 +62,12 @@ data class PodcastLibrary(
 
     private fun ordered(unplayed: List<Episode>): List<Episode> {
         val priorities = podcasts.associate { it.feedUrl to it.priority }
-        return unplayed.sortedWith(
+        val showOrder = podcasts.withIndex().associate { (i, p) -> p.feedUrl to i }
+        // The sort is stable, so reversing first leaves each show's episodes last-in-feed first.
+        return unplayed.asReversed().sortedWith(
             compareBy<Episode> { priorities[it.feedUrl] ?: PodcastPriority.DEFAULT }
                 .thenByDescending { (positions[it.id] ?: 0L) > 0L }
-                .thenBy { it.publishedMs },
+                .thenBy { showOrder[it.feedUrl] ?: Int.MAX_VALUE },
         )
     }
 
