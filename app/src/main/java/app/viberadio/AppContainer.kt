@@ -344,7 +344,8 @@ class AppContainer(context: Context) {
     /** The podcast folder as a feed, for the podcast pipeline, which never sees a [Track]. */
     private fun localFeeds(tracks: List<Track>, folder: PodcastFolder): Map<String, Feed> {
         val path = folder.path ?: return emptyMap()
-        val items = folder.episodes(tracks).map { track ->
+        // A folder has no feed order, so its files are listed newest first, like a feed.
+        val items = folder.episodes(tracks).sortedByDescending { it.modifiedSec }.map { track ->
             FeedItem(
                 guid = PodcastFolder.episodeKey(track),
                 title = track.title,

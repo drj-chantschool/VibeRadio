@@ -30,7 +30,7 @@ data class Podcast(
     val pauseMusic: Boolean = false,
     /**
      * Queue priority: lower plays first. Episodes are ordered by their show's priority, then by
-     * the usual rule (started first, then oldest). Shows on the same priority interleave by date.
+     * the usual rule (started first, then oldest by feed position). Shows on the same priority play one after another.
      * Always within [PodcastPriority.MIN]..[PodcastPriority.MAX].
      */
     val priority: Int = PodcastPriority.DEFAULT,
