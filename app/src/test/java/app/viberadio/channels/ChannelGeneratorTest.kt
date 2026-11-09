@@ -111,6 +111,13 @@ class ChannelGeneratorTest {
     }
 
     @Test
+    fun `songs with no length stay off every channel`() {
+        val unreadable = track("Rock", durationMs = 0)
+        val channels = generator.generate(tracks("Rock", 3) + unreadable)
+        assertTrue(channels.none { unreadable in it.tracks })
+    }
+
+    @Test
     fun `All songs never includes podcasts or audiobooks`() {
         val music = tracks("Rock", 3)
         val podcast = track("Rock", kind = ContentKind.PODCAST)
