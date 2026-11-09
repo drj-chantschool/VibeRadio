@@ -9,6 +9,7 @@ Principle: you still have control, but you shouldn't need it, and the app doesn'
 - Media notification (and lock screen): play/pause plus channel down and up, chevrons in the slots skip buttons would take. They step the dial one station either way in dial order, wrapping past the ends (the notification shows no dial, so an end would be a dead button), and tune and play like a knob release, with the usual resume rules. Still no skip, seek or track list there
 - Next and previous buttons on Bluetooth headphones, car stereos and wired headsets do the same: next tunes one station up, previous one down, wrapping, and both play. Holding a button counts as one press. They never skip a song
 - Settings → Bluetooth: "Resume on Bluetooth connection" toggle, default on. When a Bluetooth audio device connects, playback resumes on the channel that was last playing, using the normal resume rules (songs: live-radio resume; podcasts: saved position)
+- A song the platform reports no length for (duration 0, e.g. a 32-bit FLAC Android can't read) is on no channel: playing it freezes the phone in silence
 - "All songs" channel: every music track in the library, excluding anything over 20 minutes. No podcasts, including podcast episodes detected as music
 - When podcast queue exhausted, transition to a music-only channel after current track is over
 - Songs and podcasts are independent pipelines. They share only the current channel and the final audio mix. Keep them unentangled for now
