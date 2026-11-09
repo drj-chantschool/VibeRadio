@@ -55,7 +55,7 @@ class PlayHistoryTest {
         assertEquals(hashA, h.markPlayed(song))
         now = 2_000L
         h.markPlayed(song)
-        assertEquals(mapOf(hashA to PlayRecord(2_000L, 40L)), store.rows)
+        assertEquals(mapOf(hashA to PlayRecord(2_000L, 40L, plays = 2)), store.rows)
         assertEquals(2_000L, h.lastPlayedMs(song))
         assertEquals("hashed once", 1, opens)
     }
@@ -77,7 +77,7 @@ class PlayHistoryTest {
         assertNull("new URI isn't hashed yet", h.lastPlayedMs(moved))
         now = 5_000L
         assertEquals(hashA, h.markPlayed(moved))
-        assertEquals(mapOf(hashA to PlayRecord(5_000L, 40L)), store.rows)
+        assertEquals(mapOf(hashA to PlayRecord(5_000L, 40L, plays = 2)), store.rows)
     }
 
     @Test
