@@ -74,7 +74,7 @@ class HighResFlacExtractor : Extractor {
         }
         frames++
         emit(frame, header.info)
-        return C.RESULT_CONTINUE
+        return Extractor.RESULT_CONTINUE
     }
 
     private fun start(input: ExtractorInput): Int {
@@ -96,7 +96,7 @@ class HighResFlacExtractor : Extractor {
                 .build(),
         )
         output!!.seekMap(seekMap(header, dataStart))
-        return C.RESULT_CONTINUE
+        return Extractor.RESULT_CONTINUE
     }
 
     private fun seekMap(header: FlacHeader, dataStart: Long): SeekMap {
