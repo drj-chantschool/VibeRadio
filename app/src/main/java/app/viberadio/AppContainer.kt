@@ -68,6 +68,8 @@ import app.viberadio.playback.audio.MixState
 import app.viberadio.playback.audio.PrefsAudioSettingsStore
 import app.viberadio.playback.audio.PrefsSeparationStore
 import app.viberadio.playback.audio.SeparationSettingsRepository
+import app.viberadio.playback.flac.FlacHeaders
+import app.viberadio.playback.flac.FlacStreamInfo
 import app.viberadio.diagnostics.ChannelNameRow
 import app.viberadio.diagnostics.CrashRecorder
 import app.viberadio.diagnostics.DiagnosticsExporter
@@ -493,6 +495,8 @@ class AppContainer(context: Context) {
                 libraryScanned = channels != null,
                 channels = channels?.channels.orEmpty(),
                 trackHashes = tracks.mapNotNull { track -> playHistory.hashOf(track)?.let { track.uri to it } }.toMap(),
+                flacFormats = tracks.filter { it.fileName.endsWith(".flac", ignoreCase = true) }
+                    .mapNotNull { track -> flacInfoOf(track.uri)?.let { track.uri to it } }.toMap(),
                 feedback = feedbackDatabase.feedbackLog.readAll(),
                 playHistory = runCatching { feedbackDatabase.playHistory.readAll() }.getOrDefault(emptyMap()),
                 listeningClockMs = runCatching { feedbackDatabase.listeningClock.read() }.getOrDefault(0L),
@@ -509,6 +513,11 @@ class AppContainer(context: Context) {
             )
         }
     }
+
+    /** A FLAC file's STREAMINFO, from the first few dozen bytes; null if it can't be read. */
+    private fun flacInfoOf(uri: String): FlacStreamInfo? = runCatching {
+        appContext.contentResolver.openInputStream(Uri.parse(uri))?.use { FlacHeaders.parse(it, streamInfoOnly = true)?.info }
+    }.getOrNull()
 
     private companion object {
         /** How long an export waits for a library scan already under way. */

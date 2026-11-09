@@ -10,6 +10,7 @@ import app.viberadio.playback.ChannelAiring
 import app.viberadio.playback.PodcastEvent
 import app.viberadio.playback.audio.AudioSettings
 import app.viberadio.playback.audio.TrackLevel
+import app.viberadio.playback.flac.FlacStreamInfo
 import app.viberadio.podcasts.Episode
 import app.viberadio.podcasts.Podcast
 import app.viberadio.podcasts.PodcastLibrary
@@ -59,6 +60,7 @@ class DiagnosticsBundleTest {
             Channel("all-songs", "All songs", ChannelType.MUSIC_ONLY, listOf(a, b)),
         ),
         trackHashes = mapOf(a.uri to "hashA"),
+        flacFormats = mapOf(a.uri to FlacStreamInfo(4096, 4096, 44_100, 2, 32, 0)),
         feedback = feedback,
         playHistory = mapOf("hashA" to PlayRecord(3_000, 40, plays = 3)),
         listeningClockMs = 50,
@@ -133,11 +135,20 @@ class DiagnosticsBundleTest {
     fun `library has the file name and play history the play count`() {
         val library = files().getValue("library.csv").text.trim().lines()
         val header = library[0].split(",")
-        assertEquals("file_name", header[header.size - 2])
-        assertTrue(library[1].endsWith(",hello.flac,${a.uri}"))
+        assertEquals("file_name", header[header.size - 4])
+        assertTrue(library[1].contains(",hello.flac,${a.uri},"))
         val history = files().getValue("play_history.csv").text.trim().lines()
         assertEquals("track_hash,last_played_ms,last_played_utc,listened_at_ms,play_count", history[0])
         assertTrue(history[1].endsWith(",40,3"))
+    }
+
+    @Test
+    fun `library gives a FLAC file's bit depth and sample rate, others none`() {
+        val library = files().getValue("library.csv").text.trim().lines()
+        val header = library[0].split(",")
+        assertEquals(listOf("bits_per_sample", "sample_rate_hz"), header.takeLast(2))
+        assertTrue(library[1].endsWith(",${a.uri},32,44100"))
+        assertTrue(library[2].endsWith(",${b.uri},,"))
     }
 
     @Test

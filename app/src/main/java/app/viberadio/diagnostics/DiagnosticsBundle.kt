@@ -16,6 +16,7 @@ import app.viberadio.playback.PodcastGapSettings
 import app.viberadio.playback.audio.AudioSettings
 import app.viberadio.playback.audio.SeparationSettings
 import app.viberadio.playback.audio.ToneBands
+import app.viberadio.playback.flac.FlacStreamInfo
 import app.viberadio.playback.audio.TrackLevel
 import app.viberadio.podcasts.PodcastLibrary
 import java.time.Instant
@@ -51,6 +52,8 @@ data class DiagnosticsSnapshot(
     val channels: List<Channel>,
     /** Track URI → content hash, for the tracks whose hash is already known. */
     val trackHashes: Map<String, String>,
+    /** Track URI → STREAMINFO, for FLAC files (bit depth and sample rate; library.csv). */
+    val flacFormats: Map<String, FlacStreamInfo> = emptyMap(),
     val feedback: List<FeedbackEvent>,
     val playHistory: Map<String, PlayRecord>,
     val listeningClockMs: Long,
@@ -100,7 +103,7 @@ object DiagnosticsBundle {
             BundleFile("channel_airings.csv", MIME_CSV, airings(s.airings)),
             BundleFile("features.csv", MIME_CSV, features(features)),
             BundleFile("channels.csv", MIME_CSV, channels(s.channels, s.trackHashes)),
-            BundleFile("library.csv", MIME_CSV, library(library, s.trackHashes)),
+            BundleFile("library.csv", MIME_CSV, library(library, s.trackHashes, s.flacFormats)),
             BundleFile("levels.csv", MIME_CSV, levels(s.levels, s.audio.targetLufs)),
             BundleFile("podcast_shows.csv", MIME_CSV, podcastShows(s.podcasts, s.downloadedEpisodes)),
             BundleFile("podcast_queues.csv", MIME_CSV, podcastQueues(s.podcasts, s.downloadedEpisodes)),
@@ -238,10 +241,11 @@ object DiagnosticsBundle {
         channels.flatMap { channel -> channel.tracks.map { listOf(channel.id, hashes[it.uri], it.id) } },
     )
 
-    private fun library(tracks: List<Track>, hashes: Map<String, String>) = Csv.table(
-        listOf("track_id", "track_hash", "title", "artist", "album", "genre", "duration_ms", "kind", "size_bytes", "modified_sec", "folder", "file_name", "uri"),
+    private fun library(tracks: List<Track>, hashes: Map<String, String>, flac: Map<String, FlacStreamInfo>) = Csv.table(
+        listOf("track_id", "track_hash", "title", "artist", "album", "genre", "duration_ms", "kind", "size_bytes", "modified_sec", "folder", "file_name", "uri", "bits_per_sample", "sample_rate_hz"),
         tracks.sortedBy { it.id }.map {
-            listOf(it.id, hashes[it.uri], it.title, it.artist, it.album, it.genre, it.durationMs, it.kind.name, it.sizeBytes, it.modifiedSec, it.folder, it.fileName, it.uri)
+            val format = flac[it.uri]
+            listOf(it.id, hashes[it.uri], it.title, it.artist, it.album, it.genre, it.durationMs, it.kind.name, it.sizeBytes, it.modifiedSec, it.folder, it.fileName, it.uri, format?.bitsPerSample, format?.sampleRate)
         },
     )
 
@@ -352,7 +356,7 @@ object DiagnosticsBundle {
         - channel_airings.csv: what each song channel last aired (live-radio resume)
         - features.csv: per song, the feature vector rebuilt from feedback.csv (layout in summary.json)
         - channels.csv: current placement, one row per (channel, song)
-        - library.csv: every song on a channel, with its file name; track_hash is empty until the song has played once
+        - library.csv: every song on a channel, with its file name (FLAC files also their bit depth and sample rate); track_hash is empty until the song has played once
         - levels.csv: measured loudness per song (`song:<hash>`) and downloaded episode, with the gain at the current target
         - audio_features_<id>.csv: per song, one audio feature block (`dsp`: built-in signal features; others: installed models, e.g. mood or genre probabilities). Blocks over 256 dimensions (embeddings) aren't exported; summary.json lists every block in use and how many songs have it
         - podcasts.json: the podcast library as the app stores it (shows, channels, speed, Pause music, episodes and their descriptions)
