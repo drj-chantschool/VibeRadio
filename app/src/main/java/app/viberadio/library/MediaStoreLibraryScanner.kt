@@ -18,8 +18,6 @@ import android.provider.MediaStore
  */
 class MediaStoreLibraryScanner(
     private val resolver: ContentResolver,
-    /** Tracks shorter than this are treated as ringtones/notification sounds and skipped. */
-    private val minDurationMs: Long = 30_000,
 ) : LibraryScanner {
 
     override fun scan(): List<Track> {
@@ -80,7 +78,6 @@ class MediaStoreLibraryScanner(
 
             while (c.moveToNext()) {
                 val duration = c.getLong(durationCol)
-                if (duration < minDurationMs) continue
                 // MIDI is note data, not audio: skipped, never a song (see MidiFiles).
                 if (MidiFiles.isMidi(c.getString(mimeCol), c.getString(nameCol))) continue
                 val id = c.getLong(idCol)
