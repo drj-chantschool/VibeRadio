@@ -44,10 +44,7 @@ class ChannelGenerator(
         require(ALL_SONGS_ID !in slotIds && slotIds.toSet().size == slotIds.size) { "slot IDs must be distinct and not $ALL_SONGS_ID" }
     }
 
-    fun generate(library: List<Track>): List<Channel> {
-        // A song Android reports no length for (duration 0) is one the platform couldn't read, e.g.
-        // a 32-bit FLAC: playing it freezes the phone in silence, so it never goes on air.
-        val tracks = library.filterNot { it.kind == ContentKind.MUSIC && it.durationMs <= 0 }
+    fun generate(tracks: List<Track>): List<Channel> {
         if (tracks.isEmpty()) return emptyList()
         val channels = genreChannels(tracks).let { generated ->
             if (slotIds.isEmpty()) generated else generated.mapIndexed { i, channel -> channel.copy(id = slotIds[i]) }

@@ -9,7 +9,6 @@ Principle: you still have control, but you shouldn't need it, and the app doesn'
 - Media notification (and lock screen): play/pause plus channel down and up, chevrons in the slots skip buttons would take. They step the dial one station either way in dial order, wrapping past the ends (the notification shows no dial, so an end would be a dead button), and tune and play like a knob release, with the usual resume rules. Still no skip, seek or track list there
 - Next and previous buttons on Bluetooth headphones, car stereos and wired headsets do the same: next tunes one station up, previous one down, wrapping, and both play. Holding a button counts as one press. They never skip a song
 - Settings → Bluetooth: "Resume on Bluetooth connection" toggle, default on. When a Bluetooth audio device connects, playback resumes on the channel that was last playing, using the normal resume rules (songs: live-radio resume; podcasts: saved position)
-- A song the platform reports no length for (duration 0, e.g. a 32-bit FLAC Android can't read) is on no channel: playing it freezes the phone in silence
 - "All songs" channel: every music track in the library, excluding anything over 20 minutes. No podcasts, including podcast episodes detected as music
 - When podcast queue exhausted, transition to a music-only channel after current track is over
 - Songs and podcasts are independent pipelines. They share only the current channel and the final audio mix. Keep them unentangled for now
@@ -73,6 +72,7 @@ Principle: you still have control, but you shouldn't need it, and the app doesn'
 
 ## Songs
 
+- FLAC deeper than 24 bits (32-bit FLAC) plays too: Android's decoder can't read it (MediaStore reports no length), so the app decodes it itself and leaves every other format to the platform. Such files are levelled by the same loudness measurement. Limits: a file without a seek table decodes from the start to reach a seek target, and audio feature analysis skips them (no excerpts, so they never join the similarity index)
 - Learning, songs only (see [learning.md](learning.md)): song channels and the default channel are learned from per-song audio feature vectors plus a timestamped thumbs up/down log, sensitive to seasonal listening habits
 - Thumbs up / thumbs down on the current song (thumbs down does not skip); long press thumbs down for "Wrong channel"
 - Thumbs buttons are momentary, not song state. A press lights the button only for the rest of the current play; until the play ends, pressing the lit thumb again cancels it and pressing the other thumb switches to it. When the play ends, the thumb still lit (if any) is appended to the log (timestamp, channel) and the buttons reset to neutral, so every play starts neutral, even for a song that has been thumbed before. A cancelled or replaced press is never logged. A song can collect any number of ups and downs, or both, over time; the button never reflects past plays

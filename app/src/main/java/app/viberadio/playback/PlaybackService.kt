@@ -21,6 +21,7 @@ import app.viberadio.VibeRadioApp
 import app.viberadio.playback.audio.AudioStream
 import app.viberadio.playback.audio.LevelingWatcher
 import app.viberadio.playback.audio.ProcessingRenderersFactory
+import app.viberadio.playback.flac.HighResFlacExtractorsFactory
 import app.viberadio.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -60,7 +61,7 @@ class PlaybackService : MediaSessionService() {
             .setAllowCrossProtocolRedirects(true)
             .setUserAgent(getString(R.string.app_name))
         // One per player: a media source factory holds per-player state.
-        fun sources() = DefaultMediaSourceFactory(DefaultDataSource.Factory(this, http))
+        fun sources() = DefaultMediaSourceFactory(DefaultDataSource.Factory(this, http), HighResFlacExtractorsFactory())
         val player = ExoPlayer.Builder(this, ProcessingRenderersFactory(this, container.audioProcessors, AudioStream.MUSIC))
             .setMediaSourceFactory(sources())
             .setAudioAttributes(

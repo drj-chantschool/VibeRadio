@@ -7,6 +7,7 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
 import android.os.Process
+import app.viberadio.playback.flac.FlacHeaders
 import java.nio.ByteOrder
 
 /**
@@ -22,9 +23,21 @@ class LoudnessAnalyzer(private val context: Context) {
         val priority = Process.getThreadPriority(tid)
         Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
         try {
-            return decode(uri)
+            return measureHighResFlac(uri) ?: decode(uri)
         } finally {
             Process.setThreadPriority(tid, priority)
+        }
+    }
+
+    /** The level of a FLAC deeper than 24 bits, which the platform codecs can't decode; null for any other file. */
+    private fun measureHighResFlac(uri: String): TrackLevel? {
+        val parsed = Uri.parse(uri)
+        return try {
+            val header = context.contentResolver.openInputStream(parsed)?.use { FlacHeaders.parse(it, streamInfoOnly = true) }
+            if (header == null || header.info.bitsPerSample <= FlacHeaders.PLATFORM_MAX_BITS) return null
+            context.contentResolver.openInputStream(parsed)?.buffered(BUFFER_BYTES)?.use { HighResFlacLevel.measure(it) }
+        } catch (e: Exception) {
+            null
         }
     }
 
@@ -123,5 +136,6 @@ class LoudnessAnalyzer(private val context: Context) {
     private companion object {
         const val TIMEOUT_US = 10_000L
         const val MAX_IDLE_ROUNDS = 500
+        const val BUFFER_BYTES = 256 * 1024
     }
 }
