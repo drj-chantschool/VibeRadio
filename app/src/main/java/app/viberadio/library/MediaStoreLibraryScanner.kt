@@ -100,6 +100,7 @@ class MediaStoreLibraryScanner(
                     kind = kind,
                     sizeBytes = c.getLong(sizeCol),
                     modifiedSec = c.getLong(modifiedCol),
+                    fileName = c.getString(nameCol).orEmpty(),
                     folder = if (relativePathCol >= 0) {
                         LibraryFolderPaths.fromRelativePath(c.getString(relativePathCol), if (volumeCol >= 0) c.getString(volumeCol) else null)
                     } else {

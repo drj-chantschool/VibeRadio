@@ -94,11 +94,11 @@ Principle: you still have control, but you shouldn't need it, and the app doesn'
   - summary.json: app version, export time, feature layout version, counts, songs per channel, feedback date range
   - settings.json: audio settings (both tone curves, with the band frequencies), the separation EQ (selected module and every module's parameters), the podcast gap rule (selected rule and every rule's parameters), Bluetooth setting, folders left out of the library and the podcast folder, channel names (ID, default and current name)
   - feedback.csv: every thumbs event (hash, thumb, time, local time, UTC offset, channel ID, separation EQ module in effect at the press: its ID while a podcast played over the music, empty otherwise or for presses from before it was recorded), log order
-  - play_history.csv: per song, last played (wall clock) and listening-clock reading
+  - play_history.csv: per song, last played (wall clock), listening-clock reading and play count (times started; plays from before the count existed show as 1)
   - channel_airings.csv: what each song channel last aired
   - features.csv: hash + feature vector rebuilt from the log, with named columns
   - channels.csv: current placement, one row per (channel ID, hash)
-  - library.csv: every song on a channel: hash (empty until it has played once), title, artist, album, genre, duration, content kind, folder, URI
+  - library.csv: every song on a channel: hash (empty until it has played once), title, artist, album, genre, duration, content kind, folder, file name, URI
   - levels.csv: measured loudness and peak per song and downloaded episode, with the gain at the current target
   - audio_features_<id>.csv: per song, one audio feature block ([audio-features.md](audio-features.md)) with named columns: `dsp` (built-in signal features) and each installed model's block up to 256 dimensions. Larger blocks (embeddings) stay on the phone; summary.json lists every block in use (ID, version, size, similarity weight, songs analysed)
   - podcasts.json: the podcast library as the app stores it (shows, channel IDs, Pause music, speed, priority, skip intro, episodes with their descriptions)

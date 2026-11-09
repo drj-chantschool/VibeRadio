@@ -17,7 +17,8 @@ import java.io.File
  *   come back in insert order (`id`). `separation_eq` (version 5) is the separation module in
  *   effect at the press; null when no podcast played over the music, or for older rows.
  * - `play_history`: one row per song, overwritten on every play: `last_played` (epoch ms) and
- *   `listened_at` (the [ListeningClock] reading; null for plays from before version 4).
+ *   `listened_at` (the [ListeningClock] reading; null for plays from before version 4) and
+ *   `play_count` (times started; plays from before version 6 count as 1).
  * - `listening_clock`: one row, the total song listening time.
  * - `track_hashes`: URI → content hash, valid while MediaStore's size and mtime still match, so
  *   play history can be looked up without re-reading every file.
@@ -62,6 +63,7 @@ class FeedbackDatabase(
         createChannelAirings(db)
         addListeningClock(db)
         addSeparationEq(db)
+        addPlayCount(db)
         legacyFile?.let { LegacyTsvLog.read(it) }?.forEach { insert(db, it) }
     }
 
@@ -76,6 +78,15 @@ class FeedbackDatabase(
         if (oldVersion < 3) createChannelAirings(db)
         if (oldVersion < 4) addListeningClock(db)
         if (oldVersion < 5) addSeparationEq(db)
+        if (oldVersion < 6) addPlayCount(db)
+    }
+
+    /**
+     * Version 6: how many times each song has started. Existing rows are known to have played at
+     * least once, so they start at 1.
+     */
+    private fun addPlayCount(db: SQLiteDatabase) {
+        db.execSQL("ALTER TABLE play_history ADD COLUMN play_count INTEGER NOT NULL DEFAULT 1")
     }
 
     /** Version 5. Adding a column isn't an UPDATE, so the append-only triggers don't fire. */
@@ -157,11 +168,11 @@ class FeedbackDatabase(
         override fun readAll(): Map<String, PlayRecord> =
             readableDatabase.query(
                 "play_history",
-                arrayOf("track_hash", "last_played", "listened_at"),
+                arrayOf("track_hash", "last_played", "listened_at", "play_count"),
                 null, null, null, null, null,
             ).use { c ->
                 buildMap {
-                    while (c.moveToNext()) put(c.getString(0), PlayRecord(c.getLong(1), if (c.isNull(2)) null else c.getLong(2)))
+                    while (c.moveToNext()) put(c.getString(0), PlayRecord(c.getLong(1), if (c.isNull(2)) null else c.getLong(2), c.getInt(3)))
                 }
             }
 
@@ -170,6 +181,7 @@ class FeedbackDatabase(
                 put("track_hash", trackHash)
                 put("last_played", record.wallClockMs)
                 put("listened_at", record.listeningMs)
+                put("play_count", record.plays)
             }
             writableDatabase.insertWithOnConflict("play_history", null, values, SQLiteDatabase.CONFLICT_REPLACE)
         }
@@ -246,6 +258,6 @@ class FeedbackDatabase(
 
     private companion object {
         const val DB_NAME = "feedback.db"
-        const val DB_VERSION = 5
+        const val DB_VERSION = 6
     }
 }

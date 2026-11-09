@@ -12,7 +12,12 @@ import kotlinx.coroutines.withContext
  * When a song last started: [wallClockMs] (epoch ms) and [listeningMs], the [ListeningClock]
  * reading at that moment, or null for plays recorded before the listening clock existed.
  */
-data class PlayRecord(val wallClockMs: Long, val listeningMs: Long?)
+data class PlayRecord(
+    val wallClockMs: Long,
+    val listeningMs: Long?,
+    /** Times the song has started. Rows from before DB version 6 count as 1: at least that many. */
+    val plays: Int = 1,
+)
 
 /** When each song last played, keyed on its [ContentHash]. One row per song, overwritten on every play. */
 interface PlayHistoryStore {
@@ -104,11 +109,13 @@ class PlayHistory(
      * file changed). Returns the hash, or null if the file couldn't be read.
      */
     suspend fun markPlayed(track: Track): String? {
-        val record = PlayRecord(clock(), listeningClock())
+        val wallClock = clock()
+        val listening = listeningClock()
         return withContext(ioDispatcher) {
             mutex.withLock {
                 load()
                 val hash = cachedHash(track) ?: hashFile(track) ?: return@withLock null
+                val record = PlayRecord(wallClock, listening, (lastPlayed[hash]?.plays ?: 0) + 1)
                 lastPlayed[hash] = record
                 runCatching { store.put(hash, record) }
                 hash

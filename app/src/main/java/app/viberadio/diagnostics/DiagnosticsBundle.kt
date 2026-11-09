@@ -209,9 +209,9 @@ object DiagnosticsBundle {
     )
 
     private fun playHistory(history: Map<String, PlayRecord>) = Csv.table(
-        listOf("track_hash", "last_played_ms", "last_played_utc", "listened_at_ms"),
+        listOf("track_hash", "last_played_ms", "last_played_utc", "listened_at_ms", "play_count"),
         history.entries.sortedBy { it.value.wallClockMs }.map { (hash, r) ->
-            listOf(hash, r.wallClockMs, iso(r.wallClockMs), r.listeningMs)
+            listOf(hash, r.wallClockMs, iso(r.wallClockMs), r.listeningMs, r.plays)
         },
     )
 
@@ -239,9 +239,9 @@ object DiagnosticsBundle {
     )
 
     private fun library(tracks: List<Track>, hashes: Map<String, String>) = Csv.table(
-        listOf("track_id", "track_hash", "title", "artist", "album", "genre", "duration_ms", "kind", "size_bytes", "modified_sec", "folder", "uri"),
+        listOf("track_id", "track_hash", "title", "artist", "album", "genre", "duration_ms", "kind", "size_bytes", "modified_sec", "folder", "file_name", "uri"),
         tracks.sortedBy { it.id }.map {
-            listOf(it.id, hashes[it.uri], it.title, it.artist, it.album, it.genre, it.durationMs, it.kind.name, it.sizeBytes, it.modifiedSec, it.folder, it.uri)
+            listOf(it.id, hashes[it.uri], it.title, it.artist, it.album, it.genre, it.durationMs, it.kind.name, it.sizeBytes, it.modifiedSec, it.folder, it.fileName, it.uri)
         },
     )
 
@@ -348,11 +348,11 @@ object DiagnosticsBundle {
         - summary.json: app version, export time, feature layout version, counts
         - settings.json: audio settings (both tone curves), the separation EQ module and every module's parameters, the podcast gap rule and its parameters, Bluetooth setting, folders left out of the library and the podcast folder, channel names
         - feedback.csv: every thumbs press, oldest first (the append-only log; source of truth for learning); `separation_eq` is the separation module in effect at the press, empty when no podcast played over the music
-        - play_history.csv: per song, its last play (wall clock and listening-clock reading)
+        - play_history.csv: per song, its last play (wall clock and listening-clock reading) and how many times it has started (plays before this count existed show as 1)
         - channel_airings.csv: what each song channel last aired (live-radio resume)
         - features.csv: per song, the feature vector rebuilt from feedback.csv (layout in summary.json)
         - channels.csv: current placement, one row per (channel, song)
-        - library.csv: every song on a channel; track_hash is empty until the song has played once
+        - library.csv: every song on a channel, with its file name; track_hash is empty until the song has played once
         - levels.csv: measured loudness per song (`song:<hash>`) and downloaded episode, with the gain at the current target
         - audio_features_<id>.csv: per song, one audio feature block (`dsp`: built-in signal features; others: installed models, e.g. mood or genre probabilities). Blocks over 256 dimensions (embeddings) aren't exported; summary.json lists every block in use and how many songs have it
         - podcasts.json: the podcast library as the app stores it (shows, channels, speed, Pause music, episodes and their descriptions)

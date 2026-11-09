@@ -21,7 +21,7 @@ import org.junit.Test
 
 class DiagnosticsBundleTest {
 
-    private val a = track("Rock").copy(title = "Hello, \"World\"", artist = "Band")
+    private val a = track("Rock").copy(title = "Hello, \"World\"", artist = "Band", fileName = "hello.flac")
     private val b = track("Jazz")
 
     private val show = Podcast("https://feed", "Show", setOf("podcasts", "breeze"), lastRefreshedMs = 0, pauseMusic = true)
@@ -60,7 +60,7 @@ class DiagnosticsBundleTest {
         ),
         trackHashes = mapOf(a.uri to "hashA"),
         feedback = feedback,
-        playHistory = mapOf("hashA" to PlayRecord(3_000, 40)),
+        playHistory = mapOf("hashA" to PlayRecord(3_000, 40, plays = 3)),
         listeningClockMs = 50,
         airings = listOf(ChannelAiring("breeze", "hashA", 180_000, 3_000)),
         levels = mapOf("song:hashA" to TrackLevel(-14f, 0.5f), "song:silent" to TrackLevel(Float.NEGATIVE_INFINITY, 0f)),
@@ -127,6 +127,17 @@ class DiagnosticsBundleTest {
         assertEquals(3, lines.size)
         assertTrue(lines[1].startsWith("${a.id},hashA,\"Hello, \"\"World\"\"\",Band,,Rock,"))
         assertTrue(lines[2].startsWith("${b.id},,"))
+    }
+
+    @Test
+    fun `library has the file name and play history the play count`() {
+        val library = files().getValue("library.csv").text.trim().lines()
+        val header = library[0].split(",")
+        assertEquals("file_name", header[header.size - 2])
+        assertTrue(library[1].endsWith(",hello.flac,${a.uri}"))
+        val history = files().getValue("play_history.csv").text.trim().lines()
+        assertEquals("track_hash,last_played_ms,last_played_utc,listened_at_ms,play_count", history[0])
+        assertTrue(history[1].endsWith(",40,3"))
     }
 
     @Test

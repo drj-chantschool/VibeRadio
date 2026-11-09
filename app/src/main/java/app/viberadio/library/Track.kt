@@ -24,6 +24,8 @@ data class Track(
      * at the volume root). Files on a volume other than the main one start with the volume name.
      */
     val folder: String = "",
+    /** The file's name with its extension (MediaStore DISPLAY_NAME); empty if unknown. */
+    val fileName: String = "",
 )
 
 /**
