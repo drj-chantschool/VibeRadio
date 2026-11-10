@@ -8,11 +8,12 @@ import android.media.MediaFormat
 import android.net.Uri
 import android.os.Process
 import app.viberadio.playback.flac.FlacHeaders
+import app.viberadio.playback.wma.WmaCodec
 import java.nio.ByteOrder
 
 /**
  * Measures a whole file's [TrackLevel] (#1): decodes its first audio track with the platform
- * codecs and runs every sample through a [LoudnessMeter]. Blocking and CPU-bound, so it runs on
+ * codecs (WMA and FLAC deeper than 24 bits with the app's own decoders) and runs every sample through a [LoudnessMeter]. Blocking and CPU-bound, so it runs on
  * [Leveling]'s single background worker at background thread priority.
  */
 class LoudnessAnalyzer(private val context: Context) {
@@ -23,7 +24,7 @@ class LoudnessAnalyzer(private val context: Context) {
         val priority = Process.getThreadPriority(tid)
         Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
         try {
-            return measureHighResFlac(uri) ?: decode(uri)
+            return measureHighResFlac(uri) ?: measureWma(uri) ?: decode(uri)
         } finally {
             Process.setThreadPriority(tid, priority)
         }
@@ -36,6 +37,16 @@ class LoudnessAnalyzer(private val context: Context) {
             val header = context.contentResolver.openInputStream(parsed)?.use { FlacHeaders.parse(it, streamInfoOnly = true) }
             if (header == null || header.info.bitsPerSample <= FlacHeaders.PLATFORM_MAX_BITS) return null
             context.contentResolver.openInputStream(parsed)?.buffered(BUFFER_BYTES)?.use { HighResFlacLevel.measure(it) }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** The level of a WMA file, which Android has no decoder for; null for any other file (or without the decoder library). */
+    private fun measureWma(uri: String): TrackLevel? {
+        if (!WmaCodec.available) return null
+        return try {
+            context.contentResolver.openInputStream(Uri.parse(uri))?.buffered(BUFFER_BYTES)?.use { WmaLevel.measure(it) }
         } catch (e: Exception) {
             null
         }

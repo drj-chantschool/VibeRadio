@@ -16,6 +16,7 @@ import androidx.media3.extractor.PositionHolder
 import androidx.media3.extractor.SeekMap
 import androidx.media3.extractor.SeekPoint
 import androidx.media3.extractor.TrackOutput
+import app.viberadio.playback.wma.WmaExtractor
 import java.io.EOFException
 import java.io.IOException
 import java.nio.ByteBuffer
@@ -199,13 +200,16 @@ class HighResFlacExtractor : Extractor {
     }
 }
 
-/** The stock extractors, with [HighResFlacExtractor] tried first. */
+/**
+ * The stock extractors, with the app's own tried first: [HighResFlacExtractor] (FLAC deeper than 24
+ * bits) and [WmaExtractor] (WMA, when the decoder library is in the app). Each claims only its files.
+ */
 @UnstableApi
 class HighResFlacExtractorsFactory : ExtractorsFactory {
     private val stock = DefaultExtractorsFactory()
 
-    override fun createExtractors(): Array<Extractor> = arrayOf(HighResFlacExtractor(), *stock.createExtractors())
+    override fun createExtractors(): Array<Extractor> = arrayOf(HighResFlacExtractor(), WmaExtractor(), *stock.createExtractors())
 
     override fun createExtractors(uri: Uri, responseHeaders: Map<String, List<String>>): Array<Extractor> =
-        arrayOf(HighResFlacExtractor(), *stock.createExtractors(uri, responseHeaders))
+        arrayOf(HighResFlacExtractor(), WmaExtractor(), *stock.createExtractors(uri, responseHeaders))
 }

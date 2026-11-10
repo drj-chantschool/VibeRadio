@@ -27,7 +27,7 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
 
@@ -85,6 +85,9 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: true
+
+      # FFmpeg's WMA decoders, for playing .wma files (docs/wma.md).
+      - uses: ./.github/actions/wma-decoder
 
       - name: Test and build signed release APK
         env:

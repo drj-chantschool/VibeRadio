@@ -13,3 +13,5 @@ build/
 __pycache__/
 *.egg-info/
 /tools/similarity-lab/vrlab-work/
+/app/src/main/jniLibs/
+/tools/ffmpeg/build/

@@ -1,0 +1,22 @@
+name: WMA decoder
+description: >
+  Builds libvrwma.so (FFmpeg's WMA decoders, tools/ffmpeg) for every ABI into app/src/main/jniLibs,
+  where Gradle packs it into the APK. Cached on the build script and C source, so only the first run
+  after a change to them pays for the FFmpeg build.
+
+runs:
+  using: composite
+  steps:
+    - id: cache
+      uses: actions/cache@v4
+      with:
+        path: app/src/main/jniLibs
+        key: wma-decoder-${{ runner.os }}-${{ hashFiles('tools/ffmpeg/build.sh', 'tools/ffmpeg/vrwma.c') }}
+
+    # The runner image has the NDK (ANDROID_NDK_HOME); build.sh also needs git and make.
+    - if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: tools/ffmpeg/build.sh
+
+    - shell: bash
+      run: ls -l app/src/main/jniLibs/*/libvrwma.so
