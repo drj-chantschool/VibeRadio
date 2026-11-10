@@ -7,11 +7,13 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
 import android.os.Process
+import app.viberadio.playback.wma.WmaCodec
 import java.nio.ByteOrder
 
 /**
  * Decodes the excerpts of an [ExcerptPlan] from a song with the platform codecs, mono, at the
- * file's own rate ([FeaturePipeline] resamples). Seeks to each excerpt instead of decoding the
+ * file's own rate ([FeaturePipeline] resamples). WMA, which Android can't decode, goes through the app's
+ * own decoder ([WmaExcerpts]). Seeks to each excerpt instead of decoding the
  * whole file. Blocking and CPU-bound; runs at background thread priority.
  */
 class ExcerptDecoder(private val context: Context) {
@@ -23,9 +25,19 @@ class ExcerptDecoder(private val context: Context) {
         val priority = Process.getThreadPriority(tid)
         Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
         try {
-            return decodeExcerpts(uri, excerpts)
+            return decodeWma(uri, excerpts) ?: decodeExcerpts(uri, excerpts)
         } finally {
             Process.setThreadPriority(tid, priority)
+        }
+    }
+
+    /** The excerpts of a WMA file, which Android has no decoder for; null for any other file (or without the decoder library). */
+    private fun decodeWma(uri: String, excerpts: List<ExcerptPlan.Excerpt>): List<AudioClip>? {
+        if (!WmaCodec.available) return null
+        return try {
+            context.contentResolver.openInputStream(Uri.parse(uri))?.buffered(BUFFER_BYTES)?.use { WmaExcerpts.decode(it, excerpts) }
+        } catch (e: Exception) {
+            null
         }
     }
 
@@ -143,5 +155,6 @@ class ExcerptDecoder(private val context: Context) {
     private companion object {
         const val TIMEOUT_US = 10_000L
         const val MAX_IDLE_ROUNDS = 500
+        const val BUFFER_BYTES = 256 * 1024
     }
 }
