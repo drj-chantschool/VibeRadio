@@ -117,6 +117,12 @@ class RadioSessionCallback(
     /** The episode loaded in the player, or null while a song is playing. */
     private var currentEpisodeId: String? = null
 
+    /** Media IDs of songs the player failed on this run; the planner doesn't pick them again. */
+    private val unplayable = HashSet<String>()
+
+    /** Player errors since something last played, to stop recovery looping on a channel that can't play. */
+    private var consecutiveFailures = 0
+
     /** Why the last due episode didn't start, so it's logged once per wait, not every check. */
     private var nothingStartedReason: String? = null
 
@@ -503,6 +509,38 @@ class RadioSessionCallback(
 
     override fun onPlayerError(error: PlaybackException) {
         log(PodcastEvent.Kind.PLAYER_ERROR, currentEpisodeId, errorDetail(error))
+        val failed = player?.currentMediaItem
+        if (failed != null && currentEpisodeId == null) unplayable += failed.mediaId
+        // Posted: the player is still inside this callback.
+        handler.post { recoverFromError(failed) }
+    }
+
+    /**
+     * A failed item leaves the session player idle while the overlay, which only follows
+     * play/pause, carries on: the podcast would play over silence. A song that can't be decoded
+     * (e.g. WMA, which Android has no decoder for) is remembered for this run and replaced by
+     * fresh picks without it; a failed episode moves on to the next queued item. Gives up after
+     * [MAX_CONSECUTIVE_FAILURES] in a row, so a channel of nothing but unplayable files doesn't loop.
+     */
+    private fun recoverFromError(failed: MediaItem?) {
+        val player = player ?: return
+        if (failed == null || player.currentMediaItem?.mediaId != failed.mediaId) return
+        if (++consecutiveFailures > MAX_CONSECUTIVE_FAILURES) return
+        val channelId = currentChannelId ?: return
+        val channel = songChannel(channelId)
+        if (channel != null && EpisodeMediaId.episodeId(failed) == null) {
+            if (channel.tracks.isEmpty()) return
+            val queue = songQueue(channel)
+            joiningMediaId = null
+            fade?.stop()
+            player.setMediaItems(queue.items, 0, C.TIME_UNSET)
+        } else if (player.hasNextMediaItem()) {
+            player.seekToNextMediaItem()
+        } else {
+            return
+        }
+        player.prepare()
+        player.play()
     }
 
     private fun hasShows(channelId: String): Boolean = channelId in podcasts.library.value.channelIds
@@ -541,6 +579,7 @@ class RadioSessionCallback(
     override fun onPlaybackSuppressionReasonChanged(playbackSuppressionReason: Int) = syncOverlayPlay()
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {
+        if (isPlaying) consecutiveFailures = 0
         syncListening()
         handler.removeCallbacks(positionTick)
         handler.removeCallbacks(scheduleTick)
@@ -606,7 +645,7 @@ class RadioSessionCallback(
      * channel plays first in place of the join, and any other show starts over the joined song.
      */
     private fun tuneIn(channelId: String, podcastPlaying: Boolean, podcastDue: Boolean): Queue? {
-        repository.channel(channelId)?.let { channel ->
+        songChannel(channelId)?.let { channel ->
             val planned = planner.upcoming(channel, 1 + LOOKAHEAD)
             val tuneIn = liveRadio.tuneIn(channel, planned)
             val library = podcasts.library.value
@@ -631,6 +670,13 @@ class RadioSessionCallback(
         return podcastQueue(channelId)
     }
 
+    /** The song channel [channelId] as the planner sees it: without songs the player failed on. */
+    private fun songChannel(channelId: String): Channel? {
+        val channel = repository.channel(channelId) ?: return null
+        if (unplayable.isEmpty()) return channel
+        return channel.copy(tracks = channel.tracks.filter { it.mediaId !in unplayable })
+    }
+
     /** Fresh picks for [channel], from the top. */
     private fun songQueue(channel: Channel): Queue =
         Queue(channel.id, planner.upcoming(channel, 1 + LOOKAHEAD).map { songItem(channel, it) }, boundary = true)
@@ -645,7 +691,7 @@ class RadioSessionCallback(
      */
     private fun topUpSongQueue() {
         val player = player ?: return
-        val channel = currentChannelId?.let(repository::channel) ?: return
+        val channel = currentChannelId?.let(::songChannel) ?: return
         val index = player.currentMediaItemIndex
         if (index < 0 || player.mediaItemCount == 0) return
         if (index > 0) player.removeMediaItems(0, index)
@@ -751,6 +797,9 @@ class RadioSessionCallback(
 
         /** Songs queued after the current one, so the next is preloaded. */
         const val LOOKAHEAD = 1
+
+        /** Errors in a row before recovery stops retrying. */
+        const val MAX_CONSECUTIVE_FAILURES = 5
 
         val FORBIDDEN_COMMANDS = intArrayOf(
             Player.COMMAND_SEEK_TO_NEXT,
