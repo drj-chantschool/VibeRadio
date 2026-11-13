@@ -81,6 +81,7 @@ import app.viberadio.library.AudioPermission
 import android.util.AtomicFile
 import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -389,6 +390,9 @@ class AppContainer(context: Context) {
 
     /** Whether a podcast is playing over the music; the music's EQ follows it. */
     val mix = MixState()
+
+    /** The episode playing over the music, if any: the song page shows its title, the Bluetooth title switches to it. */
+    val overlayEpisode = MutableStateFlow<String?>(null)
 
     /**
      * The separation module in effect right now: the selected one while a podcast plays over the

@@ -8,6 +8,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import app.viberadio.playback.audio.MixState
 import app.viberadio.podcasts.PodcastRepository
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * The podcast stream on a song channel (#2): one episode at a time, played on a second player
@@ -27,6 +28,8 @@ class PodcastOverlay(
     private val podcasts: PodcastRepository,
     private val mix: MixState,
     private val fade: FadeIn,
+    /** Holds [episodeId] where the screen and the Bluetooth title can follow it. */
+    private val episode: MutableStateFlow<String?> = MutableStateFlow(null),
     /** The episode played to the end, after [durationMs] of content (0 if unknown). */
     private val onEnded: (episodeId: String, durationMs: Long) -> Unit,
     /** The episode couldn't play; it isn't marked played. */
@@ -34,8 +37,11 @@ class PodcastOverlay(
 ) : Player.Listener {
 
     /** The episode on the overlay player, or null when it's idle. */
-    var episodeId: String? = null
-        private set
+    var episodeId: String?
+        get() = episode.value
+        private set(value) {
+            episode.value = value
+        }
 
     val isActive: Boolean get() = episodeId != null
 

@@ -53,3 +53,37 @@ class ChannelNamesTest {
         assertEquals(listOf("breeze", "buzz", "zone", "breath", "hall", "all-songs", "podcasts"), ChannelLineup.ids)
     }
 }
+
+class ChannelShortNamesTest {
+
+    private val names = ChannelNames(mapOf(ChannelLineup.BREEZE to "The Breeze", ChannelLineup.VOICE to "The Voice"))
+
+    @Test
+    fun `lineup channels have their own tags`() {
+        assertEquals("V-BRZ", names.shortOf(ChannelLineup.BREEZE))
+        assertEquals("V-OIC", names.shortOf(ChannelLineup.VOICE))
+        assertEquals(
+            listOf("V-BRZ", "V-BUZ", "V-ZNE", "V-BRH", "V-HAL", "V-SHF", "V-OIC"),
+            ChannelLineup.ids.map { ChannelLineup.shortNames.getValue(it) },
+        )
+    }
+
+    @Test
+    fun `a renamed channel's tag follows its name`() {
+        assertEquals("V-EAS", names.renamed(ChannelLineup.BREEZE, "The Easy Hour").shortOf(ChannelLineup.BREEZE))
+        assertEquals("V-JAZ", names.renamed(ChannelLineup.BREEZE, "Jazz").shortOf(ChannelLineup.BREEZE))
+        assertEquals("V-AB", names.renamed(ChannelLineup.BREEZE, "A b").shortOf(ChannelLineup.BREEZE))
+    }
+
+    @Test
+    fun `restoring the default restores the tag`() {
+        assertEquals("V-BRZ", names.renamed(ChannelLineup.BREEZE, "Easy").renamed(ChannelLineup.BREEZE, "").shortOf(ChannelLineup.BREEZE))
+    }
+
+    @Test
+    fun `other channels are tagged from the fallback name`() {
+        assertEquals("V-ROC", names.shortOf("genre:rock", "Rock"))
+        assertNull(names.shortOf("genre:rock"))
+        assertEquals("V", ChannelShortNames.derive("!!!"))
+    }
+}

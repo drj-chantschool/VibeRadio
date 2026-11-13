@@ -85,9 +85,19 @@ private fun Tuner(state: RadioUiState.Ready, onTune: (Int) -> Unit, onPlay: () -
             modifier = Modifier.widthIn(max = 280.dp).fillMaxWidth(),
         )
         Spacer(Modifier.height(40.dp))
-        // Height reserved so the layout doesn't jump when metadata arrives.
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.height(48.dp)) {
+        // Height reserved (three lines) so the layout doesn't jump when metadata arrives or a podcast joins.
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.height(72.dp)) {
             state.nowPlaying?.let { now ->
+                // A podcast over the music: its episode sits above the song.
+                now.episode?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Text(
                     text = now.title,
                     style = MaterialTheme.typography.bodyMedium,
@@ -170,7 +180,7 @@ private fun Note(text: String) {
 private val previewState = RadioUiState.Ready(
     channelNames = listOf("Jazz", "Rock", "Classical", "Folk", "Everything else"),
     tunedIndex = 2,
-    nowPlaying = NowPlaying("Goldberg Variations: Aria", "Glenn Gould"),
+    nowPlaying = NowPlaying("Goldberg Variations: Aria", "Glenn Gould", episode = "Episode 12: The long way round"),
     feedback = SongFeedback(lastPress = Thumb.UP),
     playing = true,
 )

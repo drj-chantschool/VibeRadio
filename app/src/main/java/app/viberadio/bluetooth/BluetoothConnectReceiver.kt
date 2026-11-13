@@ -6,7 +6,6 @@ import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
 import android.util.Log
@@ -107,7 +106,7 @@ class BluetoothConnectReceiver : BroadcastReceiver() {
 
     private fun hasRoute(audio: AudioManager, address: String?): Boolean =
         audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any { output ->
-            output.type in BLUETOOTH_OUTPUTS &&
+            output.type in BluetoothOutputs.TYPES &&
                 // Output addresses arrived in API 28; before that any Bluetooth output will do.
                 (Build.VERSION.SDK_INT < Build.VERSION_CODES.P || BluetoothResume.sameDevice(output.address, address))
         }
@@ -154,13 +153,5 @@ class BluetoothConnectReceiver : BroadcastReceiver() {
         const val ROUTE_WAIT_MS = 6_000L
         const val ROUTE_POLL_MS = 250L
         const val SETTLE_MS = 1_000L
-
-        val BLUETOOTH_OUTPUTS: Set<Int> = buildSet {
-            add(AudioDeviceInfo.TYPE_BLUETOOTH_A2DP)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                add(AudioDeviceInfo.TYPE_BLE_HEADSET)
-                add(AudioDeviceInfo.TYPE_BLE_SPEAKER)
-            }
-        }
     }
 }

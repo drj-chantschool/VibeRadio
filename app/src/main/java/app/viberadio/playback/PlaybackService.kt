@@ -2,6 +2,9 @@ package app.viberadio.playback
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.media.AudioManager
+import android.os.Handler
+import android.os.Looper
 import androidx.annotation.DrawableRes
 import androidx.annotation.OptIn
 import androidx.annotation.StringRes
@@ -49,6 +52,7 @@ class PlaybackService : MediaSessionService() {
     private var callback: RadioSessionCallback? = null
     private var overlayPlayer: ExoPlayer? = null
     private var levelingWatcher: LevelingWatcher? = null
+    private var titles: OnAirTitlePlayer? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onCreate() {
@@ -109,7 +113,7 @@ class PlaybackService : MediaSessionService() {
                 }
             },
         )
-        callback.attach(player, overlayPlayer, container.mix)
+        callback.attach(player, overlayPlayer, container.mix, container.overlayEpisode)
         this.callback = callback
 
         // Measure what's queued on either player, so each item starts at its level (#1).
@@ -125,7 +129,21 @@ class PlaybackService : MediaSessionService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-        session = MediaSession.Builder(this, player)
+        // Over Bluetooth, controllers are told a title that switches between what is on air.
+        val titles = OnAirTitlePlayer(
+            base = player,
+            overlay = overlayPlayer,
+            overlayEpisode = container.overlayEpisode,
+            library = { container.podcastRepository.library.value },
+            names = { container.channelNames.names.value },
+            audio = getSystemService(AudioManager::class.java),
+            handler = Handler(Looper.getMainLooper()),
+            scope = scope,
+        )
+        titles.start()
+        this.titles = titles
+
+        session = MediaSession.Builder(this, titles)
             .setCallback(callback)
             .setSessionActivity(openApp)
             .setMediaButtonPreferences(
@@ -148,6 +166,8 @@ class PlaybackService : MediaSessionService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
     override fun onDestroy() {
+        titles?.detach()
+        titles = null
         levelingWatcher?.detach()
         levelingWatcher = null
         callback?.detach()

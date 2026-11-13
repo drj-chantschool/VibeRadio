@@ -47,7 +47,11 @@ sealed interface RadioUiState {
     ) : RadioUiState
 }
 
-data class NowPlaying(val title: String, val artist: String?)
+/**
+ * The song (or episode) on the session, and above it [episode]: the title of the podcast episode
+ * playing over the music, if one is.
+ */
+data class NowPlaying(val title: String, val artist: String?, val episode: String? = null)
 
 /**
  * The thumbs under the playing song. [lastPress] is the thumb lit for the current play only: it
@@ -106,6 +110,8 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
         /** Not logged yet: logged when the play ends, so a press changed or cancelled meanwhile never is. */
         val press: Press? = null,
         val playing: Boolean = false,
+        /** The episode playing over the music (the overlay player), if any. */
+        val overlayEpisodeId: String? = null,
     )
 
     private val permission = MutableStateFlow(Permission(AudioPermission.isGranted(application), denied = false))
@@ -124,7 +130,9 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
                         RadioUiState.Ready(
                             channelNames = stations.map { it.name },
                             tunedIndex = stations.indexOfFirst { it.id == play.channelId }.takeIf { it >= 0 },
-                            nowPlaying = play.nowPlaying,
+                            nowPlaying = play.nowPlaying?.copy(
+                                episode = play.overlayEpisodeId?.let { shows.episode(it)?.title },
+                            ),
                             feedback = play.trackUri?.let { SongFeedback(play.press?.thumb) },
                             playing = play.playing,
                         )
@@ -196,6 +204,9 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
             },
             ContextCompat.getMainExecutor(application),
         )
+        viewModelScope.launch {
+            container.overlayEpisode.collect { id -> playback.update { it.copy(overlayEpisodeId = id) } }
+        }
         scanIfNeeded()
     }
 
@@ -290,7 +301,14 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
 private fun Player.isActive(): Boolean =
     playWhenReady && (playbackState == Player.STATE_READY || playbackState == Player.STATE_BUFFERING)
 
+/**
+ * The playing item's own title and artist. While the session switches the title it tells Bluetooth
+ * devices ([app.viberadio.playback.OnAirTitlePlayer]) they ride along as extras, and the screen
+ * shows those, not the switching title.
+ */
 private fun MediaMetadata.toNowPlaying(): NowPlaying? {
-    val title = title?.toString()?.takeIf { it.isNotBlank() } ?: return null
-    return NowPlaying(title = title, artist = artist?.toString()?.takeIf { it.isNotBlank() })
+    val streamTitle = extras?.getString(ChannelRequest.EXTRA_STREAM_TITLE)
+    val title = (streamTitle ?: title?.toString())?.takeIf { it.isNotBlank() } ?: return null
+    val streamArtist = if (streamTitle != null) extras?.getString(ChannelRequest.EXTRA_STREAM_ARTIST) else null
+    return NowPlaying(title = title, artist = (streamArtist ?: artist?.toString())?.takeIf { it.isNotBlank() })
 }

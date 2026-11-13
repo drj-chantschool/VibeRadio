@@ -28,6 +28,33 @@ object ChannelLineup {
 
     /** Every named channel, in settings order. */
     val ids: List<String> = listOf(BREEZE, BUZZ, ZONE, BREATH, HALL, SHUFFLE, VOICE)
+
+    /**
+     * The short tag each named channel goes by while it is the primary stream in the title a
+     * Bluetooth device shows ([ChannelNames.shortOf]). A renamed channel's tag follows its new name.
+     */
+    val shortNames: Map<String, String> = mapOf(
+        BREEZE to "V-BRZ",
+        BUZZ to "V-BUZ",
+        ZONE to "V-ZNE",
+        BREATH to "V-BRH",
+        HALL to "V-HAL",
+        SHUFFLE to "V-SHF",
+        VOICE to "V-OIC",
+    )
+}
+
+/** Short channel tags for places with no room for a name, like a car's one-line display. */
+object ChannelShortNames {
+    private const val PREFIX = "V-"
+    private const val LENGTH = 3
+
+    /** "V-" and the first three letters or digits of [name] without a leading "The", uppercased. */
+    fun derive(name: String): String {
+        val core = name.trim().let { if (it.startsWith("the ", ignoreCase = true)) it.substring(4) else it }
+        val letters = core.filter(Char::isLetterOrDigit).take(LENGTH).uppercase()
+        return if (letters.isEmpty()) "V" else PREFIX + letters
+    }
 }
 
 /**
@@ -44,6 +71,17 @@ data class ChannelNames(
     fun of(id: String): String? = custom[id] ?: defaults[id]
 
     fun isCustom(id: String): Boolean = id in custom
+
+    /**
+     * The short tag for [id]: the lineup's own ([ChannelLineup.shortNames]) until the channel is
+     * renamed, then one made from its name. [fallbackName] names a channel that isn't a named one
+     * (a generated genre channel); null if there is nothing to make a tag from.
+     */
+    fun shortOf(id: String, fallbackName: String? = null): String? {
+        val renamed = custom[id]
+        if (renamed == null) ChannelLineup.shortNames[id]?.let { return it }
+        return (renamed ?: of(id) ?: fallbackName)?.let(ChannelShortNames::derive)
+    }
 
     /**
      * [id] renamed to [name], tidied with [clean]. An empty name or the default name goes

@@ -23,6 +23,14 @@ object ChannelRequest {
      */
     const val EXTRA_TRACK_URI = "app.viberadio.TRACK_URI"
 
+    /**
+     * Extras on the session's media metadata while the title shown to Bluetooth devices is being
+     * switched ([OnAirTitlePlayer]): the title and artist the playing item really has, so the app's
+     * own screen doesn't follow the switching.
+     */
+    const val EXTRA_STREAM_TITLE = "app.viberadio.STREAM_TITLE"
+    const val EXTRA_STREAM_ARTIST = "app.viberadio.STREAM_ARTIST"
+
     fun mediaItem(channelId: String): MediaItem =
         MediaItem.Builder().setMediaId(PREFIX + channelId).build()
 
