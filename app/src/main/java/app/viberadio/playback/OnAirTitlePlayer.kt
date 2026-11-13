@@ -51,7 +51,7 @@ class OnAirTitlePlayer(
     private val scope: CoroutineScope,
 ) : ForwardingPlayer(base) {
 
-    private val listeners = LinkedHashMap<Player.Listener, Intercept>()
+    private val listeners = ArrayList<Player.Listener>()
     private var bluetooth = false
     private var lines: List<TitleLine> = emptyList()
     private var step = 0
@@ -68,6 +68,21 @@ class OnAirTitlePlayer(
         override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) = devicesChanged()
     }
 
+    /**
+     * The player's own events change what is on air. Handled after the session has heard them
+     * (posted), then the title it holds is replaced with the one shown now.
+     */
+    private val follow = object : Player.Listener {
+        override fun onEvents(player: Player, events: Player.Events) {
+            val retitled = events.containsAny(
+                Player.EVENT_MEDIA_ITEM_TRANSITION,
+                Player.EVENT_MEDIA_METADATA_CHANGED,
+                Player.EVENT_TRACKS_CHANGED,
+            )
+            handler.post { publish(force = retitled) }
+        }
+    }
+
     private val tick = object : Runnable {
         override fun run() {
             step++
@@ -80,10 +95,12 @@ class OnAirTitlePlayer(
     fun start() {
         audio.registerAudioDeviceCallback(devices, handler)
         bluetooth = BluetoothOutputs.connected(audio)
+        base.addListener(follow)
         watching = scope.launch { overlayEpisode.collect { publish() } }
     }
 
     fun detach() {
+        base.removeListener(follow)
         watching?.cancel()
         watching = null
         audio.unregisterAudioDeviceCallback(devices)
@@ -99,16 +116,18 @@ class OnAirTitlePlayer(
     }
 
     override fun addListener(listener: Player.Listener) {
-        val wrapped = Intercept(listener)
-        listeners[listener] = wrapped
-        super.addListener(wrapped)
+        // Passed straight through: every event the session needs reaches it untouched.
+        listeners += listener
+        super.addListener(listener)
     }
 
     override fun removeListener(listener: Player.Listener) {
-        listeners.remove(listener)?.let { super.removeListener(it) }
+        listeners -= listener
+        super.removeListener(listener)
     }
 
     override fun getMediaMetadata(): MediaMetadata {
+        refresh()
         val real = base.mediaMetadata
         val shown = shown() ?: return real
         val extras = Bundle(real.extras ?: Bundle.EMPTY).apply {
@@ -121,16 +140,17 @@ class OnAirTitlePlayer(
     private fun shown(): TitleLine? = if (bluetooth) OnAirTitles.at(lines, step) else null
 
     /** Recomputes what is on air; tells the session if the title it shows changed. */
-    private fun publish() {
+    private fun publish(force: Boolean = false) {
         refresh()
         val now = shown()
-        if (now == published) return
+        // Forced only matters while a title is being shown in place of the real one.
+        if (now == published && !(force && now != null)) return
         published = now
         val metadata = getMediaMetadata()
         val events = Player.Events(FlagSet.Builder().add(Player.EVENT_MEDIA_METADATA_CHANGED).build())
-        for (listener in listeners.values.toList()) {
-            listener.inner.onMediaMetadataChanged(metadata)
-            listener.inner.onEvents(this, events)
+        for (listener in listeners.toList()) {
+            listener.onMediaMetadataChanged(metadata)
+            listener.onEvents(this, events)
         }
     }
 
@@ -202,28 +222,6 @@ class OnAirTitlePlayer(
         } else if (!want && ticking) {
             ticking = false
             handler.removeCallbacks(tick)
-        }
-    }
-
-    /**
-     * Brings the lines up to date before a listener hears about an item or metadata change, so
-     * the session never reads the title of the item before.
-     */
-    private inner class Intercept(val inner: Player.Listener) : Player.Listener by inner {
-        override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
-            refresh()
-            published = shown()
-            inner.onMediaMetadataChanged(getMediaMetadata())
-        }
-
-        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            refresh()
-            inner.onMediaItemTransition(mediaItem, reason)
-        }
-
-        override fun onEvents(player: Player, events: Player.Events) {
-            refresh()
-            inner.onEvents(player, events)
         }
     }
 }
