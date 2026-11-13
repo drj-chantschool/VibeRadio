@@ -181,7 +181,8 @@ class OnAirTitlePlayer(
                 val metadata = group.getTrackFormat(i).metadata ?: continue
                 for (j in 0 until metadata.length()) {
                     val frame = metadata.get(j) as? ChapterFrame ?: continue
-                    val title = frame.subFrames.filterIsInstance<TextInformationFrame>()
+                    val title = (0 until frame.subFrameCount).map { frame.getSubFrame(it) }
+                        .filterIsInstance<TextInformationFrame>()
                         .firstOrNull { it.id == "TIT2" }?.values?.firstOrNull()
                     if (!title.isNullOrBlank()) chapters += Chapter(frame.startTimeMs.toLong(), title)
                 }
