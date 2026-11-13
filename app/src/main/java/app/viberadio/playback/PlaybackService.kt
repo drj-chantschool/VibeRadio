@@ -166,7 +166,7 @@ class PlaybackService : MediaSessionService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
     override fun onDestroy() {
-        titles?.stop()
+        titles?.detach()
         titles = null
         levelingWatcher?.detach()
         levelingWatcher = null

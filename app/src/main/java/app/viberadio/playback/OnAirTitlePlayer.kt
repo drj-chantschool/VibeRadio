@@ -83,7 +83,7 @@ class OnAirTitlePlayer(
         watching = scope.launch { overlayEpisode.collect { publish() } }
     }
 
-    fun stop() {
+    fun detach() {
         watching?.cancel()
         watching = null
         audio.unregisterAudioDeviceCallback(devices)
