@@ -31,6 +31,7 @@ import app.viberadio.podcasts.PodcastSpeeds
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -170,7 +171,12 @@ class RadioSessionCallback(
      * [overlayPlayer] plays podcasts over the music on song channels. It must not handle audio
      * focus itself: it follows [player]'s play/pause.
      */
-    fun attach(player: Player, overlayPlayer: Player? = null, mix: MixState = MixState()) {
+    fun attach(
+        player: Player,
+        overlayPlayer: Player? = null,
+        mix: MixState = MixState(),
+        overlayEpisode: MutableStateFlow<String?> = MutableStateFlow(null),
+    ) {
         this.player = player
         player.addListener(this)
         fade = FadeIn(player, handler)
@@ -180,6 +186,7 @@ class RadioSessionCallback(
                 podcasts = podcasts,
                 mix = mix,
                 fade = FadeIn(it, handler),
+                episode = overlayEpisode,
                 onEnded = ::onOverlayEnded,
                 // Not marked played; it's tried again at the next boundary.
                 onFailed = ::onOverlayFailed,
