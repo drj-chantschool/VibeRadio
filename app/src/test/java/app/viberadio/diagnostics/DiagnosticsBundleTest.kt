@@ -74,6 +74,16 @@ class DiagnosticsBundleTest {
             PodcastEvent(3_000, 40, "breeze", "start", "e2", "mode=overlay trigger=mid_song"),
             PodcastEvent(4_000, 50, "breeze", "wait", null, "cause=tune rule=music_ratio wait=boundary"),
         ),
+        settingsChanges = listOf(
+            SettingsChange(
+                5_000, "audio.mixing_factor_db", "-10.0", "-12.0",
+                NowPlaying(
+                    playing = true, channelId = "breeze", mediaId = "track:7", title = "A, song", songHash = "hashA",
+                    levelLufs = -21.5f, peak = 0.9f, gainDb = 3.5f, overlayEpisodeId = "e2", overlayLufs = -19f,
+                    overlayGainDb = 1f, mixDb = -10f, separation = "graphic", targetLufs = -18f,
+                ),
+            ),
+        ),
         crashLog = crashLog,
         exitReasons = listOf(ExitRecord(3_000, 3, 0, 125, "lmk, \"low\"", 200_000, 250_000)),
     )
@@ -91,7 +101,7 @@ class DiagnosticsBundleTest {
             setOf(
                 "README.md", "summary.json", "settings.json", "feedback.csv", "play_history.csv", "channel_airings.csv",
                 "features.csv", "channels.csv", "library.csv", "levels.csv", "podcasts.json", "podcast_state.json",
-                "podcast_shows.csv", "podcast_queues.csv", "podcast_events.csv", "exit_reasons.csv",
+                "podcast_shows.csv", "podcast_queues.csv", "podcast_events.csv", "settings_changes.csv", "exit_reasons.csv",
             ),
             files().keys,
         )
@@ -226,6 +236,18 @@ class DiagnosticsBundleTest {
         assertEquals("breeze,1,e1,Show,First,1970-01-01T00:00:01Z,60000,,true,true", lines[2])
         assertEquals("podcasts,0,e2,Show,Second,1970-01-01T00:00:02Z,,5000,false,true", lines[3])
         assertEquals(5, lines.size)
+    }
+
+    @Test
+    fun `settings changes carry what was on air and name the overlay episode`() {
+        val lines = files().getValue("settings_changes.csv").text.trim().lines()
+        assertTrue(lines[0].startsWith("at_ms,at_local,setting,from,to,playing,channel_id,media_id,title,track_hash,level_lufs,peak,gain_db,target_lufs,"))
+        assertEquals(
+            "5000,1969-12-31T19:00:05-05:00,audio.mixing_factor_db,-10.0,-12.0,true,breeze,track:7,\"A, song\",hashA," +
+                "-21.5,0.9,3.5,-18.0,e2,Show,Second,-19.0,1.0,-10.0,graphic",
+            lines[1],
+        )
+        assertTrue(files().getValue("summary.json").text.contains("\"settings_changes\": 1"))
     }
 
     @Test

@@ -70,6 +70,8 @@ data class DiagnosticsSnapshot(
     val downloadedEpisodes: Set<String> = emptySet(),
     /** The podcast scheduling log ([PodcastEvent]), oldest first. */
     val podcastEvents: List<PodcastEvent> = emptyList(),
+    /** Settings changes ([SettingsChange]), oldest first. */
+    val settingsChanges: List<SettingsChange> = emptyList(),
     /** Audio feature blocks in use, each with its stored values by content hash. */
     val audioFeatures: Map<FeatureBlock, Map<String, FloatArray>> = emptyMap(),
     /** The app's crash log ([CrashLog]) as stored; null if it hasn't crashed since keeping one. */
@@ -108,6 +110,7 @@ object DiagnosticsBundle {
             BundleFile("podcast_shows.csv", MIME_CSV, podcastShows(s.podcasts, s.downloadedEpisodes)),
             BundleFile("podcast_queues.csv", MIME_CSV, podcastQueues(s.podcasts, s.downloadedEpisodes)),
             BundleFile("podcast_events.csv", MIME_CSV, podcastEvents(s.podcastEvents, s.podcasts, s.utcOffsetMinutes)),
+            BundleFile("settings_changes.csv", MIME_CSV, settingsChanges(s.settingsChanges, s.podcasts, s.utcOffsetMinutes)),
             BundleFile("exit_reasons.csv", MIME_CSV, exitReasons(s.exitReasons, s.utcOffsetMinutes)),
         )
         s.crashLog?.let { files += BundleFile("crashes.txt", MIME_TEXT, it) }
@@ -147,6 +150,7 @@ object DiagnosticsBundle {
                     "podcast_episodes_played" to s.podcasts.played.size,
                     "podcast_episodes_downloaded" to s.downloadedEpisodes.size,
                     "podcast_events" to s.podcastEvents.size,
+                    "settings_changes" to s.settingsChanges.size,
                     "crashes_logged" to CrashLog.entries(s.crashLog).size,
                     "exit_reasons" to s.exitReasons.size,
                 ),
@@ -315,6 +319,27 @@ object DiagnosticsBundle {
         },
     )
 
+    private fun settingsChanges(changes: List<SettingsChange>, library: PodcastLibrary, utcOffsetMinutes: Int) = Csv.table(
+        listOf(
+            "at_ms", "at_local", "setting", "from", "to",
+            "playing", "channel_id", "media_id", "title", "track_hash",
+            "level_lufs", "peak", "gain_db", "target_lufs",
+            "overlay_episode_id", "overlay_show", "overlay_episode_title", "overlay_level_lufs", "overlay_gain_db",
+            "mix_db", "separation_eq",
+        ),
+        changes.map { c ->
+            val n = c.now
+            val episode = n.overlayEpisodeId?.let(library::episode)
+            listOf(
+                c.atMs, local(c.atMs, utcOffsetMinutes), c.key, c.from, c.to,
+                n.playing, n.channelId, n.mediaId, n.title, n.songHash,
+                n.levelLufs, n.peak, n.gainDb, n.targetLufs,
+                n.overlayEpisodeId, episode?.let { library.podcast(it.feedUrl)?.title }, episode?.title, n.overlayLufs, n.overlayGainDb,
+                n.mixDb, n.separation,
+            )
+        },
+    )
+
     private fun exitReasons(records: List<ExitRecord>, utcOffsetMinutes: Int) = Csv.table(
         listOf("at_ms", "at_local", "reason", "reason_code", "status", "importance", "pss_kb", "rss_kb", "description"),
         records.map {
@@ -366,6 +391,7 @@ object DiagnosticsBundle {
         - crashes.txt: the app's own crash log, newest 10 kept: per uncaught exception, its local time, app version, thread and full stack trace. Absent if the app hasn't crashed since it started keeping one
         - exit_reasons.csv: why the app's processes ended, newest first, as Android keeps it (Android 11 and later; empty before): reason (`CRASH`, `CRASH_NATIVE`, `ANR`, `LOW_MEMORY`, `SIGNALED`, `USER_REQUESTED`, ...), exit status or signal, importance when it ended (100 foreground, 125 foreground service, 400 cached), memory (kB) and the platform's description. It also shows what crashes.txt can't: low-memory kills and native crashes
         - podcast_events.csv: the podcast scheduling log on song channels, oldest first (newest 5,000 to 10,000 kept): tunes, the wait after each tune or episode (`detail`, times relative to the event), each song boundary and whether an episode was due, episode starts (`mode=overlay` over the music or `solo` for a music podcast), ends and failures, and why a due episode didn't start. `on_air_ms` is the clock the schedule runs on; it restarts with the service (`service_start`). `at_local` uses the export's UTC offset
+        - settings_changes.csv: every settings change, oldest first (newest 5,000 to 10,000 kept; a slider drag is one row, logged once the value has stayed put for a second; the first run after an update has no history). `setting` is a dotted key (`audio.mixing_factor_db`, `audio.music_tone_db.1k`, `separation_eq.module`, `podcast_gap.rule`, `channel_name.<id>`, ...), `from` and `to` the old and new value. The rest says what was on air at that moment: `playing`, the channel, the item (`media_id`, `title`, `track_hash` for songs) and what leveling did to it (`level_lufs` and `peak` as measured, `gain_db` the fixed gain at the target in effect, empty if not measured yet, when 0 dB is applied), the `overlay_*` columns for a podcast over the music, `mix_db` the mixing factor being applied to the music (0 with no podcast over it) and `separation_eq` the module in effect. Join on `track_hash` or line up `at_ms` with feedback.csv and podcast_events.csv
     """.trimIndent() + "\n"
 }
 

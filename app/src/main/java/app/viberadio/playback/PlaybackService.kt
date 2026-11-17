@@ -21,6 +21,7 @@ import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
 import app.viberadio.R
 import app.viberadio.VibeRadioApp
+import app.viberadio.diagnostics.PlayerSnapshot
 import app.viberadio.playback.audio.AudioStream
 import app.viberadio.playback.audio.LevelingWatcher
 import app.viberadio.playback.audio.ProcessingRenderersFactory
@@ -114,6 +115,16 @@ class PlaybackService : MediaSessionService() {
             },
         )
         callback.attach(player, overlayPlayer, container.mix, container.overlayEpisode)
+        // For diagnostics: what was on air when a setting changed.
+        container.playerSnapshot = {
+            val item = player.currentMediaItem
+            PlayerSnapshot(
+                playing = player.isPlaying,
+                mediaId = item?.mediaId,
+                channelId = item?.mediaMetadata?.extras?.getString(ChannelRequest.EXTRA_CHANNEL_ID),
+                title = item?.mediaMetadata?.extras?.getString(ChannelRequest.EXTRA_STREAM_TITLE) ?: item?.mediaMetadata?.title?.toString(),
+            )
+        }
         this.callback = callback
 
         // Measure what's queued on either player, so each item starts at its level (#1).
@@ -166,6 +177,7 @@ class PlaybackService : MediaSessionService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
     override fun onDestroy() {
+        (application as? VibeRadioApp)?.container?.playerSnapshot = null
         titles?.detach()
         titles = null
         levelingWatcher?.detach()
