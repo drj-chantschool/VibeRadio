@@ -75,12 +75,19 @@ import app.viberadio.diagnostics.CrashRecorder
 import app.viberadio.diagnostics.DiagnosticsExporter
 import app.viberadio.diagnostics.DiagnosticsSettings
 import app.viberadio.diagnostics.DiagnosticsSnapshot
+import app.viberadio.diagnostics.FileSettingsChangeStore
+import app.viberadio.diagnostics.NowPlaying
+import app.viberadio.diagnostics.PlayerSnapshot
+import app.viberadio.diagnostics.SettingsChange
+import app.viberadio.diagnostics.SettingsFlattener
 import app.viberadio.diagnostics.NightlyExportJob
 import app.viberadio.diagnostics.PrefsDiagnosticsStore
 import app.viberadio.library.AudioPermission
 import android.util.AtomicFile
 import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -457,6 +464,84 @@ class AppContainer(context: Context) {
         }
     }
 
+    /**
+     * What the session player holds right now, set by the playback service while it runs and
+     * cleared when it stops. Read on the main thread, to say what was on air when a setting changed.
+     */
+    @Volatile
+    var playerSnapshot: (() -> PlayerSnapshot?)? = null
+
+    /** Settings changes for diagnostics, one tab-separated line each. */
+    private val settingsChangeStore = FileSettingsChangeStore(File(context.filesDir, "settings_changes.tsv"))
+
+    /** What was playing, and what leveling and mixing were doing to it, now. Main thread. */
+    private fun nowPlaying(): NowPlaying {
+        val settings = audioSettings.settings.value
+        val target = settings.targetLufs
+        val player = runCatching { playerSnapshot?.invoke() }.getOrNull()
+        val mediaId = player?.mediaId
+        val level = mediaId?.let(leveling::levelOf)
+        val track = mediaId?.let { TrackMediaId.trackId(it) }?.let { id ->
+            (channelRepository.state.value as? ChannelRepository.State.Ready)?.channels
+                ?.firstNotNullOfOrNull { channel -> channel.tracks.firstOrNull { it.id == id } }
+        }
+        val overlayId = overlayEpisode.value
+        val overlayLevel = overlayId?.let { leveling.levelOf(EpisodeMediaId.of(it)) }
+        return NowPlaying(
+            playing = player?.playing == true,
+            channelId = player?.channelId,
+            mediaId = mediaId,
+            title = player?.title,
+            songHash = track?.let { playHistory.hashOf(it) },
+            levelLufs = level?.loudnessLufs,
+            peak = level?.peak,
+            gainDb = level?.gainDb(target),
+            overlayEpisodeId = overlayId,
+            overlayLufs = overlayLevel?.loudnessLufs,
+            overlayGainDb = overlayLevel?.gainDb(target),
+            mixDb = if (mix.podcastOverMusic) settings.mixingFactorDb else 0f,
+            separation = separationInEffect(),
+            targetLufs = target,
+        )
+    }
+
+    init {
+        // Every setting, flattened; a change that stays put for a second is logged with what was on air.
+        val flat = combine(
+            listOf(
+                audioSettings.settings.map(SettingsFlattener::audio),
+                separationSettings.settings.map(SettingsFlattener::separation),
+                podcastGapSettings.settings.map(SettingsFlattener::podcastGap),
+                bluetoothSettings.resumeOnConnect.map(SettingsFlattener::bluetooth),
+                combine(libraryFolders.exclusions, podcastFolder.folder, SettingsFlattener::folders),
+                channelNames.names.map(SettingsFlattener::channelNames),
+                combine(podcastDownloadSettings.count, podcastDownloadSettings.limitBytes, SettingsFlattener::downloads),
+                diagnosticsSettings.prefs.map { SettingsFlattener.diagnostics(it.developerMode, it.nightly) },
+            ),
+        ) { parts -> parts.fold(linkedMapOf<String, String>()) { all, part -> all.apply { putAll(part) } } }
+        appScope.launch {
+            // Saved values arrive after the defaults; start from them so loading isn't logged as a change.
+            withTimeoutOrNull(SCAN_WAIT_MS) {
+                bluetoothSettings.awaitResumeOnConnect()
+                libraryFolders.awaitExclusions()
+                podcastFolder.awaitFolder()
+                podcastDownloadSettings.awaitLoaded()
+                diagnosticsSettings.await()
+            }
+            delay(SETTINGS_QUIET_MS)
+            var baseline: Map<String, String> = flat.first()
+            flat.collectLatest { latest ->
+                if (latest == baseline) return@collectLatest
+                val at = System.currentTimeMillis()
+                val now = nowPlaying()
+                delay(SETTINGS_QUIET_MS)
+                val changes = SettingsFlattener.diff(baseline, latest).map { (key, from, to) -> SettingsChange(at, key, from, to, now) }
+                baseline = latest
+                withContext(NonCancellable + Dispatchers.IO) { runCatching { settingsChangeStore.append(changes) } }
+            }
+        }
+    }
+
     /** Settings → Debug → Export: everything below, as a bundle of CSV and JSON files. */
     val diagnostics = DiagnosticsExporter(
         context = context,
@@ -511,6 +596,7 @@ class AppContainer(context: Context) {
                 podcasts = podcasts,
                 downloadedEpisodes = podcastRepository.downloaded.value,
                 podcastEvents = runCatching { podcastLog.readAll() }.getOrDefault(emptyList()),
+                settingsChanges = runCatching { settingsChangeStore.readAll() }.getOrDefault(emptyList()),
                 audioFeatures = audioFeatures.snapshot(),
                 crashLog = CrashRecorder.forApp(appContext).read(),
                 exitReasons = CrashRecorder.exitReasons(appContext),
@@ -526,5 +612,8 @@ class AppContainer(context: Context) {
     private companion object {
         /** How long an export waits for a library scan already under way. */
         const val SCAN_WAIT_MS = 60_000L
+
+        /** A settings change is logged once it has stayed put this long, so a slider drag is one row. */
+        const val SETTINGS_QUIET_MS = 1_000L
     }
 }
