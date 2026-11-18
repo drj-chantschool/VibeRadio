@@ -284,7 +284,12 @@ class RadioSessionCallback(
     private fun stepChannel(delta: Int): Boolean {
         val player = player ?: return false
         // Only the order matters here, not the names.
-        val stations = Dial.stations(songChannels(), podcasts.library.value.channelIds, ChannelNames(emptyMap()))
+        val library = podcasts.library.value
+        val songIds = songChannels().mapTo(HashSet()) { it.id }
+        // A podcast-only channel with nothing queued would only hand over to the fallback song
+        // channel, restarting it with a fresh song: step past it instead.
+        val stations = Dial.stations(songChannels(), library.channelIds, ChannelNames(emptyMap()))
+            .filter { it.id in songIds || library.queue(it.id).isNotEmpty() }
         val queue = Dial.step(stations, currentChannelId, delta)?.id?.let(::tune) ?: return false
         player.setMediaItems(queue.items, 0, queue.startPositionMs)
         player.prepare()
