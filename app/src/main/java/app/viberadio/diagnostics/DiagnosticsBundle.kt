@@ -60,8 +60,6 @@ data class DiagnosticsSnapshot(
     val airings: List<ChannelAiring>,
     /** Leveling results, keyed `song:<hash>` or the episode's media ID. */
     val levels: Map<String, TrackLevel>,
-    /** The podcast library's own JSON file (shows and episodes), copied as-is; null if there is none yet. */
-    val podcastsJson: String?,
     /** Its playback state file (played, resume points, history), copied as-is; null if there is none yet. */
     val podcastStateJson: String? = null,
     /** The podcast library as loaded, for the readable podcast tables. */
@@ -114,7 +112,6 @@ object DiagnosticsBundle {
             BundleFile("exit_reasons.csv", MIME_CSV, exitReasons(s.exitReasons, s.utcOffsetMinutes)),
         )
         s.crashLog?.let { files += BundleFile("crashes.txt", MIME_TEXT, it) }
-        s.podcastsJson?.let { files += BundleFile("podcasts.json", MIME_JSON, it) }
         s.podcastStateJson?.let { files += BundleFile("podcast_state.json", MIME_JSON, it) }
         // Large embeddings stay on the phone: Phase 2 recomputes them from the files on a PC.
         s.audioFeatures.filterKeys { it.size <= MAX_EXPORTED_DIMS }.forEach { (block, values) ->
@@ -213,7 +210,7 @@ object DiagnosticsBundle {
             "channels" to s.channelNames.map {
                 linkedMapOf("id" to it.id, "default_name" to it.defaultName, "name" to it.name)
             },
-            "podcasts" to "see podcasts.json and podcast_state.json",
+            "podcasts" to "see podcast_shows.csv, podcast_queues.csv and podcast_state.json",
         ),
     )
 
@@ -393,7 +390,6 @@ object DiagnosticsBundle {
         - library.csv: every song on a channel, with its file name (FLAC files also their bit depth and sample rate); track_hash is empty until the song has played once
         - levels.csv: measured loudness per song (`song:<hash>`) and downloaded episode, with the gain at the current target
         - audio_features_<id>.csv: per song, one audio feature block (`dsp`: built-in signal features; others: installed models, e.g. mood or genre probabilities). Blocks over 256 dimensions (embeddings) aren't exported; summary.json lists every block in use and how many songs have it
-        - podcasts.json: the podcast library as the app stores it (shows, channels, speed, Pause music, episodes and their descriptions)
         - podcast_state.json: the podcast playback state as the app stores it (played, resume positions, when each episode was last on air in the last 24 hours)
         - podcast_shows.csv: per show, its channels, Pause music, speed, priority, skip intro (seconds), and episode counts (all, unplayed, on the device)
         - podcast_queues.csv: per channel with a show on it, the next 10 episodes as the app would queue them now
