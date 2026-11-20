@@ -127,8 +127,37 @@ class PodcastLibraryTest {
         assertEquals("A renamed", a.title)
         assertEquals(200L, a.lastRefreshedMs)
         assertEquals(setOf(PodcastChannels.PODCASTS_ID, "evening"), a.channels)
-        assertEquals(listOf("A renamed 4", "A renamed 3", "A 2", "A 1"), after.episodesOf(showA).map { it.title })
+        // "A 1" was played and dropped off the feed: forgotten, but still played by ID.
+        assertEquals(listOf("A renamed 4", "A renamed 3", "A 2"), after.episodesOf(showA).map { it.title })
         assertTrue(after.isPlayed(id(showA, 1)))
+    }
+
+    @Test
+    fun `a played episode that dropped off the feed stays in the history until it ages out`() {
+        val before = library.withHeard(id(showA, 1), nowMs = 100).withPlayed(id(showA, 1), true)
+        val soon = before.withFeed(showA, feed("A", 3, 2), nowMs = 200)
+        assertEquals(listOf("A 3", "A 2", "A 1"), soon.episodesOf(showA).map { it.title })
+        val later = soon.withFeed(showA, feed("A", 3, 2), nowMs = 100 + PodcastLibrary.HISTORY_MS + 1)
+        assertEquals(listOf("A 3", "A 2"), later.episodesOf(showA).map { it.title })
+        assertTrue(later.isPlayed(id(showA, 1)))
+    }
+
+    @Test
+    fun `slimming drops notes of played episodes and orphan state, and nothing else`() {
+        val noted = PodcastLibrary(
+            podcasts = library.podcasts,
+            episodes = library.episodes.map { it.copy(description = "notes") },
+            played = setOf(id(showA, 1), "gone"),
+            positions = mapOf(id(showA, 2) to 5_000L, "gone" to 1L),
+            heard = mapOf("gone" to 150L),
+        )
+        val slim = noted.slimmed(nowMs = 100 + PodcastLibrary.HISTORY_MS * 2)
+        assertEquals(null, slim.episode(id(showA, 1))!!.description)
+        assertEquals("notes", slim.episode(id(showA, 2))!!.description)
+        assertEquals(mapOf(id(showA, 2) to 5_000L), slim.positions)
+        assertTrue(slim.heard.isEmpty())
+        assertTrue(slim.played.containsAll(setOf(id(showA, 1), "gone")))
+        assertTrue(slim.slimmed(nowMs = 100 + PodcastLibrary.HISTORY_MS * 2) === slim)
     }
 
     @Test
