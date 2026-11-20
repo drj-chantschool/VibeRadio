@@ -8,7 +8,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * Runs one stream's [Compressor] on decoded PCM, between its gain and its EQ. Reads
+ * Runs one stream's [Compressor] on decoded PCM, between the leveling gain and the mixing factor. Reads
  * [AudioSettings.compressor] each buffer, so a change in Settings → Audio → Compression is heard
  * straight away. Off, it passes the buffer through untouched once released.
  *

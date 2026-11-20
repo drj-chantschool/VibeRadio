@@ -8,8 +8,8 @@ package app.viberadio.playback.audio
  * Tone: each stream has its own ten-band tone EQ ([musicTone], [podcastTone]), flat by default,
  * after its gain.
  *
- * Compression: optional dynamic range compression ([compressor]) on each stream, between its
- * gain and its EQ.
+ * Compression: optional dynamic range compression ([compressor]) on each stream, after leveling
+ * and before the mixing factor.
  *
  * Mixing a podcast over music (#2, #5): while both streams play, the music drops by
  * [mixingFactorDb] and the separation EQ ([SeparationSettings], chosen separately) pulls the two
