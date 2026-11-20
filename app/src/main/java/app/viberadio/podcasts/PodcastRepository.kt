@@ -62,7 +62,7 @@ class PodcastRepository(
 
     init {
         scope.launch(ioDispatcher) {
-            store.read()?.let { _library.compareAndSet(initial, it) }
+            store.read()?.let { _library.compareAndSet(initial, it.slimmed(clock())) }
             _loaded.value = true
             downloadRequests.trySend(Unit)
         }

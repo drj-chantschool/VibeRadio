@@ -73,8 +73,8 @@ data class PodcastLibrary(
 
     /**
      * Adds a new show from [feed], or merges a refresh into an existing one. Existing episodes
-     * keep their played state and position; episodes that dropped off the feed are kept, since
-     * feeds often truncate their back catalogue.
+     * keep their played state and position; unplayed episodes that dropped off the feed are kept, since
+     * feeds often truncate their back catalogue. Played ones that dropped off are forgotten (see [slimmed]).
      */
     fun withFeed(feedUrl: String, feed: Feed, nowMs: Long): PodcastLibrary {
         val existing = podcast(feedUrl)
@@ -97,12 +97,35 @@ data class PodcastLibrary(
             }
             .distinctBy { it.id }
         val freshIds = fresh.mapTo(HashSet()) { it.id }
-        val kept = episodes.filter { it.feedUrl == feedUrl && it.id !in freshIds }
+        // A played episode that dropped off the feed is only weight (its ID stays in `played`, so it
+        // stays played if it comes back), unless it's still in the history.
+        val kept = episodes.filter { it.feedUrl == feedUrl && it.id !in freshIds && (it.id !in played || isRecent(it.id, nowMs)) }
         val others = episodes.filter { it.feedUrl != feedUrl }
 
         return copy(
             podcasts = if (existing == null) podcasts + podcast else podcasts.map { if (it.feedUrl == feedUrl) podcast else it },
             episodes = others + fresh + kept,
+        ).slimmed(nowMs)
+    }
+
+    private fun isRecent(id: String, nowMs: Long): Boolean = (heard[id] ?: Long.MIN_VALUE) > nowMs - HISTORY_MS
+
+    /**
+     * Sheds what only costs memory: the show notes of played episodes no longer in the history (the
+     * notes are what makes the catalog tens of MB, and only the history opens an episode's details),
+     * and resume points or history entries of episodes that are gone. Returns this when there's
+     * nothing to shed, so an unchanged library isn't rewritten.
+     */
+    fun slimmed(nowMs: Long): PodcastLibrary {
+        val heavy = episodes.any { it.description != null && it.id in played && !isRecent(it.id, nowMs) }
+        val orphans = positions.keys.any { episode(it) == null } || heard.keys.any { episode(it) == null }
+        if (!heavy && !orphans) return this
+        return copy(
+            episodes = if (!heavy) episodes else episodes.map {
+                if (it.description != null && it.id in played && !isRecent(it.id, nowMs)) it.copy(description = null) else it
+            },
+            positions = positions.filterKeys { episode(it) != null },
+            heard = heard.filterKeys { episode(it) != null },
         )
     }
 
