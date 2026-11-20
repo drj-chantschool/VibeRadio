@@ -61,6 +61,7 @@ import androidx.annotation.StringRes
 import androidx.compose.ui.text.input.KeyboardType
 import app.viberadio.playback.audio.AudioSettings
 import app.viberadio.playback.audio.AudioStream
+import app.viberadio.playback.audio.CompressorSettings
 import app.viberadio.playback.audio.EqParam
 import app.viberadio.playback.audio.EqUnit
 import app.viberadio.playback.audio.SeparationEq
@@ -113,10 +114,10 @@ fun SettingsButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
 
 /** The pages inside settings. Enum, so it survives rotation and process death as-is. */
 private enum class SettingsPage {
-    Root, Channels, Bluetooth, Audio, Folders, Equalizer, Separation, Podcasts, Debug;
+    Root, Channels, Bluetooth, Audio, Folders, Equalizer, Compression, Separation, Podcasts, Debug;
 
     /** Where back goes from here. */
-    val parent: SettingsPage get() = if (this == Folders || this == Equalizer || this == Separation) Audio else Root
+    val parent: SettingsPage get() = if (this == Folders || this == Equalizer || this == Compression || this == Separation) Audio else Root
 }
 
 /** Settings → Debug as the page shows it. */
@@ -160,6 +161,8 @@ fun SettingsScreen(
     onRestoreAudio: () -> Unit,
     /** Settings → Audio → Equalizer: both tone curves flat. (Bands change through [onAudioChange].) */
     onRestoreTone: () -> Unit,
+    /** Settings → Audio → Compression: off, at its default figures. (Figures change through [onAudioChange].) */
+    onRestoreCompressor: () -> Unit,
     /** Settings → Audio → Separation EQ (developer mode only): the module and its parameters. */
     separation: SeparationSettings,
     onSelectSeparation: (id: String) -> Unit,
@@ -270,12 +273,17 @@ fun SettingsScreen(
                         developerMode = debug.developerMode,
                         onFolders = { page = SettingsPage.Folders },
                         onEqualizer = { page = SettingsPage.Equalizer },
+                        onCompression = { page = SettingsPage.Compression },
                         onSeparation = { page = SettingsPage.Separation },
                     )
                 }
                 SettingsPage.Equalizer -> {
                     SettingsHeader(stringResource(R.string.settings_equalizer), onBack = { page = SettingsPage.Audio })
                     ToneSettingsList(audio, onAudioChange, onRestoreTone)
+                }
+                SettingsPage.Compression -> {
+                    SettingsHeader(stringResource(R.string.settings_compression), onBack = { page = SettingsPage.Audio })
+                    CompressionSettingsList(audio, onAudioChange, onRestoreCompressor)
                 }
                 SettingsPage.Separation -> {
                     SettingsHeader(stringResource(R.string.settings_separation), onBack = { page = SettingsPage.Audio })
@@ -613,6 +621,7 @@ private fun AudioSettingsList(
     developerMode: Boolean,
     onFolders: () -> Unit,
     onEqualizer: () -> Unit,
+    onCompression: () -> Unit,
     onSeparation: () -> Unit,
 ) {
     var editing by rememberSaveable { mutableStateOf<AudioField?>(null) }
@@ -629,6 +638,14 @@ private fun AudioSettingsList(
                 title = stringResource(R.string.settings_equalizer),
                 summary = stringResource(R.string.settings_equalizer_summary),
                 onClick = onEqualizer,
+            )
+            Rule()
+            SettingsLink(
+                title = stringResource(R.string.settings_compression),
+                summary = stringResource(
+                    if (audio.compressor.enabled) R.string.settings_compression_on else R.string.settings_compression_off,
+                ),
+                onClick = onCompression,
             )
             Rule()
             if (developerMode) {
@@ -922,6 +939,119 @@ private fun ToneSettingsList(
             default = "0",
             invalidText = stringResource(R.string.settings_equalizer_invalid),
             onSave = { value -> onAudioChange { it.withTone(stream, it.tone(stream).with(band, value.toFloat())) } },
+            onDismiss = { editing = null },
+        )
+    }
+}
+
+/** One adjustable figure on Settings → Audio → Compression: how it reads, shows and writes back. */
+internal enum class CompressorField(@StringRes val label: Int, @StringRes val unit: Int, @StringRes val hint: Int) {
+    Threshold(R.string.settings_compression_threshold, R.string.unit_db, R.string.settings_compression_threshold_about),
+    Ratio(R.string.settings_compression_ratio, R.string.unit_ratio, R.string.settings_compression_ratio_about),
+    Attack(R.string.settings_compression_attack, R.string.unit_ms, R.string.settings_compression_attack_about),
+    Release(R.string.settings_compression_release, R.string.unit_ms, R.string.settings_compression_release_about),
+    Knee(R.string.settings_compression_knee, R.string.unit_db, R.string.settings_compression_knee_about),
+    Makeup(R.string.settings_compression_makeup, R.string.unit_db, R.string.settings_compression_makeup_about),
+    ;
+
+    fun read(c: CompressorSettings): Double = when (this) {
+        Threshold -> c.thresholdDb.toDouble()
+        Ratio -> c.ratio.toDouble()
+        Attack -> c.attackMs.toDouble()
+        Release -> c.releaseMs.toDouble()
+        Knee -> c.kneeDb.toDouble()
+        Makeup -> c.makeupDb.toDouble()
+    }
+
+    /** [c] with this figure set to [value], in the unit shown. A threshold is always at or below full scale, so its sign is ignored. */
+    fun write(c: CompressorSettings, value: Double): CompressorSettings = when (this) {
+        Threshold -> c.copy(thresholdDb = -abs(value).toFloat())
+        Ratio -> c.copy(ratio = value.toFloat())
+        Attack -> c.copy(attackMs = value.toFloat())
+        Release -> c.copy(releaseMs = value.toFloat())
+        Knee -> c.copy(kneeDb = value.toFloat())
+        Makeup -> c.copy(makeupDb = value.toFloat())
+    }
+
+    /** No trailing zeros; a minus sign, not a hyphen. */
+    fun format(c: CompressorSettings): String {
+        val rounded = (read(c) * 100).roundToLong() / 100.0
+        return BigDecimal(rounded.toString()).stripTrailingZeros().toPlainString().replace('-', '\u2212')
+    }
+}
+
+/**
+ * Settings → Audio → Compression: a switch for dynamic range compression (off by default), then
+ * its threshold, ratio, attack, release, knee and make-up gain, each tappable to change, and a
+ * way back to off with the default figures. The figures show while it is off so they can be set first.
+ */
+@Composable
+private fun CompressionSettingsList(
+    audio: AudioSettings,
+    onAudioChange: ((AudioSettings) -> AudioSettings) -> Boolean,
+    onRestore: () -> Unit,
+) {
+    var editing by rememberSaveable { mutableStateOf<CompressorField?>(null) }
+    val comp = audio.compressor
+
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+        item {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .toggleable(
+                        value = comp.enabled,
+                        role = Role.Switch,
+                        onValueChange = { on -> onAudioChange { it.copy(compressor = it.compressor.copy(enabled = on)) } },
+                    )
+                    .padding(horizontal = 24.dp, vertical = 16.dp),
+            ) {
+                Column(Modifier.weight(1f).padding(end = 16.dp)) {
+                    Text(
+                        stringResource(R.string.settings_compression_enable),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
+                    Text(
+                        stringResource(R.string.settings_compression_hint),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                // The row handles the toggle, so the switch itself is display-only.
+                Switch(checked = comp.enabled, onCheckedChange = null)
+            }
+            Rule()
+        }
+        items(CompressorField.entries.toList(), key = { it.name }) { field ->
+            FigureRow(
+                label = stringResource(field.label),
+                value = field.format(comp) + " " + stringResource(field.unit),
+                isDefault = field.read(comp) == field.read(CompressorSettings.DEFAULT),
+                onClick = { editing = field },
+            )
+            Rule()
+        }
+        item {
+            TextButton(
+                onClick = onRestore,
+                enabled = audio.compressorRestored() != audio,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            ) { Text(stringResource(R.string.settings_audio_restore)) }
+        }
+    }
+
+    editing?.let { field ->
+        FigureDialog(
+            key = "compressor_" + field.name,
+            title = stringResource(field.label),
+            unit = stringResource(field.unit),
+            current = field.format(comp),
+            default = field.format(CompressorSettings.DEFAULT),
+            invalidText = stringResource(R.string.settings_compression_invalid),
+            note = stringResource(field.hint),
+            onSave = { value -> onAudioChange { it.copy(compressor = field.write(it.compressor, value)) } },
             onDismiss = { editing = null },
         )
     }
@@ -1665,6 +1795,7 @@ private fun SettingsLightPreview() {
             onAudioChange = { true },
             onRestoreAudio = {},
             onRestoreTone = {},
+            onRestoreCompressor = {},
             separation = SeparationSettings.DEFAULT,
             onSelectSeparation = {},
             onSeparationParam = { _, _, _ -> true },
@@ -1711,6 +1842,7 @@ private fun SettingsDarkPreview() {
             onAudioChange = { true },
             onRestoreAudio = {},
             onRestoreTone = {},
+            onRestoreCompressor = {},
             separation = SeparationSettings.DEFAULT,
             onSelectSeparation = {},
             onSeparationParam = { _, _, _ -> true },
@@ -1778,6 +1910,7 @@ private fun AudioSettingsPreview() {
                 developerMode = true,
                 onFolders = {},
                 onEqualizer = {},
+                onCompression = {},
                 onSeparation = {},
             )
         }

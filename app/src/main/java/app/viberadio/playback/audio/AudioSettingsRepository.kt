@@ -61,6 +61,11 @@ class AudioSettingsRepository(
         update { it.figuresRestored() }
     }
 
+    /** Settings → Audio → Compression: off, at its default figures. */
+    fun restoreCompressor() {
+        update { it.compressorRestored() }
+    }
+
     /** Settings → Audio → Equalizer: both tone curves flat again. */
     fun restoreTone() {
         update { it.toneRestored() }

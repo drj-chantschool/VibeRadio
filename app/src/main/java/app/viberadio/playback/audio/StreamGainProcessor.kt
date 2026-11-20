@@ -11,7 +11,9 @@ import java.nio.ByteOrder
 
 /**
  * Runs one stream's [StreamGain] on decoded PCM, ahead of its EQ: the playing item's leveling
- * gain (#1) and, on the music stream, the mixing factor while a podcast plays over it.
+ * gain (#1) and, on the music stream, the mixing factor while a podcast plays over it. The chain
+ * uses two instances ([Part]) with the compressor between them, so compression sees the leveled
+ * signal and the mixing factor lands after it.
  *
  * Which item the PCM belongs to comes from the sink: it flushes the chain with the new item's
  * period at the exact sample where one item's audio ends and the next begins, so the gain
@@ -26,7 +28,11 @@ class StreamGainProcessor(
     private val leveling: Leveling,
     private val mix: MixState,
     private val settings: () -> AudioSettings,
+    /** Which gain this instance applies; the chain runs [Part.LEVELING], the compressor, then [Part.MIXING]. */
+    private val part: Part = Part.BOTH,
 ) : BaseAudioProcessor() {
+
+    enum class Part { LEVELING, MIXING, BOTH }
 
     private var gain: StreamGain? = null
     private var gainRate = 0
@@ -66,10 +72,10 @@ class StreamGainProcessor(
         }.getOrNull()
     }
 
-    private fun levelDb(s: AudioSettings): Float? = mediaId?.let(leveling::levelOf)?.gainDb(s.targetLufs)
+    private fun levelDb(s: AudioSettings): Float? = if (part == Part.MIXING) null else mediaId?.let(leveling::levelOf)?.gainDb(s.targetLufs)
 
     private fun mixDb(s: AudioSettings): Float =
-        if (stream == AudioStream.MUSIC && mix.podcastOverMusic) s.mixingFactorDb else 0f
+        if (part != Part.LEVELING && stream == AudioStream.MUSIC && mix.podcastOverMusic) s.mixingFactorDb else 0f
 
     private fun gainFor(format: AudioFormat): StreamGain {
         val existing = gain

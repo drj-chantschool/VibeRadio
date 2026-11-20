@@ -213,6 +213,7 @@ class MainActivity : ComponentActivity() {
             onAudioChange = viewModel::updateAudio,
             onRestoreAudio = viewModel::restoreAudioDefaults,
             onRestoreTone = viewModel::restoreTone,
+            onRestoreCompressor = viewModel::restoreCompressor,
             separation = separation,
             onSelectSeparation = viewModel::selectSeparation,
             onSeparationParam = viewModel::setSeparationParam,

@@ -8,6 +8,9 @@ package app.viberadio.playback.audio
  * Tone: each stream has its own ten-band tone EQ ([musicTone], [podcastTone]), flat by default,
  * after its gain.
  *
+ * Compression: optional dynamic range compression ([compressor]) on each stream, after leveling
+ * and before the mixing factor.
+ *
  * Mixing a podcast over music (#2, #5): while both streams play, the music drops by
  * [mixingFactorDb] and the separation EQ ([SeparationSettings], chosen separately) pulls the two
  * apart in frequency, so speech sits in a gap in the music. With one stream, there is no mixing
@@ -23,6 +26,8 @@ data class AudioSettings(
     val musicTone: ToneCurve = ToneCurve.FLAT,
     /** The podcast stream's tone EQ (podcasts played over music). */
     val podcastTone: ToneCurve = ToneCurve.FLAT,
+    /** Dynamic range compression, off by default (Settings → Audio → Compression). */
+    val compressor: CompressorSettings = CompressorSettings.DEFAULT,
 ) {
     fun tone(stream: AudioStream): ToneCurve = when (stream) {
         AudioStream.MUSIC -> musicTone
@@ -35,15 +40,18 @@ data class AudioSettings(
     }
 
     /** These settings with the figures (target, mixing factor, ramp) at their defaults; the tone curves stay. */
-    fun figuresRestored(): AudioSettings = DEFAULT.copy(musicTone = musicTone, podcastTone = podcastTone)
+    fun figuresRestored(): AudioSettings = DEFAULT.copy(musicTone = musicTone, podcastTone = podcastTone, compressor = compressor)
 
     /** Both tone curves flat; the figures stay. */
     fun toneRestored(): AudioSettings = copy(musicTone = ToneCurve.FLAT, podcastTone = ToneCurve.FLAT)
 
+    /** The compressor off and at its default figures; everything else stays. */
+    fun compressorRestored(): AudioSettings = copy(compressor = CompressorSettings.DEFAULT)
+
     /** Every figure in range and both tone curves valid. */
     val isValid: Boolean
         get() = rampMs in RAMP_RANGE && targetLufs in TARGET_RANGE && mixingFactorDb in MIXING_RANGE &&
-            musicTone.isValid && podcastTone.isValid
+            musicTone.isValid && podcastTone.isValid && compressor.isValid
 
     companion object {
         val DEFAULT = AudioSettings()
