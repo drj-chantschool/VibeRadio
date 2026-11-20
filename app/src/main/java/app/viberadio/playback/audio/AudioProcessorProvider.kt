@@ -11,7 +11,7 @@ import androidx.media3.common.util.UnstableApi
  * player) each go through their own chain and are then mixed by the system.
  *
  * Each chain is the stream's gain ([StreamGainProcessor]: the item's leveling gain, #1, and on
- * the music the mixing factor under a podcast, #2), then its EQ ([StreamEqProcessor]: the tone
+ * the music the mixing factor under a podcast, #2), then its optional compressor ([StreamCompressorProcessor]), then its EQ ([StreamEqProcessor]: the tone
  * EQ, then the separation EQ, #2).
  * Still to come, between the two: voice emphasis (#5). Background-music suppression in
  * podcasts (#6) belongs on the podcast stream.
@@ -33,7 +33,7 @@ fun interface AudioProcessorProvider {
             settings: () -> AudioSettings,
             separation: () -> SeparationEq,
         ) = AudioProcessorProvider { stream ->
-            listOf(StreamGainProcessor(stream, leveling, mix, settings), StreamEqProcessor(stream, mix, settings, separation))
+            listOf(StreamGainProcessor(stream, leveling, mix, settings), StreamCompressorProcessor(settings), StreamEqProcessor(stream, mix, settings, separation))
         }
     }
 }

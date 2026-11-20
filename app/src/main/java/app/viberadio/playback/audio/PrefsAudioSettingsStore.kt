@@ -13,12 +13,22 @@ class PrefsAudioSettingsStore(context: Context) : AudioSettingsStore {
     override fun read(): AudioSettings? {
         if (!prefs.contains(KEY_TARGET)) return null
         val d = AudioSettings.DEFAULT
+        val dc = d.compressor
         return AudioSettings(
             rampMs = prefs.getLong(KEY_RAMP, d.rampMs),
             targetLufs = prefs.getFloat(KEY_TARGET, d.targetLufs),
             mixingFactorDb = prefs.getFloat(KEY_MIXING, d.mixingFactorDb),
             musicTone = curve(prefs.getString(KEY_MUSIC_TONE, null)),
             podcastTone = curve(prefs.getString(KEY_PODCAST_TONE, null)),
+            compressor = CompressorSettings(
+                enabled = prefs.getBoolean(KEY_COMP_ON, dc.enabled),
+                thresholdDb = prefs.getFloat(KEY_COMP_THRESHOLD, dc.thresholdDb),
+                ratio = prefs.getFloat(KEY_COMP_RATIO, dc.ratio),
+                attackMs = prefs.getFloat(KEY_COMP_ATTACK, dc.attackMs),
+                releaseMs = prefs.getFloat(KEY_COMP_RELEASE, dc.releaseMs),
+                kneeDb = prefs.getFloat(KEY_COMP_KNEE, dc.kneeDb),
+                makeupDb = prefs.getFloat(KEY_COMP_MAKEUP, dc.makeupDb),
+            ),
         )
     }
 
@@ -31,6 +41,13 @@ class PrefsAudioSettingsStore(context: Context) : AudioSettingsStore {
             .putFloat(KEY_MIXING, settings.mixingFactorDb)
             .putString(KEY_MUSIC_TONE, settings.musicTone.bandsDb.joinToString(","))
             .putString(KEY_PODCAST_TONE, settings.podcastTone.bandsDb.joinToString(","))
+            .putBoolean(KEY_COMP_ON, settings.compressor.enabled)
+            .putFloat(KEY_COMP_THRESHOLD, settings.compressor.thresholdDb)
+            .putFloat(KEY_COMP_RATIO, settings.compressor.ratio)
+            .putFloat(KEY_COMP_ATTACK, settings.compressor.attackMs)
+            .putFloat(KEY_COMP_RELEASE, settings.compressor.releaseMs)
+            .putFloat(KEY_COMP_KNEE, settings.compressor.kneeDb)
+            .putFloat(KEY_COMP_MAKEUP, settings.compressor.makeupDb)
             .commit()
     }
 
@@ -47,6 +64,13 @@ class PrefsAudioSettingsStore(context: Context) : AudioSettingsStore {
         const val KEY_MIXING = "mixing_factor_db"
         const val KEY_MUSIC_TONE = "music_tone_db"
         const val KEY_PODCAST_TONE = "podcast_tone_db"
+        const val KEY_COMP_ON = "compressor_on"
+        const val KEY_COMP_THRESHOLD = "compressor_threshold_db"
+        const val KEY_COMP_RATIO = "compressor_ratio"
+        const val KEY_COMP_ATTACK = "compressor_attack_ms"
+        const val KEY_COMP_RELEASE = "compressor_release_ms"
+        const val KEY_COMP_KNEE = "compressor_knee_db"
+        const val KEY_COMP_MAKEUP = "compressor_makeup_db"
 
         // The separation figures earlier builds kept here, read once by PrefsSeparationStore.
         const val LEGACY_PODCAST_LOW = "podcast_low_hz"

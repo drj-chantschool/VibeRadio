@@ -102,6 +102,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     /** Settings → Audio → Equalizer: both tone curves flat. */
     fun restoreTone() = audio.restoreTone()
 
+    /** Settings → Audio → Compression: off, at its default figures. */
+    fun restoreCompressor() = audio.restoreCompressor()
+
     private val container = (application as VibeRadioApp).container
 
     /**

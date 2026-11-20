@@ -115,6 +115,13 @@ object SettingsFlattener {
         put("audio.target_lufs", s.targetLufs.toString())
         put("audio.mixing_factor_db", s.mixingFactorDb.toString())
         put("audio.ramp_ms", s.rampMs.toString())
+        put("audio.compressor.enabled", s.compressor.enabled.toString())
+        put("audio.compressor.threshold_db", s.compressor.thresholdDb.toString())
+        put("audio.compressor.ratio", s.compressor.ratio.toString())
+        put("audio.compressor.attack_ms", s.compressor.attackMs.toString())
+        put("audio.compressor.release_ms", s.compressor.releaseMs.toString())
+        put("audio.compressor.knee_db", s.compressor.kneeDb.toString())
+        put("audio.compressor.makeup_db", s.compressor.makeupDb.toString())
         s.musicTone.bandsDb.forEachIndexed { i, db -> put("audio.music_tone_db.${ToneBands.LABELS.getOrElse(i) { i.toString() }}", db.toString()) }
         s.podcastTone.bandsDb.forEachIndexed { i, db -> put("audio.podcast_tone_db.${ToneBands.LABELS.getOrElse(i) { i.toString() }}", db.toString()) }
     }

@@ -115,7 +115,7 @@
     <string name="settings_bluetooth_permission">Needs the Nearby devices permission to notice connections. Tap to allow.</string>
     <string name="settings_bluetooth_permission_denied">Nearby devices permission was denied. Tap to allow it in system settings.</string>
     <string name="settings_audio">Audio</string>
-    <string name="settings_audio_summary">Leveling, tone, and how a podcast sits over the music</string>
+    <string name="settings_audio_summary">Leveling, tone, compression, and how a podcast sits over the music</string>
     <string name="settings_audio_hint">Every song and episode is measured once and played at one fixed gain that brings it to the target loudness, never pushed into clipping. While a podcast plays over music, the music drops by the mixing factor and the two are pulled apart in frequency, so the voice sits in a gap. With only one playing, there is no mixing factor and no separation. Changes ramp in over the ramp time.</string>
     <string name="settings_audio_target">Target loudness</string>
     <string name="settings_audio_mixing">Mixing factor (music under a podcast)</string>
@@ -138,6 +138,24 @@
     <string name="settings_equalizer_summary">Tone for the music and for podcasts</string>
     <string name="settings_equalizer_hint">A ten-band tone control for each stream, always on and flat by default. Drag a band up or down, double-tap it for flat, or tap its figure to type one. Boosts are taken back off the overall level, so nothing clips. Music covers everything on the music player, episodes on The Voice and music podcasts included; Podcasts covers shows played over music.</string>
     <string name="settings_equalizer_invalid">Out of range: −12 to +12 dB.</string>
+    <string name="settings_compression">Compression</string>
+    <string name="settings_compression_off">Dynamic range compression, off</string>
+    <string name="settings_compression_on">Dynamic range compression, on</string>
+    <string name="settings_compression_enable">Compress dynamic range</string>
+    <string name="settings_compression_hint">Evens out loud and quiet passages within a song or episode, on the music and on podcasts. Off by default.</string>
+    <string name="settings_compression_threshold">Threshold</string>
+    <string name="settings_compression_threshold_about">Compression starts above this level, 0 to 60 dB below full scale.</string>
+    <string name="settings_compression_ratio">Ratio</string>
+    <string name="settings_compression_ratio_about">Above the threshold, this many dB in become 1 dB out. 1 to 20.</string>
+    <string name="settings_compression_attack">Attack</string>
+    <string name="settings_compression_attack_about">How fast it clamps down on a loud passage. 0.1 to 200 ms.</string>
+    <string name="settings_compression_release">Release</string>
+    <string name="settings_compression_release_about">How fast it lets go afterwards. 10 to 2000 ms.</string>
+    <string name="settings_compression_knee">Knee</string>
+    <string name="settings_compression_knee_about">How gradually compression sets in around the threshold. 0 (hard) to 24 dB.</string>
+    <string name="settings_compression_makeup">Make-up gain</string>
+    <string name="settings_compression_makeup_about">Lifts the compressed result. 0 to 24 dB; peaks are still held below the ceiling.</string>
+    <string name="settings_compression_invalid">Out of range. Threshold 0–60 dB below full scale, ratio 1–20, attack 0.1–200 ms, release 10–2000 ms, knee 0–24 dB, make-up 0–24 dB.</string>
     <string name="settings_separation">Separation EQ</string>
     <string name="settings_separation_summary">How a podcast and the music are pulled apart (developer mode)</string>
     <string name="settings_separation_hint">While a podcast plays over music, this shapes both so the voice sits in a gap in the music. Pick a module, then set its figures; each module keeps its own. A change ramps over the ramp time, never snapping. With only one stream playing, it does nothing.</string>
@@ -232,6 +250,8 @@
     <string name="unit_db">dB</string>
     <string name="unit_lufs">LUFS</string>
     <string name="unit_seconds">s</string>
+    <string name="unit_ms">ms</string>
+    <string name="unit_ratio">:1</string>
     <string name="unit_minutes">min</string>
     <string name="unit_tracks">songs</string>
     <string name="unit_percent" formatted="false">%</string>

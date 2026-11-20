@@ -94,4 +94,17 @@ class AudioSettingsRepositoryTest {
         assertEquals(0f, ToneCurve.FLAT.with(2, -6f).maxBoostDb)
         assertEquals(5f, ToneCurve.FLAT.with(2, 5f).with(7, 3f).maxBoostDb)
     }
+
+    @Test
+    fun `compression is off by default, range-checked, and restored on its own`() {
+        val repo = repository(FakeStore())
+        assertFalse(repo.settings.value.compressor.enabled)
+        assertTrue(repo.update { it.copy(compressor = it.compressor.copy(enabled = true, ratio = 6f)) })
+        assertFalse(repo.update { it.copy(compressor = it.compressor.copy(ratio = 30f)) })
+        assertEquals(6f, repo.settings.value.compressor.ratio)
+        repo.restoreDefaults()
+        assertTrue(repo.settings.value.compressor.enabled)
+        repo.restoreCompressor()
+        assertEquals(CompressorSettings.DEFAULT, repo.settings.value.compressor)
+    }
 }

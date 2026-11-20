@@ -183,6 +183,15 @@ object DiagnosticsBundle {
                 "tone_bands_hz" to ToneBands.HZ.toList(),
                 "music_tone_db" to s.audio.musicTone.bandsDb,
                 "podcast_tone_db" to s.audio.podcastTone.bandsDb,
+                "compressor" to linkedMapOf(
+                    "enabled" to s.audio.compressor.enabled,
+                    "threshold_db" to s.audio.compressor.thresholdDb,
+                    "ratio" to s.audio.compressor.ratio,
+                    "attack_ms" to s.audio.compressor.attackMs,
+                    "release_ms" to s.audio.compressor.releaseMs,
+                    "knee_db" to s.audio.compressor.kneeDb,
+                    "makeup_db" to s.audio.compressor.makeupDb,
+                ),
                 "is_default" to (s.audio == AudioSettings.DEFAULT),
             ),
             "separation_eq" to linkedMapOf(
