@@ -42,7 +42,6 @@ class DiagnosticsBundleTest {
             FeedbackEvent("hashA", Thumb.UP, 1_000, -300, "breeze"),
             FeedbackEvent("hashA", Thumb.DOWN, 2_000, -300, "all-songs", separationEq = "graphic"),
         ),
-        podcastsJson: String? = """{"version":1}""",
         podcastStateJson: String? = """{"played":[]}""",
         crashLog: String? = null,
     ) = DiagnosticsSnapshot(
@@ -66,7 +65,6 @@ class DiagnosticsBundleTest {
         listeningClockMs = 50,
         airings = listOf(ChannelAiring("breeze", "hashA", 180_000, 3_000)),
         levels = mapOf("song:hashA" to TrackLevel(-14f, 0.5f), "song:silent" to TrackLevel(Float.NEGATIVE_INFINITY, 0f)),
-        podcastsJson = podcastsJson,
         podcastStateJson = podcastStateJson,
         podcasts = podcasts,
         downloadedEpisodes = setOf("e1"),
@@ -100,16 +98,15 @@ class DiagnosticsBundleTest {
         assertEquals(
             setOf(
                 "README.md", "summary.json", "settings.json", "feedback.csv", "play_history.csv", "channel_airings.csv",
-                "features.csv", "channels.csv", "library.csv", "levels.csv", "podcasts.json", "podcast_state.json",
+                "features.csv", "channels.csv", "library.csv", "levels.csv", "podcast_state.json",
                 "podcast_shows.csv", "podcast_queues.csv", "podcast_events.csv", "settings_changes.csv", "exit_reasons.csv",
             ),
             files().keys,
         )
         assertFalse("crashes.txt" in files())
-        assertFalse("podcasts.json" in files(snapshot(podcastsJson = null)))
+        assertFalse("podcasts.json" in files())
         assertFalse("podcast_state.json" in files(snapshot(podcastStateJson = null)))
         assertEquals("""{"played":[]}""", files().getValue("podcast_state.json").text)
-        assertEquals("""{"version":1}""", files().getValue("podcasts.json").text)
     }
 
     @Test

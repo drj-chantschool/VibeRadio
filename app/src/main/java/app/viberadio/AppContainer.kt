@@ -591,7 +591,6 @@ class AppContainer(context: Context) {
                 listeningClockMs = runCatching { feedbackDatabase.listeningClock.read() }.getOrDefault(0L),
                 airings = runCatching { feedbackDatabase.channelAirings.readAll() }.getOrDefault(emptyList()),
                 levels = runCatching { FileLevelStore(levelsFile).readAll() }.getOrDefault(emptyMap()),
-                podcastsJson = runCatching { AtomicFile(podcastsFile).readFully().decodeToString() }.getOrNull(),
                 podcastStateJson = runCatching { AtomicFile(podcastStateFile).readFully().decodeToString() }.getOrNull(),
                 podcasts = podcasts,
                 downloadedEpisodes = podcastRepository.downloaded.value,
