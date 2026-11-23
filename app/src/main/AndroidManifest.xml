@@ -39,6 +39,11 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.VibeRadio">
 
+        <!-- Declares the app to Android Auto as a media app (res/xml/automotive_app_desc.xml). -->
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
+
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
@@ -55,6 +60,10 @@
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+            <!-- Android Auto lists an app as a media app only if it has a browser service. -->
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
 
