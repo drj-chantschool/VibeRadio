@@ -65,6 +65,11 @@
             <intent-filter>
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
+            <!-- Android Auto's voice search; lint requires it alongside the car declaration. -->
+            <intent-filter>
+                <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </service>
 
         <!-- Exported so the system can deliver ACL_CONNECTED; it ignores every other action. -->
